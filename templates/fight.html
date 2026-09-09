@@ -1,0 +1,1528 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{.Fight.Name}} &middot; wowinsight</title>
+    <style>
+        body {
+            margin: 0 auto;
+            max-width: min(96vw, 100rem);
+            padding: 2rem 1.5rem;
+            font-family: system-ui, sans-serif;
+            background: #14161a;
+            color: #e8e8e8;
+        }
+
+        a {
+            color: #8fb0ff;
+        }
+
+        h1 {
+            margin: 0.5rem 0 0.25rem;
+            font-size: 1.6rem;
+        }
+
+        .meta {
+            margin: 0 0 1.5rem;
+            color: #9aa3ad;
+        }
+
+        .kill {
+            color: #6ee7a0;
+        }
+
+        .wipe {
+            color: #ff8c8c;
+        }
+
+        .picker {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 1rem;
+            margin-bottom: 1.5rem;
+            border: 1px solid #262a30;
+            border-radius: 0.5rem;
+            background: #1a1d22;
+        }
+
+        select {
+            flex: 1;
+            padding: 0.6rem 0.75rem;
+            font-size: 1rem;
+            border: 1px solid #3a3f47;
+            border-radius: 0.4rem;
+            background: #1c1f24;
+            color: inherit;
+        }
+
+        button {
+            padding: 0.6rem 1.25rem;
+            font-size: 1rem;
+            border: 0;
+            border-radius: 0.4rem;
+            background: #4f7cff;
+            color: #fff;
+            cursor: pointer;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+            gap: 1rem;
+        }
+
+        .stat {
+            padding: 1rem;
+            border: 1px solid #262a30;
+            border-radius: 0.5rem;
+            background: #1a1d22;
+        }
+
+        .stat .value {
+            display: block;
+            font-size: 1.4rem;
+            font-weight: 600;
+        }
+
+        .stat .label {
+            display: block;
+            margin-top: 0.25rem;
+            font-size: 0.75rem;
+            color: #9aa3ad;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .hint {
+            color: #9aa3ad;
+        }
+
+        h3 {
+            margin: 2rem 0 0.75rem;
+            font-size: 1.1rem;
+        }
+
+        .tl-controls {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 0.6rem;
+            font-size: 0.8rem;
+            color: #9aa3ad;
+        }
+
+        .tl-controls button {
+            padding: 0.3rem 0.7rem;
+            font-size: 0.8rem;
+            border: 1px solid #3a3f47;
+            border-radius: 0.3rem;
+            background: #1c1f24;
+            color: #cfd5dd;
+        }
+
+        .tl-controls button.active {
+            border-color: #4f7cff;
+            background: #24304d;
+            color: #fff;
+        }
+
+        details.advanced {
+            margin-bottom: 1rem;
+            border: 1px solid #262a30;
+            border-radius: 0.4rem;
+            background: #1a1d22;
+        }
+
+        details.advanced > summary {
+            padding: 0.55rem 0.9rem;
+            font-size: 0.85rem;
+            color: #cfd5dd;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        details.advanced[open] > summary {
+            border-bottom: 1px solid #262a30;
+        }
+
+        .advanced-body {
+            padding: 0.9rem;
+        }
+
+        .advanced-row {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.85rem;
+            color: #cfd5dd;
+        }
+
+        .advanced .note {
+            margin: 0.75rem 0 0;
+            max-width: 60ch;
+            font-size: 0.8rem;
+            line-height: 1.5;
+            color: #9aa3ad;
+        }
+
+        .advanced .note strong {
+            color: #cfd5dd;
+        }
+
+        .tl-controls input[type="number"],
+        .advanced-row input[type="number"] {
+            width: 6rem;
+            padding: 0.3rem 0.5rem;
+            font-size: 0.8rem;
+            border: 1px solid #3a3f47;
+            border-radius: 0.3rem;
+            background: #1c1f24;
+            color: #cfd5dd;
+        }
+
+        .tl-controls input[type="range"] {
+            flex: 1;
+            max-width: 18rem;
+            accent-color: #4f7cff;
+        }
+
+        .tl-scroll {
+            overflow-x: auto;
+            overflow-y: hidden;
+            border: 1px solid #262a30;
+            border-radius: 0.4rem;
+            background: #1a1d22;
+        }
+
+        .tl-inner {
+            position: relative;
+            width: 100%;
+        }
+
+        .tl-frame {
+            position: relative;
+            /* Shared so the DPS axis can be pinned beside the chart lane. */
+            --rcd-row: 1.3rem;
+            --rcd-h: calc(var(--rcd-rows, 0) * var(--rcd-row) + 0.3rem);
+            --cd-h: calc(var(--cd-rows, 1) * var(--rcd-row) + 0.3rem);
+            --boss-h: 2.6rem;
+            --track-h: calc(var(--cd-h) + 3.6rem);
+            --dps-h: 6rem;
+        }
+
+        .tl-frame.labels {
+            --boss-h: 11rem;
+            --track-h: calc(var(--cd-h) + 13.4rem);
+        }
+
+        .track {
+            /* Casts hang below this line; casts woven into them sit above it,
+               and the cooldown blocks stack above that. */
+            --baseline: calc(var(--cd-h) + 1.2rem);
+            position: relative;
+            height: var(--track-h);
+            overflow: hidden;
+        }
+
+        .tl-inner.labels .track {
+            /* Room above and below the baseline for two rows of angled labels. */
+            --baseline: calc(var(--cd-h) + 4.6rem);
+        }
+
+        .track::after {
+            content: "";
+            position: absolute;
+            left: 0;
+            right: 0;
+            top: var(--baseline);
+            border-top: 1px solid #2b313a;
+            pointer-events: none;
+        }
+
+        .boss {
+            position: relative;
+            height: var(--boss-h);
+            border-bottom: 1px solid #2b313a;
+            background: #191c21;
+        }
+
+        .boss .phase {
+            position: absolute;
+            bottom: 0;
+            height: 1.35rem;
+            border-left: 1px solid #3d4450;
+            background: rgba(255, 255, 255, 0.04);
+            overflow: hidden;
+        }
+
+        .boss .phase:nth-of-type(even) {
+            background: rgba(255, 255, 255, 0.09);
+        }
+
+        .boss .phase.intermission {
+            background: rgba(150, 120, 255, 0.18);
+        }
+
+        .boss .phase span {
+            display: block;
+            padding: 0.2rem 0.35rem;
+            font-size: 0.68rem;
+            color: #aab2bd;
+            white-space: nowrap;
+        }
+
+        .boss .bcast {
+            position: absolute;
+            bottom: 1.35rem;
+            height: 0.75rem;
+            width: 1px;
+            background: #ff9d4d;
+            display: block;
+            color: inherit;
+            text-decoration: none;
+        }
+
+        /* A 1px marker is hard to hit; widen the hover target without
+           widening the mark itself. */
+        .boss .bcast::before {
+            content: "";
+            position: absolute;
+            left: -5px;
+            right: -5px;
+            top: -3px;
+            bottom: -3px;
+        }
+
+        .boss .bbar {
+            position: absolute;
+            bottom: 1.35rem;
+            height: 0.3rem;
+            min-width: 1px;
+            background: rgba(255, 157, 77, 0.4);
+        }
+
+        .boss .bcast .bname {
+            display: none;
+            position: absolute;
+            bottom: 100%;
+            left: 1px;
+            transform: translateY(calc(var(--row, 0) * -2.75rem)) rotate(-55deg);
+            transform-origin: left bottom;
+            font-size: 0.62rem;
+            line-height: 1;
+            color: #ffb37a;
+            white-space: nowrap;
+        }
+
+        .boss .bcast:hover {
+            background: #ffc48a;
+        }
+
+        .boss .bcast:hover .bname {
+            color: #ffd9b3;
+        }
+
+        .tl-inner.labels .boss .bcast .bname {
+            display: block;
+        }
+
+        .boss .bcast .bname.crowded {
+            visibility: hidden;
+        }
+
+        .track .phaseline {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 0;
+            border-left: 1px dashed #333a44;
+            pointer-events: none;
+        }
+
+        .track .prepull {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            left: 0;
+            background: repeating-linear-gradient(135deg,
+            rgba(255, 255, 255, 0.014) 0 6px, transparent 6px 12px);
+        }
+
+        .track .pull {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 0;
+            border-left: 2px solid #ff6b6b;
+            pointer-events: none;
+        }
+
+        .track .pull span {
+            position: absolute;
+            top: 0.1rem;
+            left: 0.3rem;
+            font-size: 0.65rem;
+            color: #ff8f8f;
+            white-space: nowrap;
+        }
+
+        .track .phase {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            border-left: 1px solid #3d4450;
+            background: rgba(255, 255, 255, 0.018);
+            overflow: hidden;
+        }
+
+        .track .phase:nth-child(even) {
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .track .phase.intermission {
+            background: rgba(150, 120, 255, 0.13);
+        }
+
+        .track .phase span {
+            display: block;
+            padding: 0.1rem 0.35rem;
+            font-size: 0.68rem;
+            color: #aab2bd;
+            white-space: nowrap;
+        }
+
+        .track .lust {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            background: rgba(255, 176, 60, 0.22);
+            border-left: 2px solid #ffb03c;
+        }
+
+        .track .gap {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            background: rgba(255, 90, 90, 0.28);
+        }
+
+        .track .castbar {
+            position: absolute;
+            top: var(--baseline);
+            height: 0.55rem;
+            min-width: 1px;
+            border-radius: 1px;
+            background: rgba(143, 176, 255, 0.4);
+        }
+
+        /* A hard cast that should not have been made. */
+                /* Reconstructed, not logged: the cast bar began before the report did. */
+        .track .castbar.estimated {
+            background: repeating-linear-gradient(90deg,
+            rgba(143, 176, 255, 0.42) 0 5px, transparent 5px 10px);
+        }
+
+                .track .tick {
+            position: absolute;
+            top: var(--baseline);
+            bottom: 0.6rem;
+            width: 1px;
+            background: #8fb0ff;
+        }
+
+        .tl-inner.labels .track .tick {
+            bottom: 7.5rem;
+        }
+
+        /* A cast begun during another still sits above the baseline: it did
+           not cost a slot in the rotation below. It is no longer coloured
+           differently, since that is a positional fact, not a category. */
+        .track .tick.woven {
+            top: auto;
+            bottom: calc(100% - var(--baseline));
+            height: 0.9rem;
+        }
+
+        .tl-inner.labels .track .tick.woven {
+            height: 1.4rem;
+        }
+
+        .track .tick.cancelled {
+            background: #ffb03c;
+        }
+
+                /* A cooldown block spans the buff, so its length is how long it was
+           actually up rather than a fixed marker. */
+        .track .cdblock {
+            position: absolute;
+            height: 1.15rem;
+            box-sizing: border-box;
+            min-width: 2px;
+            border-radius: 0.2rem;
+            border-left: 2px solid #ffd479;
+            background: rgba(255, 200, 90, 0.18);
+            z-index: 3;
+        }
+
+        .track .cdblock span {
+            position: absolute;
+            left: 0.25rem;
+            top: 0;
+            line-height: 1.15rem;
+            font-size: 0.62rem;
+            color: #ffd479;
+            white-space: nowrap;
+            pointer-events: none;
+        }
+
+        .track .cdblock.crowded span {
+            visibility: hidden;
+        }
+
+        .raidlane {
+            position: relative;
+            height: var(--rcd-h);
+            border-bottom: 1px solid #262a30;
+            background: #171a1f;
+        }
+
+        /* Raid-wide cooldowns, stacked so simultaneous ones never overlap. */
+        .raidlane .rcdblock {
+            position: absolute;
+            height: 1.15rem;
+            box-sizing: border-box;
+            min-width: 2px;
+            border-radius: 0.2rem;
+            border-left: 2px solid #7fd6ff;
+            background: rgba(127, 214, 255, 0.16);
+            z-index: 3;
+        }
+
+        .raidlane .rcdblock span {
+            position: absolute;
+            left: 0.25rem;
+            top: 0;
+            line-height: 1.15rem;
+            font-size: 0.62rem;
+            color: #9fdcff;
+            white-space: nowrap;
+            pointer-events: none;
+        }
+
+        .raidlane .rcdblock.crowded span {
+            visibility: hidden;
+        }
+
+        .track .tick .tname {
+            display: none;
+            position: absolute;
+            top: 100%;
+            left: 2px;
+            /* Angled so it reads at a glance. --row drops a label onto a
+               parallel line below, clear of the one before it; anything that
+               still will not fit is hidden rather than overprinted. */
+            transform: translateY(calc(var(--row, 0) * 2.75rem)) rotate(55deg);
+            transform-origin: left top;
+            font-size: 0.62rem;
+            line-height: 1;
+            color: #9aa3ad;
+            white-space: nowrap;
+            pointer-events: none;
+        }
+
+        .track .tick.woven .tname {
+            top: auto;
+            bottom: 100%;
+            transform: translateY(calc(var(--row, 0) * -2.75rem)) rotate(-55deg);
+            transform-origin: left bottom;
+        }
+
+        .tl-inner.labels .track .tick .tname {
+            display: block;
+        }
+
+        .track .tick .tname.crowded {
+            visibility: hidden;
+        }
+
+        .dps-caption {
+            display: flex;
+            align-items: baseline;
+            gap: 0.6rem;
+            margin: 0.9rem 0 0.35rem;
+            font-size: 0.8rem;
+            color: #cfd5dd;
+            /* Fixed height and no wrapping: the readout changes on every mouse
+               move, and a caption that reflowed would shift the timeline out
+               from under the pointer. */
+            min-height: 1.4rem;
+            flex-wrap: nowrap;
+            white-space: nowrap;
+            overflow: hidden;
+        }
+
+        .dps-axis {
+            position: absolute;
+            left: 0;
+            top: calc(var(--rcd-h) + var(--boss-h) + var(--track-h));
+            height: 6rem;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 0 0.4rem;
+            box-sizing: border-box;
+            font-size: 0.65rem;
+            font-variant-numeric: tabular-nums;
+            color: #7d858f;
+            background: linear-gradient(90deg, #17191e 70%, rgba(23, 25, 30, 0));
+            pointer-events: none;
+        }
+
+        .dps-axis span:nth-child(2) {
+            transform: translateY(-50%);
+        }
+
+        .dps-axis span:last-child {
+            transform: translateY(-0.7rem);
+        }
+
+        .readout {
+            margin-left: auto;
+            flex: 0 0 auto;
+            min-width: 15rem;
+            text-align: right;
+            white-space: nowrap;
+            font-variant-numeric: tabular-nums;
+            color: #8fb0ff;
+        }
+
+        /* Wowhead injects its tooltip near the pointer; if it can take the
+           pointer itself, hovering a link flickers as the tooltip steals and
+           returns the hover. */
+        div.wowhead-tooltip,
+        #wowhead-tooltip,
+        #tooltip {
+            pointer-events: none !important;
+        }
+
+        .crosshair {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 0;
+            border-left: 1px solid rgba(255, 255, 255, 0.35);
+            pointer-events: none;
+        }
+
+        .taken {
+            position: relative;
+            height: var(--dps-h);
+            border-top: 1px solid #262a30;
+            background: #1b1719;
+        }
+
+        .taken svg {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        .taken .fill {
+            fill: rgba(255, 107, 107, 0.2);
+            stroke: none;
+        }
+
+        .taken .line {
+            fill: none;
+            stroke: #ff6b6b;
+            stroke-width: 1.5;
+            stroke-linejoin: round;
+            vector-effect: non-scaling-stroke;
+        }
+
+        .taken .grid {
+            stroke: #3a2b2e;
+            stroke-width: 1;
+            stroke-dasharray: 3 3;
+            vector-effect: non-scaling-stroke;
+        }
+
+        .taken-axis {
+            position: absolute;
+            left: 0;
+            top: calc(var(--rcd-h) + var(--boss-h) + var(--track-h) + var(--dps-h));
+            height: var(--dps-h);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 0 0.4rem;
+            box-sizing: border-box;
+            font-size: 0.65rem;
+            font-variant-numeric: tabular-nums;
+            color: #a08084;
+            background: linear-gradient(90deg, #1b1719 70%, rgba(27, 23, 25, 0));
+            pointer-events: none;
+        }
+
+        .taken-axis span:nth-child(2) {
+            transform: translateY(-50%);
+        }
+
+        .taken-axis span:last-child {
+            transform: translateY(-0.7rem);
+        }
+
+        .taken-caption {
+            margin-top: 0.2rem;
+            color: #e0b7b7;
+        }
+
+        .dps {
+            position: relative;
+            height: var(--dps-h);
+            border-top: 1px solid #262a30;
+            background: #17191e;
+        }
+
+        .dps svg {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        .dps .fill {
+            fill: rgba(79, 124, 255, 0.22);
+            stroke: none;
+        }
+
+        .dps .line {
+            fill: none;
+            stroke: #6f96ff;
+            stroke-width: 1.5;
+            stroke-linejoin: round;
+            /* Keep the stroke even as the viewBox is stretched by the zoom. */
+            vector-effect: non-scaling-stroke;
+        }
+
+        .dps .grid {
+            stroke: #2b313a;
+            stroke-width: 1;
+            stroke-dasharray: 3 3;
+            vector-effect: non-scaling-stroke;
+        }
+
+        .ruler {
+            position: relative;
+            height: 1.4rem;
+            border-top: 1px solid #262a30;
+            background: #17191e;
+        }
+
+        .ruler .mark {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            border-left: 1px solid #2f353d;
+        }
+
+        .ruler .mark span {
+            padding-left: 0.25rem;
+            font-size: 0.65rem;
+            line-height: 1.4rem;
+            color: #7d858f;
+            white-space: nowrap;
+        }
+
+        .scale {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 1.5rem;
+            font-size: 0.75rem;
+            color: #9aa3ad;
+        }
+
+        .legend {
+            display: flex;
+            gap: 1.25rem;
+            margin-bottom: 1rem;
+            font-size: 0.8rem;
+            color: #9aa3ad;
+        }
+
+        .legend span::before {
+            content: "";
+            display: inline-block;
+            width: 0.7rem;
+            height: 0.7rem;
+            margin-right: 0.35rem;
+            vertical-align: -1px;
+            border-radius: 2px;
+        }
+
+        .legend .l-cast::before {
+            background: #8fb0ff;
+        }
+
+        .legend .l-gap::before {
+            background: rgba(255, 90, 90, 0.6);
+        }
+
+        .legend .l-lust::before {
+            background: rgba(255, 176, 60, 0.6);
+        }
+
+        .legend .l-boss::before {
+            background: #ff9d4d;
+        }
+
+        .legend .l-phase::before {
+            background: #3d4450;
+        }
+
+                .legend .l-estimated::before {
+            background: repeating-linear-gradient(90deg,
+            rgba(143, 176, 255, 0.9) 0 3px, transparent 3px 6px);
+        }
+
+        .legend .l-cd::before {
+            background: #ffd479;
+        }
+
+        .legend .l-rcd::before {
+            background: #7fd6ff;
+        }
+
+                .legend .l-cancel::before {
+            background: #ffb03c;
+        }
+
+        .casts tr.cancelled td {
+            color: #ffc978;
+        }
+
+        .casts tr.precast td {
+            color: #9fe0d0;
+        }
+
+        .casts .proctag {
+            margin-left: 0.4rem;
+            padding: 0.05rem 0.35rem;
+            border-radius: 0.2rem;
+            background: rgba(190, 140, 255, 0.18);
+            color: #d3b6ff;
+            font-size: 0.7rem;
+        }
+
+                .casts tr.idlerow td {
+            padding: 0.3rem 0.75rem;
+            color: #ff9b9b;
+            background: rgba(255, 90, 90, 0.09);
+            border-bottom: 0;
+            border-left: 2px solid rgba(255, 90, 90, 0.55);
+        }
+
+        .casts tr.idlerow .hint {
+            font-size: 0.75rem;
+        }
+
+        .casts tr.phasehead td {
+            padding-top: 0.9rem;
+            font-weight: 600;
+            color: #d7dce3;
+            background: #1e2228;
+            border-bottom: 1px solid #333941;
+        }
+
+        .table-legend {
+            display: flex;
+            align-items: flex-start;
+            gap: 1rem;
+            padding: 0.75rem 0.9rem;
+            margin-bottom: 0.6rem;
+            border: 1px solid #262a30;
+            border-radius: 0.4rem;
+            background: #17191e;
+        }
+
+        .table-legend .sample {
+            flex: none;
+            padding: 0.3rem 0.6rem;
+            border-left: 2px solid rgba(255, 90, 90, 0.55);
+            background: rgba(255, 90, 90, 0.09);
+            color: #ff9b9b;
+            font-size: 0.85rem;
+            white-space: nowrap;
+        }
+
+        .table-legend p {
+            margin: 0;
+            max-width: 70ch;
+            font-size: 0.8rem;
+            line-height: 1.55;
+            color: #9aa3ad;
+        }
+
+        .table-legend strong {
+            color: #cfd5dd;
+        }
+
+        @media (max-width: 55rem) {
+            .table-legend {
+                flex-direction: column;
+                gap: 0.6rem;
+            }
+        }
+
+        .casts {
+            max-height: 26rem;
+            overflow-y: auto;
+            border: 1px solid #262a30;
+            border-radius: 0.4rem;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .casts th, .casts td {
+            text-align: left;
+            padding: 0.35rem 0.75rem;
+            border-bottom: 1px solid #23272d;
+        }
+
+        .casts th {
+            position: sticky;
+            top: 0;
+            background: #1a1d22;
+            font-size: 0.75rem;
+            color: #9aa3ad;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .casts tr.downtime td {
+            color: #ff9b9b;
+        }
+
+        .casts tr.lust td:first-child {
+            border-left: 2px solid #ffb03c;
+        }
+
+        .num {
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+        }
+
+        ul.lusts {
+            margin: 0 0 1.5rem;
+            padding-left: 1.1rem;
+            color: #9aa3ad;
+        }
+    </style>
+</head>
+<body>
+<p><a href="/?url=https://www.warcraftlogs.com/reports/{{.Detail.ReportCode}}">&larr; {{.Detail.ReportTitle}}</a></p>
+
+<h1>{{.Fight.Name}}</h1>
+<p class="meta">
+    {{with .Fight.DifficultyName}}{{.}} &middot; {{end}}
+    <span class="{{if eq .Fight.Outcome "Kill"}}kill{{else}}wipe{{end}}">{{.Fight.Outcome}}</span>
+    {{if and (eq .Fight.Outcome "Wipe") .Fight.BossPercentage}}
+        ({{printf "%.1f" .Fight.BossPercentage}}% remaining)
+    {{end}}
+    &middot; {{duration .Fight.Duration}}
+    &middot; {{len .Detail.Players}} players
+</p>
+
+<form method="get" class="picker">
+    <label for="player">Player</label>
+    <select id="player" name="player" onchange="this.form.submit()">
+        <option value="">Select a player&hellip;</option>
+        {{range .Detail.Players}}
+            <option value="{{.ActorID}}" {{if eq .ActorID $.SelectedID}}selected{{end}}>
+                {{.Name}}{{with .Title}} &mdash; {{.}}{{end}}
+            </option>
+        {{end}}
+    </select>
+    <button type="submit">Show</button>
+</form>
+
+{{with .Player}}
+    <h2>{{.Name}}{{with .Server}}-{{.}}{{end}} &middot; <span class="hint">{{.Title}}</span></h2>
+    <div class="stats">
+        <div class="stat"><span class="value">{{compact .Damage}}</span><span class="label">Damage</span></div>
+        <div class="stat"><span class="value">{{compact .DPS}}</span><span class="label">DPS</span></div>
+        <div class="stat"><span class="value">{{compact .Healing}}</span><span class="label">Healing</span></div>
+        <div class="stat"><span class="value">{{compact .HPS}}</span><span class="label">HPS</span></div>
+        <div class="stat"><span class="value">{{printf "%.1f%%" .ActivePercent}}</span><span class="label">Active time</span></div>
+        <div class="stat"><span class="value">{{printf "%.1f%%" .OverhealPercent}}</span><span class="label">Overheal</span></div>
+        <div class="stat"><span class="value">{{printf "%.0f" .ItemLevel}}</span><span class="label">Item level</span></div>
+        <div class="stat"><span class="value">{{.Deaths}}</span><span class="label">Deaths</span></div>
+    </div>
+{{else}}
+    <p class="hint">Pick a player above to see their numbers for this pull.</p>
+{{end}}
+
+{{with .Timeline}}
+    <h3>Cast timeline</h3>
+
+    <div class="legend">
+        <span class="l-cast">Cast (bar = cast time)</span>
+        <span class="l-estimated">Precast (bar reconstructed)</span>
+        <span class="l-cd">Your cooldown</span>
+        <span class="l-rcd">Raid cooldown</span>
+        <span class="l-cancel">Cancelled</span>
+        <span class="l-gap">Idle at or above the threshold</span>
+        <span class="l-lust">Bloodlust / Heroism / Time Warp</span>
+        {{if .Phases}}<span class="l-phase">Phase boundary</span>{{end}}
+    </div>
+
+    <details class="advanced">
+        <summary>Advanced</summary>
+        <div class="advanced-body">
+            <div class="advanced-row">
+                <label for="idleMs">Show idle of</label>
+                <input type="number" id="idleMs" min="0" max="60000" step="50" value="1500">
+                <span>ms or more</span>
+                <span class="hint" id="idleSummary"></span>
+            </div>
+            <p class="note">
+                Idle still includes the GCD, which is not modelled yet. Below ~1.5s you will mostly see
+                normal GCD waits; raise it until only avoidable pauses remain.
+            </p>
+        </div>
+    </details>
+
+    <div class="tl-controls">
+        <span>Zoom</span>
+        <button type="button" class="zoom active" data-zoom="1">Fit</button>
+        <button type="button" class="zoom" data-zoom="2">2&times;</button>
+        <button type="button" class="zoom" data-zoom="4">4&times;</button>
+        <button type="button" class="zoom" data-zoom="8">8&times;</button>
+        <button type="button" class="zoom" data-zoom="16">16&times;</button>
+        <input type="range" id="zoomRange" min="1" max="24" step="0.5" value="1"
+               aria-label="Timeline zoom">
+        <span id="zoomLabel">1.0&times;</span>
+    </div>
+
+    {{with .DPS}}
+        <div class="dps-caption">
+            <span>DPS</span>
+            <span class="hint">peak {{compact .Peak}} &middot; mean {{compact .Mean}}
+                &middot; {{short .Interval}} buckets</span>
+            <span class="readout" id="dpsReadout">hover the timeline for a reading</span>
+        </div>
+    {{end}}
+
+    {{with .Taken}}
+        <div class="dps-caption taken-caption">
+            <span>Damage taken</span>
+            <span class="hint">peak {{compact .Peak}} &middot; mean {{compact .Mean}}</span>
+        </div>
+    {{end}}
+
+    <div class="tl-frame" id="tlFrame" style="--rcd-rows: {{if .RaidCDs}}{{.RaidCDRows}}{{else}}0{{end}}; --cd-rows: {{if .Cooldowns}}{{.CooldownRows}}{{else}}0{{end}}">
+    <div class="tl-scroll">
+      <div class="tl-inner" id="tlInner"
+           data-duration-ms="{{.DurationMS}}"
+           data-total-ms="{{.TotalMS}}"
+           data-lead-ms="{{.LeadInMS}}">
+        {{if .RaidCDs}}
+            <div class="raidlane">
+                {{range .RaidCDs}}
+                    <div class="rcdblock" data-row="{{.Row}}"
+                         style="left: {{printf "%.3f" .StartPercent}}%; width: {{printf "%.3f" .WidthPercent}}%;
+                                top: calc({{.Row}} * var(--rcd-row) + 0.15rem)"
+                         title="{{.Label}} — {{.Timestamp}} for {{short .Duration}} on {{.Targets}} players"><span>{{.Name}}</span></div>
+                {{end}}
+            </div>
+        {{end}}
+
+        <div class="boss">
+            {{range .Phases}}
+                <div class="phase{{if .IsIntermission}} intermission{{end}}"
+                     style="left: {{printf "%.3f" .StartPercent}}%; width: {{printf "%.3f" .WidthPercent}}%"
+                     title="{{.Name}} — {{.Timestamp}} for {{short .Duration}}"><span>{{.ShortName}}</span></div>
+            {{end}}
+            {{range .BossCasts}}
+                {{/* No title attribute: the native tooltip would sit on top of
+                     Wowhead's. The time is readable from the crosshair readout. */}}
+                <a class="bcast" style="left: {{printf "%.3f" .Percent}}%"
+                   href="https://www.wowhead.com/spell={{.AbilityID}}{{with $.Fight.WowheadDifficulty}}?dd={{.}}{{end}}"
+                   target="_blank" rel="noopener noreferrer"><span class="bname">{{.Label}}</span></a>
+            {{end}}
+            {{range .BossCasts}}
+                {{if .WidthPercent}}
+                    <div class="bbar" style="left: {{printf "%.3f" .Percent}}%; width: {{printf "%.3f" .WidthPercent}}%"></div>
+                {{end}}
+            {{end}}
+        </div>
+
+        <div class="track">
+        <div class="prepull" style="width: {{printf "%.3f" .PullPercent}}%"></div>
+        {{range .Phases}}
+            <div class="phaseline" style="left: {{printf "%.3f" .StartPercent}}%"></div>
+        {{end}}
+        {{range .Lusts}}
+            <div class="lust" style="left: {{printf "%.3f" .StartPercent}}%; width: {{printf "%.3f" .WidthPercent}}%"
+                 title="{{.Label}} — {{.Timestamp}} for {{short .Duration}}"></div>
+        {{end}}
+        {{range .Casts}}
+            {{if .Gap}}
+                <div class="gap" data-ms="{{.GapMS}}"
+                     style="left: {{printf "%.3f" .GapStartPercent}}%; width: {{printf "%.3f" .GapWidthPercent}}%"
+                     title="{{short .Gap}} idle before {{.Name}}"></div>
+            {{end}}
+        {{end}}
+        {{range .Casts}}
+            {{if .CastWidthPercent}}
+                <div class="castbar{{if .Estimated}} estimated{{end}}"
+                     style="left: {{printf "%.3f" .Percent}}%; width: {{printf "%.3f" .CastWidthPercent}}%"
+                     {{with .ProcLabel}}title="{{.}}"{{end}}></div>
+            {{end}}
+        {{end}}
+        {{range .Cooldowns}}
+            <div class="cdblock" data-row="{{.Row}}"
+                 style="left: {{printf "%.3f" .StartPercent}}%; width: {{printf "%.3f" .WidthPercent}}%;
+                        top: calc({{.Row}} * var(--rcd-row) + 0.15rem)"
+                 title="{{.Name}} — {{.Timestamp}} for {{short .Duration}}"><span>{{.Name}}</span></div>
+        {{end}}
+        {{range .Casts}}
+            {{/* A cooldown is already drawn as a block above; repeating it here
+                 would print its name twice on the same moment. */}}
+            {{if not .Cooldown}}
+            <div class="tick{{if .Cancelled}} cancelled{{end}}{{if .DuringCast}} woven{{end}}"
+                 style="left: {{printf "%.3f" .Percent}}%"
+                 title="{{.Timestamp}} {{.Name}} ({{.CastLabel}}){{with .ProcLabel}} &mdash; {{.}}{{end}}">{{if not .RepeatsPrevious}}<span
+                        class="tname">{{.Name}}</span>{{end}}</div>
+            {{end}}
+        {{end}}
+        <div class="pull" style="left: {{printf "%.3f" .PullPercent}}%"><span>Pull</span></div>
+        </div>
+        {{with .DPS}}
+            <div class="dps" id="dpsLane"
+                 data-values="{{.Values}}"
+                 data-start-ms="{{.StartMS}}"
+                 data-interval-ms="{{.IntervalMS}}">
+                <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+                    <line class="grid" x1="0" y1="50" x2="100" y2="50"/>
+                    <path class="fill" d="{{.Area}}"/>
+                    <polyline class="line" points="{{.Line}}"/>
+                </svg>
+            </div>
+        {{end}}
+        {{with .Taken}}
+            <div class="taken" id="takenLane"
+                 data-values="{{.Values}}"
+                 data-start-ms="{{.StartMS}}"
+                 data-interval-ms="{{.IntervalMS}}">
+                <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+                    <line class="grid" x1="0" y1="50" x2="100" y2="50"/>
+                    <path class="fill" d="{{.Area}}"/>
+                    <polyline class="line" points="{{.Line}}"/>
+                </svg>
+            </div>
+        {{end}}
+        <div class="ruler" id="ruler"></div>
+        <div class="crosshair" id="crosshair" hidden></div>
+      </div>
+    </div>
+    {{with .DPS}}
+        <div class="dps-axis">
+            <span>{{compact .Peak}}</span>
+            <span>{{compact .HalfPeak}}</span>
+            <span>0</span>
+        </div>
+    {{end}}
+    {{with .Taken}}
+        <div class="taken-axis">
+            <span>{{compact .Peak}}</span>
+            <span>{{compact .HalfPeak}}</span>
+            <span>0</span>
+        </div>
+    {{end}}
+    </div>
+    <div class="scale"><span>&minus;{{short .LeadIn}} (pre-pull)</span><span>{{duration .Duration}}</span></div>
+
+    {{if .Lusts}}
+        <ul class="lusts">
+            {{range .Lusts}}
+                <li><strong>{{.Label}}</strong> at {{.Timestamp}}, up for {{short .Duration}} on {{.Targets}} players</li>
+            {{end}}
+        </ul>
+    {{else}}
+        <p class="hint">No Bloodlust, Heroism or Time Warp during this pull.</p>
+    {{end}}
+
+    <div class="stats" style="margin-bottom: 1.5rem">
+        <div class="stat"><span class="value">{{len .Casts}}</span><span class="label">Casts</span></div>
+        <div class="stat"><span class="value" id="statPauses">&ndash;</span><span class="label" id="statPausesLabel">Pauses</span></div>
+        <div class="stat"><span class="value">{{.CancelledCount}}</span><span class="label">Cancelled</span></div>
+        <div class="stat"><span class="value" id="statIdle">&ndash;</span><span class="label">Total idle shown</span></div>
+        <div class="stat"><span class="value">{{short .LongestGap}}</span><span class="label">Longest gap</span></div>
+    </div>
+
+    <div class="table-legend">
+        <div class="sample">idle 1.8s <span class="hint">0:51 &rarr; 0:53, before Pyroblast</span></div>
+        <p>
+            Time with no cast. <strong>Includes your GCD</strong> (1.5s base, down to 0.75s with haste),
+            so only the excess was usable. Threshold under <strong>Advanced</strong>.
+        </p>
+    </div>
+
+    <div class="casts">
+        <table>
+            <thead>
+            <tr>
+                <th>Time</th>
+                <th>Ability</th>
+                <th class="num">Cast</th>
+                <th>Lust</th>
+            </tr>
+            </thead>
+            <tbody>
+            {{range .Sections}}
+                {{$phase := .Phase}}
+                {{if $phase.Name}}
+                    <tr class="phasehead">
+                        <td colspan="4">
+                            {{$phase.Name}}
+                            <span class="hint">&middot; {{$phase.Timestamp}} &middot; {{short $phase.Duration}}
+                                &middot; {{len .Casts}} casts</span>
+                        </td>
+                    </tr>
+                {{end}}
+                {{range .Casts}}
+                    {{if .Gap}}
+                        <tr class="idlerow" data-ms="{{.GapMS}}">
+                            <td colspan="4">idle {{short .Gap}}
+                                <span class="hint">{{.IdleFromLabel}} &rarr; {{.Timestamp}}, before {{.Name}}</span>
+                            </td>
+                        </tr>
+                    {{end}}
+                    <tr class="{{if .Cancelled}}cancelled {{end}}{{if .Precast}}precast {{end}}{{if .DuringLust}}lust{{end}}"
+                        title="{{if .Gap}}{{short .Gap}} idle before this cast{{else}}no idle time before this cast{{end}}">
+                        <td class="num">{{.Timestamp}}</td>
+                        <td>{{.Name}}</td>
+                        <td class="num">{{.CastLabel}}{{with .ProcLabel}}
+                            <span class="proctag">{{.}}</span>{{end}}</td>
+                        <td>{{if .DuringLust}}&#9889;{{end}}</td>
+                    </tr>
+                {{end}}
+            {{end}}
+            </tbody>
+        </table>
+    </div>
+{{end}}
+
+<script>
+    var whTooltips = {colorLinks: false, iconizeLinks: false, renameLinks: false};
+</script>
+<script src="https://wow.zamimg.com/js/tooltips.js" defer></script>
+
+<script>
+    (function () {
+        var inner = document.getElementById('tlInner');
+        if (!inner) return; // no player selected, so no timeline on the page
+
+        var frame = document.getElementById('tlFrame');
+        var crosshair = document.getElementById('crosshair');
+        var readout = document.getElementById('dpsReadout');
+        var dpsLane = document.getElementById('dpsLane');
+
+        var scroll = inner.parentElement;
+        var ruler = document.getElementById('ruler');
+        var range = document.getElementById('zoomRange');
+        var label = document.getElementById('zoomLabel');
+        var buttons = document.querySelectorAll('.tl-controls button.zoom');
+        var durationSec = (parseInt(inner.dataset.durationMs, 10) || 0) / 1000;
+        var totalSec = (parseInt(inner.dataset.totalMs, 10) || 0) / 1000 || durationSec;
+        var leadSec = (parseInt(inner.dataset.leadMs, 10) || 0) / 1000;
+        var zoom = 1;
+
+        // Candidate spacings for the time ruler, fine to coarse. The first one
+        // that leaves enough room between labels wins, so zooming in reveals
+        // finer gradations rather than sticking at the coarsest.
+        var STEPS = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600];
+
+        function stamp(sec) {
+            var m = Math.floor(sec / 60), s = Math.round(sec % 60);
+            return m + ':' + (s < 10 ? '0' : '') + s;
+        }
+
+        // Marks are labelled in fight time, but positioned on the drawn span,
+        // which starts before the pull.
+        function at(sec) { return 100 * (sec + leadSec) / totalSec; }
+
+        function drawRuler() {
+            if (!totalSec) return;
+            var width = inner.clientWidth;
+            var pxPerSec = width / totalSec;
+            var step = STEPS[STEPS.length - 1];
+            for (var i = 0; i < STEPS.length; i++) {
+                if (STEPS[i] * pxPerSec >= 70) { step = STEPS[i]; break; }
+            }
+            var html = '';
+            for (var t = 0; t <= durationSec; t += step) {
+                html += '<div class="mark" style="left:' + at(t) +
+                        '%"><span>' + stamp(t) + '</span></div>';
+            }
+            ruler.innerHTML = html;
+        }
+
+        // Rotated labels take horizontal room, so at any zoom several can land
+        // on top of one another. Two casts can even share a timestamp: a
+        // precast lands as the next cast bar begins. Labels are stacked into
+        // rows so every one stays readable.
+        var LABEL_ROWS = 2;
+        var LABEL_COS = Math.cos(55 * Math.PI / 180); // matches .tname rotation
+        var LABEL_PAD = 8;
+        var labelled = Array.prototype.slice
+            .call(inner.querySelectorAll('.track .tick, .boss .bcast, .track .cdblock, .raidlane .rcdblock'))
+            .filter(function (t) {
+                return t.classList.contains('cdblock') || t.classList.contains('rcdblock')
+                    || t.querySelector('.tname, .bname');
+            });
+
+        function layoutLabels() {
+            // Runs at every zoom: cooldown chips are always on show, even when
+            // the angled cast labels are not.
+            var measured = [];
+            labelled.forEach(function (tick) {
+                var raid = tick.classList.contains('rcdblock');
+                var block = raid || tick.classList.contains('cdblock');
+                var span = block ? tick.querySelector('span') : tick.querySelector('.tname, .bname');
+                if (!span) return;
+                // A hidden label has no width and needs no room.
+                if (!block && !span.offsetWidth) return;
+                measured.push({
+                    span: block ? tick : span,
+                    lane: raid ? 'rcd' + (tick.dataset.row || '0') : (block ? 'cd' + (tick.dataset.row || '0')
+                        : (tick.classList.contains('bcast') ? 'boss'
+                            : (tick.classList.contains('woven') ? 'woven' : 'main'))),
+                    x: tick.offsetLeft,
+                    // A block claims whichever is wider, the bar or its name;
+                    // angled labels only claim their horizontal projection.
+                    w: block ? Math.max(tick.offsetWidth, span.offsetWidth + 4) + LABEL_PAD
+                        : span.offsetWidth * LABEL_COS + LABEL_PAD
+                });
+            });
+
+            // Raid cooldowns are already stacked into rows server-side, so each
+            // row packs its labels independently.
+            var free = {};
+            function rowsFor(lane) {
+                if (!free[lane]) {
+                    free[lane] = [];
+                    for (var k = 0; k < LABEL_ROWS; k++) free[lane].push(-Infinity);
+                }
+                return free[lane];
+            }
+            measured.forEach(function (m) {
+                var rows = rowsFor(m.lane);
+                // A block already occupies its own row; its label may not move.
+                var limit = (m.lane.indexOf('cd') === 0 || m.lane.indexOf('rcd') === 0) ? 1 : LABEL_ROWS;
+                var row = 0;
+                while (row < limit && rows[row] > m.x) row++;
+                if (row === limit) {
+                    // No room in any row. Hide it rather than print it over a
+                    // neighbour; the tooltip still names the cast, and zooming
+                    // in brings the label back.
+                    m.span.classList.add('crowded');
+                    return;
+                }
+                m.span.classList.remove('crowded');
+                rows[row] = m.x + m.w;
+                m.span.style.setProperty('--row', row);
+            });
+        }
+
+        function setZoom(z, keepCentre) {
+            z = Math.min(24, Math.max(1, z));
+            // Hold the midpoint of the current view steady while zooming.
+            var centre = keepCentre && inner.clientWidth
+                ? (scroll.scrollLeft + scroll.clientWidth / 2) / inner.clientWidth
+                : null;
+
+            zoom = z;
+            inner.style.width = (z * 100) + '%';
+            inner.classList.toggle('labels', z >= 6);
+            if (frame) frame.classList.toggle('labels', z >= 6);
+            label.textContent = z.toFixed(1) + '\u00d7';
+            range.value = z;
+            buttons.forEach(function (b) {
+                b.classList.toggle('active', parseFloat(b.dataset.zoom) === z);
+            });
+            drawRuler();
+            layoutLabels();
+
+            if (centre !== null) {
+                scroll.scrollLeft = centre * inner.clientWidth - scroll.clientWidth / 2;
+            }
+        }
+
+        buttons.forEach(function (b) {
+            b.addEventListener('click', function () { setZoom(parseFloat(b.dataset.zoom), true); });
+        });
+        range.addEventListener('input', function () { setZoom(parseFloat(range.value), true); });
+
+        // Ctrl/Cmd + wheel zooms, matching the gesture people expect on a chart.
+        scroll.addEventListener('wheel', function (e) {
+            if (!e.ctrlKey && !e.metaKey) return;
+            e.preventDefault();
+            setZoom(zoom * (e.deltaY < 0 ? 1.15 : 1 / 1.15), true);
+        }, {passive: false});
+
+
+        // --- idle threshold -------------------------------------------------
+        // Every pause is already in the DOM; the threshold only decides which
+        // ones are shown. Filtering client-side keeps it instant and avoids
+        // re-querying Warcraft Logs on every adjustment.
+        var DEFAULT_IDLE_MS = 1500;
+        var STORAGE_KEY = 'wowinsight.idleMs';
+
+        var idleInput = document.getElementById('idleMs');
+        var idleSummary = document.getElementById('idleSummary');
+        var statPauses = document.getElementById('statPauses');
+        var statPausesLabel = document.getElementById('statPausesLabel');
+        var statIdle = document.getElementById('statIdle');
+        var idleRows = Array.prototype.slice.call(document.querySelectorAll('tr.idlerow'));
+        var idleBands = Array.prototype.slice.call(document.querySelectorAll('.track .gap'));
+
+        function humanMS(ms) {
+            if (ms < 1000) return ms + 'ms';
+            var s = ms / 1000;
+            if (s < 60) return s.toFixed(1) + 's';
+            return Math.floor(s / 60) + 'm ' + ('0' + Math.round(s % 60)).slice(-2) + 's';
+        }
+
+        function applyIdleThreshold(ms) {
+            var shown = 0, total = 0;
+            idleRows.forEach(function (row) {
+                var v = parseInt(row.dataset.ms, 10);
+                var visible = v >= ms;
+                row.style.display = visible ? '' : 'none';
+                if (visible) { shown++; total += v; }
+            });
+            idleBands.forEach(function (band) {
+                band.style.display = parseInt(band.dataset.ms, 10) >= ms ? '' : 'none';
+            });
+            statPauses.textContent = shown;
+            statPausesLabel.textContent = 'Pauses \u2265' + humanMS(ms);
+            statIdle.textContent = humanMS(total);
+            idleSummary.textContent = shown + ' of ' + idleRows.length + ' pauses shown';
+        }
+
+        function setIdleThreshold(ms, save) {
+            if (!isFinite(ms) || ms < 0) ms = DEFAULT_IDLE_MS;
+            applyIdleThreshold(ms);
+            if (save) {
+                try { localStorage.setItem(STORAGE_KEY, ms); } catch (e) { /* private mode */ }
+            }
+        }
+
+        if (idleInput) {
+            var saved = null;
+            try { saved = localStorage.getItem(STORAGE_KEY); } catch (e) { /* private mode */ }
+            if (saved !== null) idleInput.value = saved;
+            idleInput.addEventListener('input', function () {
+                setIdleThreshold(parseInt(idleInput.value, 10), true);
+            });
+            setIdleThreshold(parseInt(idleInput.value, 10), false);
+        }
+
+        // --- hover readout --------------------------------------------------
+        // The curve is evenly spaced, so a time maps straight to a bucket
+        // index; no search is needed.
+        var takenLane = document.getElementById('takenLane');
+
+        function seriesFrom(lane) {
+            if (!lane || !lane.dataset.values) return null;
+            return {
+                values: lane.dataset.values.split(',').map(Number),
+                start: parseInt(lane.dataset.startMs, 10) || 0,
+                interval: parseInt(lane.dataset.intervalMs, 10) || 0
+            };
+        }
+
+        var dpsSeries = seriesFrom(dpsLane);
+        var takenSeries = seriesFrom(takenLane);
+
+        // Buckets are evenly spaced, so a time maps straight to an index.
+        function sampleAt(series, sec) {
+            if (!series || !series.interval) return null;
+            var i = Math.round((sec * 1000 - series.start) / series.interval);
+            return (i >= 0 && i < series.values.length) ? series.values[i] : null;
+        }
+        var IDLE_READOUT = 'hover the timeline for a reading';
+
+        function compactNum(v) {
+            if (v >= 1e9) return (v / 1e9).toFixed(2) + 'b';
+            if (v >= 1e6) return (v / 1e6).toFixed(2) + 'm';
+            if (v >= 1e3) return (v / 1e3).toFixed(1) + 'k';
+            return Math.round(v).toString();
+        }
+
+        function signedStamp(sec) {
+            return (sec < 0 ? '-' : '') + stamp(Math.abs(sec));
+        }
+
+        var pendingFrame = 0;
+        var lastReadout = '';
+        var lastLeft = '';
+
+        function paintHover(clientX) {
+            var box = inner.getBoundingClientRect();
+            var fraction = (clientX - box.left) / box.width;
+            if (fraction < 0 || fraction > 1) return;
+
+            var left = (fraction * 100).toFixed(3) + '%';
+            if (left !== lastLeft) {
+                crosshair.style.left = left;
+                lastLeft = left;
+            }
+            if (crosshair.hidden) crosshair.hidden = false;
+
+            var sec = fraction * totalSec - leadSec;
+            var text = signedStamp(sec);
+            var dps = sampleAt(dpsSeries, sec);
+            var taken = sampleAt(takenSeries, sec);
+            if (dps === null && taken === null) {
+                text += '  \u2014  before the pull';
+            } else {
+                if (dps !== null) text += '  \u2014  ' + compactNum(dps) + ' DPS';
+                if (taken !== null) text += '  \u00b7  ' + compactNum(taken) + ' taken';
+            }
+            // Writing the same text again would still dirty layout.
+            if (text !== lastReadout) {
+                readout.textContent = text;
+                lastReadout = text;
+            }
+        }
+
+        inner.addEventListener('mousemove', function (e) {
+            var x = e.clientX;
+            if (pendingFrame) return;
+            pendingFrame = requestAnimationFrame(function () {
+                pendingFrame = 0;
+                paintHover(x);
+            });
+        });
+
+        inner.addEventListener('mouseleave', function () {
+            crosshair.hidden = true;
+            if (lastReadout !== IDLE_READOUT) {
+                readout.textContent = IDLE_READOUT;
+                lastReadout = IDLE_READOUT;
+            }
+        });
+
+        window.addEventListener('resize', drawRuler);
+        setZoom(1, false);
+    })();
+</script>
+</body>
+</html>
