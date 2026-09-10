@@ -74,8 +74,20 @@ jobs:
       - name: go test (race detector on, randomised order)
         run: go test -race -shuffle=on -covermode=atomic -coverprofile=cover.out ./...
 
-      - name: Coverage total (printed for the log, not yet a gate)
+      - name: Coverage per package (reported, never a gate)
+        # No floor, deliberately. A mechanical threshold on a judgement call
+        # steers work toward testing one-line accessors to clear a number,
+        # which is the same reason the dependency check was dropped in #8.
+        # `go test -coverprofile` already prints a line per package above; this
+        # adds the whole-module figure beneath it.
         run: go tool cover -func=cover.out | tail -1
+
+      - name: Skipped tests (the known-wrong inventory)
+        # A t.Skip does not fail when it starts passing, and without -v a skip
+        # is invisible. AGENTS.md requires each message to name the issue that
+        # fixes it, so this is the list of behaviour known to be wrong.
+        run: |
+          go test ./... -run . -v 2>&1 | grep -E '^\s*--- SKIP|^\s+.*_test\.go:[0-9]+: known wrong' || echo "(none)"
 
       - name: govulncheck (known CVEs on paths this code calls)
         # Pinned for the same reason as the linter. Run directly rather than via

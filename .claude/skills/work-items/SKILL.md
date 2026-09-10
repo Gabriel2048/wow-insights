@@ -131,6 +131,25 @@ has caveats is worse than one that names them.
 Draft items on the board have no backing issue and cannot be commented on; the script says
 so. Tell the user it needs converting to an issue rather than silently creating one.
 
+## An issue with more than one pull request
+
+The project board runs an **Auto-close issue** workflow, and `gh issue develop` creates a
+*connected* branch. Together they close the issue the moment the first linked pull request
+merges — **regardless of whether the body says `Closes` or `Refs`.** Verified on 2026-09-10:
+#10 was planned as three pull requests, PR A said `Refs #10`, and the issue was closed and
+moved to Done at the same second the merge landed.
+
+So for an issue you are deliberately splitting across pull requests, expect to reopen it
+after each merge until the last:
+
+```
+gh issue reopen 10 --repo Gabriel2048/wow-insights
+$S/wi.sh status 10 "In Progress"
+```
+
+Say in each pull request body which one of how many it is, so a reader knows the issue is
+not finished when it closes itself.
+
 ## Linking a commit without closing
 
 Only `Closes`/`Fixes` link a commit to an issue, and those close it. `Refs #12` creates no
@@ -139,16 +158,6 @@ entry on the issue timeline at all — verified on 2026-09-09, when a commit car
 
 ```
 $S/wi.sh comment 1 "Pushed: <sha> — https://github.com/Gabriel2048/wow-insights/commit/<sha>"
-```
-
-## Before committing
-
-Git identity is not set globally on this machine, so `git commit` fails outright. Set it
-on the repository, never globally, using the GitHub-provided noreply address:
-
-```
-git config --local user.name  "<github username>"
-git config --local user.email "<id>+<github username>@users.noreply.github.com"
 ```
 
 ## Conventions

@@ -1068,3 +1068,60 @@ func TestRaidCooldownWindowsCapsUnclosedBuffs(t *testing.T) {
 		t.Errorf("window lasted %v; an unclosed buff must not run to the fight end", d)
 	}
 }
+
+// buildTimeline is the half of Client.Timeline that has no I/O in it. The one
+// thing that could go wrong when it was split out is that layout() stops being
+// called, which is silent: every lane still renders, at left: 0.000%. This
+// asserts positions exist, which is the property layout() is there to produce.
+func TestBuildTimelinePositionsEverything(t *testing.T) {
+	fight := fightAt(100)
+	const fireball, timeWarp = 133, 80353
+
+	report := &timelineReport{
+		Casts: eventPage{Data: []event{
+			{Timestamp: 11000, Type: "begincast", AbilityGameID: fireball},
+			{Timestamp: 13000, Type: "cast", AbilityGameID: fireball},
+		}},
+		Lust: eventPage{Data: lustEvents(timeWarp, 21000, 61000, 22)},
+	}
+	report.MasterData.Abilities = []ability{
+		{GameID: fireball, Name: "Fireball"},
+		{GameID: timeWarp, Name: "Time Warp"},
+	}
+	report.MasterData.Actors = []Actor{{ID: 21, Name: "Testmage"}}
+
+	tl := buildTimeline(report, report.Casts.Data, fight)
+
+	if tl.Total <= 0 {
+		t.Fatalf("Total = %v, want a positive drawn span (layout was not run)", tl.Total)
+	}
+	if tl.PullPercent <= 0 {
+		t.Errorf("PullPercent = %v, want the pull placed after the lead-in", tl.PullPercent)
+	}
+	if len(tl.Casts) != 1 {
+		t.Fatalf("got %d casts, want 1 (the begincast/cast pair is one cast)", len(tl.Casts))
+	}
+	if tl.Casts[0].Percent <= 0 || tl.Casts[0].CastWidthPercent <= 0 {
+		t.Errorf("cast is at Percent=%v width=%v, want both positive — this is what a missing layout() looks like",
+			tl.Casts[0].Percent, tl.Casts[0].CastWidthPercent)
+	}
+	if len(tl.Lusts) != 1 {
+		t.Fatalf("got %d lust windows, want 1", len(tl.Lusts))
+	}
+	if tl.Lusts[0].StartPercent <= 0 || tl.Lusts[0].WidthPercent <= 0 {
+		t.Errorf("lust window is at %v wide %v, want both positive", tl.Lusts[0].StartPercent, tl.Lusts[0].WidthPercent)
+	}
+}
+
+// lustEvents builds a raid-wide buff: one apply and one remove per target, which
+// is what clears the raidLustMinTargets filter.
+func lustEvents(ability int, start, end float64, targets int) []event {
+	var events []event
+	for target := 1; target <= targets; target++ {
+		events = append(events,
+			event{Timestamp: start, Type: "applybuff", AbilityGameID: ability, SourceID: 21, TargetID: target},
+			event{Timestamp: end, Type: "removebuff", AbilityGameID: ability, SourceID: 21, TargetID: target},
+		)
+	}
+	return events
+}
