@@ -7,37 +7,37 @@ cd "$(dirname "$0")/.."
 
 step() { printf '\n\033[1m==> %s\033[0m\n' "$1"; }
 
-step "gofmt"
+step "gofmt (every file is canonically formatted)"
 unformatted=$(gofmt -l .)
 if [ -n "$unformatted" ]; then echo "not gofmt'd:"; echo "$unformatted"; exit 1; fi
 
-step "go vet"
+step "go vet (suspicious code the compiler still accepts)"
 go vet ./...
 
-step "go fix (modernizers)"
+step "go fix (no pending stdlib modernizations)"
 pending=$(go fix -diff ./...)
 if [ -n "$pending" ]; then
   echo "pending modernizations — run 'go fix ./...':"; echo "$pending"; exit 1
 fi
 
-step "golangci-lint"
+step "golangci-lint (unchecked errors, dead code, staticcheck)"
 # CI runs the prebuilt binary of this same version; `go run` compiles it
 # with the local toolchain instead. Keep the version in step with
 # .github/workflows/ci.yml -- see the note there about the built-with
 # constraint, which only the prebuilt binary can trip.
 go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2 run ./...
 
-step "test"
+step "go test (race detector on, randomised order)"
 go test -race -shuffle=on -covermode=atomic -coverprofile=cover.out ./...
 go tool cover -func=cover.out | tail -1
 
-step "govulncheck"
+step "govulncheck (known CVEs on paths this code calls)"
 go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
 
-step "build"
+step "go build (static binary, the artifact we deploy)"
 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /tmp/wowinsight .
 
-step "no third-party dependencies"
+step "go list -m all (still zero third-party dependencies)"
 mods=$(go list -m all)
 if [ "$mods" != "wowinsight" ]; then
   echo "expected exactly one module, got:"; echo "$mods"; exit 1
