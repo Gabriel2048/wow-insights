@@ -75,6 +75,73 @@ These are the calls tooling cannot make.
 - **`context.Context` is the first parameter and must be honoured.** Anything doing I/O
   takes one and passes it down; never stash it in a struct.
 
+## What tests are for
+
+Two jobs, and most tests here do both.
+
+**Documenting behaviour.** A test is the most reliable description of what this code does,
+because it is the only description that fails when it goes stale. Name the test after the
+behaviour rather than the function — `TestPrecastOnlyNearThePull`, not `TestBuildCasts3`.
+Put the real-world case in a doc comment above it: which log, which moment, what a player
+would see. Put the *reason* in the failure message, so the invariant is learnable from the
+output alone:
+
+```go
+t.Fatalf("got %d windows, want 1 (the personal buff must be excluded)", len(windows))
+```
+
+**Preserving behaviour.** Much of this code is heuristics whose reasoning lives only in a
+comment. A test pinning today's output is what makes a refactor safe to attempt at all.
+Prefer pinning an observable *property* — "phases tile the fight with no gaps", "idle never
+exceeds the elapsed span" — over a magic number: the property survives a legitimate change,
+the number does not.
+
+**Where a pinned behaviour turns out to be wrong.** Three cases, and only the first is the
+default:
+
+1. **Known wrong, not yet fixed — a temporary exception, due for removal.** Write the test
+   asserting the *intended* behaviour and skip it, naming the issue. Fixing the defect is
+   then a one-line deletion and the test turns green on its own:
+   ```go
+   t.Skip("known wrong: an instant Pyroblast in the opening 5s must be labelled instant, not precast. Fixed by #13.")
+   ```
+   `grep -rn 't.Skip'` is the complete inventory, and CI prints the skip list beside the
+   coverage line on every run. Go has no strict xfail — a skipped test does **not** fail
+   when it starts passing — so the message format is what keeps the inventory honest.
+
+   **This case exists only because #13 and #14 carry defects found before there was time
+   to fix them.** A skipped test is a broken test with a note attached, and broken tests
+   are not pushed here. When both of those issues have landed there should be no `t.Skip`
+   left in the repository, and **whichever of them merges last deletes this numbered item
+   and the CI step that prints the skip list.** If you are reading this and
+   `grep -rn 't.Skip'` finds nothing, that deletion is overdue.
+2. **A refactor turned a test red and you believe the test is what is wrong.** Start from
+   the opposite assumption: a refactor is not meant to change behaviour, so a red test
+   means you broke something until you can say why it does not. Red proves something
+   changed — it proves nothing about *which side* is wrong.
+
+   If you cannot argue the old expectation was wrong *without pointing at your new
+   output*, the code is what needs fixing and there is nothing to discuss. "The code
+   returns this now" restates the failure, it does not justify it.
+
+   If you can, **put that argument to the owner before you change anything, and wait.** Say
+   which assertion is red, what it was protecting, and why that expectation was wrong on
+   its own terms. Changing a passing assertion is the owner's call, not a step in your task.
+
+   Once agreed, make the change and record the reasoning in the pull request, so the
+   decision is readable from `git log` in a clone rather than only from a chat.
+3. **Never edit a passing assertion until it matches new output.** The hand-written
+   fixtures are the regression suite and each names the phenomenon it protects. An
+   assertion quietly rewritten destroys the only record of what the code used to do.
+
+**They are still Go tests.** Straight-line unless a table genuinely reads better; this
+suite is mostly straight-line by choice. `t.Fatalf` for a precondition that makes the
+following assertions meaningless, `t.Errorf` for each assertion. `t.Helper()` in helpers.
+Floats compared with a tolerance, never `==`. And **fixtures are functions returning fresh
+values, never package-level vars** — `buildCasts`, `auraWindows` and `buildPhases` sort
+their input slice in place, and the suite runs with `-shuffle=on`, so a shared fixture would
+be silently mutated by whichever test ran first.
+
 ## The one third-party thing that actually executes
 
 `templates/fight.html` loads `https://wow.zamimg.com/js/tooltips.js` — unversioned, no
@@ -111,8 +178,8 @@ issues exist precisely because several of them are already known to be wrong. Wh
 allowed is contradicting one *by accident*, or silently. If your change goes against an
 accepted record:
 
-- **raise it with the owner before you build on it.** Reversing an accepted decision
-  is theirs, not something to hand over as a finished pull request. Say what the record
+- **raise it with the owner before you build on it.** Reversing an accepted decision is the owner's
+  call, not something to hand over as a finished pull request. Say what the record
   decided, what has changed since, and why it no longer holds — then wait;
 - once agreed, add a new record that supersedes it, carrying the reasoning that makes the
   reversal correct now;

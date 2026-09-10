@@ -31,6 +31,9 @@ step "go test (race detector on, randomised order)"
 go test -race -shuffle=on -covermode=atomic -coverprofile=cover.out ./...
 go tool cover -func=cover.out | tail -1
 
+step "skipped tests (the known-wrong inventory)"
+go test ./... -run . -v 2>&1 | grep -E '^\s*--- SKIP|known wrong' || echo "(none)"
+
 step "govulncheck (known CVEs on paths this code calls)"
 go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
 
