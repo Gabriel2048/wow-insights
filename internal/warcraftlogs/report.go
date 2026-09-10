@@ -206,13 +206,21 @@ const reportQuery = `query ($code: String!) {
   }
 }`
 
+// reportResponse is the envelope the report query returns.
+type reportResponse struct {
+	ReportData struct {
+		Report *Report `json:"report"`
+	} `json:"reportData"`
+}
+
 // Report fetches the basic metadata for a report by its code.
+//
+// There is deliberately no fetch/build split here, unlike FightDetail and
+// Timeline: everything after the query is a nil check whose only input is the
+// code parameter it needs for the message. A free function for that would be
+// one branch behind a second name.
 func (c *Client) Report(ctx context.Context, code string) (*Report, error) {
-	var data struct {
-		ReportData struct {
-			Report *Report `json:"report"`
-		} `json:"reportData"`
-	}
+	var data reportResponse
 	if err := c.Query(ctx, reportQuery, map[string]any{"code": code}, &data); err != nil {
 		return nil, err
 	}

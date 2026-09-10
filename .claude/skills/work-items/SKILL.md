@@ -33,8 +33,7 @@ This is the flow issue #5 asked for, and `main` now enforces the parts it can.
 S=.claude/skills/work-items/scripts
 
 $S/wi.sh show 12                       # read the body before acting on it
-$S/wi.sh status 12 "In Progress"
-$S/wi.sh branch 12                     # linked branch named 12-<slug>, checked out
+$S/wi.sh branch 12                     # linked branch 12-<slug>, checked out, board -> In Progress
 # ...make the change...
 ./scripts/check.sh                     # the full gate; CI runs the same list
 git add -A && git commit
@@ -76,7 +75,9 @@ git diff --cached --name-only | grep -qx .env && echo "STOP: .env is staged"
 `{issue-number}-{slug}`, always created with `gh issue develop --name` — which is what
 creates GitHub's linked-branch relation. `git checkout -b` gives the same name with no
 link, and the board's `Linked pull requests` field stays empty. `wi.sh branch` does this
-correctly; use it. See `docs/decisions/2026-09-10-work-item-and-branch-conventions.md`.
+correctly and also moves the item to **In Progress**, because starting a branch is the
+moment work begins and a second command is a second thing to forget. Use it. See
+`docs/decisions/2026-09-10-work-item-and-branch-conventions.md`.
 
 For a review follow-up on an already-closed issue, reuse that issue's number
 (`8-ci-step-names`) and write `Refs #8` rather than `Closes`.

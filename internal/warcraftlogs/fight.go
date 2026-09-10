@@ -126,6 +126,32 @@ type tableData struct {
 	} `json:"data"`
 }
 
+// fightDetailReport is the report payload of the fight query. It is named
+// because buildFightDetail takes it; the structs nested inside it are not,
+// because nothing takes those.
+type fightDetailReport struct {
+	Code       string  `json:"code"`
+	Title      string  `json:"title"`
+	Fights     []Fight `json:"fights"`
+	MasterData struct {
+		Actors []Actor `json:"actors"`
+	} `json:"masterData"`
+	Damage  tableData `json:"damage"`
+	Healing tableData `json:"healing"`
+	Deaths  struct {
+		Data struct {
+			Entries []tableEntry `json:"entries"`
+		} `json:"data"`
+	} `json:"deaths"`
+}
+
+// fightDetailResponse is the envelope the fight query returns.
+type fightDetailResponse struct {
+	ReportData struct {
+		Report *fightDetailReport `json:"report"`
+	} `json:"reportData"`
+}
+
 const fightQuery = `query ($code: String!, $id: Int!) {
   reportData {
     report(code: $code) {
@@ -145,25 +171,19 @@ const fightQuery = `query ($code: String!, $id: Int!) {
 // FightDetail fetches one fight and the per-player damage, healing and deaths
 // for it.
 func (c *Client) FightDetail(ctx context.Context, code string, fightID int) (*FightDetail, error) {
-	var data struct {
-		ReportData struct {
-			Report *struct {
-				Code       string  `json:"code"`
-				Title      string  `json:"title"`
-				Fights     []Fight `json:"fights"`
-				MasterData struct {
-					Actors []Actor `json:"actors"`
-				} `json:"masterData"`
-				Damage  tableData `json:"damage"`
-				Healing tableData `json:"healing"`
-				Deaths  struct {
-					Data struct {
-						Entries []tableEntry `json:"entries"`
-					} `json:"data"`
-				} `json:"deaths"`
-			} `json:"report"`
-		} `json:"reportData"`
+	report, err := c.fetchFightDetail(ctx, code, fightID)
+	if err != nil {
+		return nil, err
 	}
+	return buildFightDetail(report), nil
+}
+
+// fetchFightDetail runs the fight query and returns the report payload, having
+// already rejected the two ways it can arrive unusable: no report at all, and a
+// report that does not carry the fight asked for. Both messages need code and
+// fightID, which is why they belong here rather than in the assembly.
+func (c *Client) fetchFightDetail(ctx context.Context, code string, fightID int) (*fightDetailReport, error) {
+	var data fightDetailResponse
 	if err := c.Query(ctx, fightQuery, map[string]any{"code": code, "id": fightID}, &data); err != nil {
 		return nil, err
 	}
@@ -174,6 +194,13 @@ func (c *Client) FightDetail(ctx context.Context, code string, fightID int) (*Fi
 	if len(report.Fights) == 0 {
 		return nil, fmt.Errorf("warcraftlogs: report %q has no fight %d", code, fightID)
 	}
+	return report, nil
+}
+
+// buildFightDetail assembles the per-player roster for one fight. It cannot
+// fail, and must not be called with a report carrying no fights — fetch has
+// already guaranteed one.
+func buildFightDetail(report *fightDetailReport) *FightDetail {
 	fight := report.Fights[0]
 
 	detail := &FightDetail{
@@ -246,5 +273,5 @@ func (c *Client) FightDetail(ctx context.Context, code string, fightID int) (*Fi
 	sort.Slice(detail.Players, func(i, j int) bool {
 		return strings.ToLower(detail.Players[i].Name) < strings.ToLower(detail.Players[j].Name)
 	})
-	return detail, nil
+	return detail
 }
