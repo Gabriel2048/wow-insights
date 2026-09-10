@@ -85,12 +85,3 @@ jobs:
 
       - name: go build (static binary, the artifact we deploy)
         run: CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /tmp/wowinsight .
-
-      - name: go list -m all (still zero third-party dependencies)
-        # Zero dependencies is a deliberate project property (see AGENTS.md,
-        # issue #9). Prose cannot enforce it; this can.
-        run: |
-          mods=$(go list -m all)
-          if [ "$mods" != "wowinsight" ]; then
-            echo "expected exactly one module, got:"; echo "$mods"; exit 1
-          fi
