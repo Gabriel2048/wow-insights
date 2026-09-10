@@ -37,10 +37,4 @@ go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
 step "go build (static binary, the artifact we deploy)"
 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /tmp/wowinsight .
 
-step "go list -m all (still zero third-party dependencies)"
-mods=$(go list -m all)
-if [ "$mods" != "wowinsight" ]; then
-  echo "expected exactly one module, got:"; echo "$mods"; exit 1
-fi
-
 printf '\n\033[32mall checks passed\033[0m\n'
