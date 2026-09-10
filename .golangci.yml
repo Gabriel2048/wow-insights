@@ -1,0 +1,30 @@
+version: "2"
+
+linters:
+  # The v2 "standard" set: errcheck, govet, ineffassign, staticcheck, unused.
+  default: standard
+
+  settings:
+    staticcheck:
+      # golangci-lint's own defaults, plus one. Listing `checks` replaces the
+      # default list wholesale rather than adding to it, so the ST* entries have
+      # to be repeated or they switch back on.
+      checks:
+        - all
+        - -ST1000 # package comment form
+        - -ST1003 # initialisms in names
+        - -ST1016 # consistent receiver names
+        - -ST1020 # "// Foo ..." form on exported funcs
+        - -ST1021 # ...on exported types
+        - -ST1022 # ...on exported vars
+        # QF* are style quickfixes, not correctness. QF1001 wants De Morgan's
+        # law applied to isReportCode's character-class test, which reads worse
+        # than the explicit ranges it would replace.
+        - -QF1001
+
+  exclusions:
+    presets:
+      # Drops the errcheck findings that every Go codebase ignores: a deferred
+      # Close on a reader, os.Setenv, fmt.Print*. None can fail in a way this
+      # program could act on. Real error handling stays enforced.
+      - std-error-handling

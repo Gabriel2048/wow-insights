@@ -1,0 +1,10 @@
+version: 2
+updates:
+  # Actions only. There is no Go ecosystem entry because the module has no
+  # third-party dependencies, and CI fails if that ever changes.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "ci"
