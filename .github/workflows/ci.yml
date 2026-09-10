@@ -23,9 +23,11 @@ jobs:
   ci:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check out the commit under test
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - name: Install Go (the version and toolchain go.mod pins)
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           # Single source of truth for the version. setup-go v6+ hashes go.mod
           # for its cache key; v5 hashed go.sum and would fail outright on this
@@ -33,24 +35,25 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: gofmt
+      - name: gofmt (every file is canonically formatted)
         run: |
           unformatted=$(gofmt -l .)
           if [ -n "$unformatted" ]; then
             echo "not gofmt'd:"; echo "$unformatted"; exit 1
           fi
 
-      - name: go vet
+      - name: go vet (suspicious code the compiler still accepts)
         run: go vet ./...
 
-      - name: go fix (modernizers)
+      - name: go fix (no pending stdlib modernizations)
         run: |
           pending=$(go fix -diff ./...)
           if [ -n "$pending" ]; then
             echo "pending modernizations — run 'go fix ./...':"; echo "$pending"; exit 1
           fi
 
-      - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+      - name: golangci-lint (unchecked errors, dead code, staticcheck)
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
           # Pinned, not `latest`: this is a required check, and a new upstream
           # release must not be able to turn it red with no change to this repo.
@@ -68,22 +71,22 @@ jobs:
           # ignoring a key that has been renamed.
           verify: true
 
-      - name: test
+      - name: go test (race detector on, randomised order)
         run: go test -race -shuffle=on -covermode=atomic -coverprofile=cover.out ./...
 
-      - name: coverage
+      - name: Coverage total (printed for the log, not yet a gate)
         run: go tool cover -func=cover.out | tail -1
 
-      - name: govulncheck
+      - name: govulncheck (known CVEs on paths this code calls)
         # Pinned for the same reason as the linter. Run directly rather than via
         # the action: the toolchain is already installed above, and `go run
         # pkg@version` resolves outside this module, so it cannot touch go.mod.
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
 
-      - name: build
+      - name: go build (static binary, the artifact we deploy)
         run: CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /tmp/wowinsight .
 
-      - name: no third-party dependencies
+      - name: go list -m all (still zero third-party dependencies)
         # Zero dependencies is a deliberate project property (see AGENTS.md,
         # issue #9). Prose cannot enforce it; this can.
         run: |
