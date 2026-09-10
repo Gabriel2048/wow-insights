@@ -1,4 +1,8 @@
-package main
+// Package env reads the .env file used for local development.
+//
+// It deliberately does not decide what the values mean; that belongs to
+// whoever calls it.
+package env
 
 import (
 	"bufio"
@@ -6,10 +10,10 @@ import (
 	"strings"
 )
 
-// loadEnvFile reads simple KEY=VALUE lines from path into the process
-// environment. Existing environment variables win, so a real export always
-// overrides the file. A missing file is not an error.
-func loadEnvFile(path string) error {
+// Load reads simple KEY=VALUE lines from path into the process environment.
+// Existing environment variables win, so a real export always overrides the
+// file. A missing file is not an error.
+func Load(path string) error {
 	f, err := os.Open(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -38,11 +42,11 @@ func loadEnvFile(path string) error {
 	return scanner.Err()
 }
 
-// firstEnv returns the value of the first name that is set to a non-empty
-// value. Warcraft Logs' own client page labels the fields "Client ID" and
-// "Client Secret", so those spellings are accepted alongside the conventional
+// First returns the value of the first name that is set to a non-empty value.
+// Warcraft Logs' own client page labels the fields "Client ID" and "Client
+// Secret", so those spellings are accepted alongside the conventional
 // WARCRAFTLOGS_* names.
-func firstEnv(names ...string) string {
+func First(names ...string) string {
 	for _, name := range names {
 		if v := strings.TrimSpace(os.Getenv(name)); v != "" {
 			return v

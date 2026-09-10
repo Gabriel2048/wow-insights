@@ -878,83 +878,133 @@ func classifyProcs(casts []Cast, windows []auraWindow) {
 	}
 }
 
-// Timeline fetches the cast timeline for one player in one fight, along with
-// the raid lust windows that ran during it.
-func (c *Client) Timeline(ctx context.Context, code string, fight Fight, sourceID int) (*Timeline, error) {
-	var data struct {
-		ReportData struct {
-			Report *struct {
-				Casts      eventPage        `json:"casts"`
-				Lust       eventPage        `json:"lust"`
-				Procs      eventPage        `json:"procs"`
-				Cooldowns  eventPage        `json:"cooldowns"`
-				RaidCDs    eventPage        `json:"raidCDs"`
-				Damage     dpsGraphResponse `json:"damage"`
-				Taken      dpsGraphResponse `json:"taken"`
-				BossCasts  eventPage        `json:"bossCasts"`
-				MasterData struct {
-					Abilities []ability `json:"abilities"`
-					Actors    []Actor   `json:"actors"`
-					NPCs      []Actor   `json:"npcs"`
-				} `json:"masterData"`
-				Fights []struct {
-					EncounterID      int `json:"encounterID"`
-					PhaseTransitions []struct {
-						ID        int     `json:"id"`
-						StartTime float64 `json:"startTime"`
-					} `json:"phaseTransitions"`
-				} `json:"fights"`
-				Phases []struct {
-					EncounterID int `json:"encounterID"`
-					Phases      []struct {
-						ID             int    `json:"id"`
-						Name           string `json:"name"`
-						IsIntermission bool   `json:"isIntermission"`
-					} `json:"phases"`
-				} `json:"phases"`
-			} `json:"report"`
-		} `json:"reportData"`
-	}
+// timelineReport is the report payload of the timeline query. It is named
+// because buildTimeline takes it as a parameter; the structs nested inside it
+// are left anonymous, because nothing takes those.
+type timelineReport struct {
+	Casts      eventPage        `json:"casts"`
+	Lust       eventPage        `json:"lust"`
+	Procs      eventPage        `json:"procs"`
+	Cooldowns  eventPage        `json:"cooldowns"`
+	RaidCDs    eventPage        `json:"raidCDs"`
+	Damage     dpsGraphResponse `json:"damage"`
+	Taken      dpsGraphResponse `json:"taken"`
+	BossCasts  eventPage        `json:"bossCasts"`
+	MasterData struct {
+		Abilities []ability `json:"abilities"`
+		Actors    []Actor   `json:"actors"`
+		NPCs      []Actor   `json:"npcs"`
+	} `json:"masterData"`
+	Fights []struct {
+		EncounterID      int `json:"encounterID"`
+		PhaseTransitions []struct {
+			ID        int     `json:"id"`
+			StartTime float64 `json:"startTime"`
+		} `json:"phaseTransitions"`
+	} `json:"fights"`
+	Phases []struct {
+		EncounterID int `json:"encounterID"`
+		Phases      []struct {
+			ID             int    `json:"id"`
+			Name           string `json:"name"`
+			IsIntermission bool   `json:"isIntermission"`
+		} `json:"phases"`
+	} `json:"phases"`
+}
 
-	query := fmt.Sprintf(timelineQuery,
-		abilityFilter(lustAbilityIDs), abilityFilter(procAuraIDs()),
-		abilityFilter(cooldownIDs()), abilityFilter(raidCooldownIDs()))
-	vars := map[string]any{
-		"code": code, "id": fight.ID, "source": sourceID,
-		"start": fight.StartTime, "end": fight.EndTime,
-	}
-	if err := c.Query(ctx, query, vars, &data); err != nil {
-		return nil, err
-	}
-	report := data.ReportData.Report
-	if report == nil {
-		return nil, fmt.Errorf("warcraftlogs: report %q not found", code)
-	}
+// timelineResponse is the envelope the timeline query returns.
+type timelineResponse struct {
+	ReportData struct {
+		Report *timelineReport `json:"report"`
+	} `json:"reportData"`
+}
 
-	casts := report.Casts.Data
-	// The events API pages; a long fight can exceed one page of casts.
-	for next := report.Casts.NextPageTimestamp; next != nil; {
-		var page struct {
-			ReportData struct {
-				Report struct {
-					Casts eventPage `json:"casts"`
-				} `json:"report"`
-			} `json:"reportData"`
-		}
-		vars["start"] = *next
-		const pageQuery = `query ($code: String!, $id: Int!, $source: Int!, $start: Float!, $end: Float!) {
+// castPageResponse is the envelope one further page of cast events returns.
+// Its Report is a value rather than a pointer: a null report decodes to the
+// zero value, the cursor comes back nil, and the paging loop stops. That is a
+// silent truncation where the same response on the first page is an error — an
+// asymmetry left exactly as it was, and owned by the error taxonomy issue.
+type castPageResponse struct {
+	ReportData struct {
+		Report struct {
+			Casts eventPage `json:"casts"`
+		} `json:"report"`
+	} `json:"reportData"`
+}
+
+const castPageQuery = `query ($code: String!, $id: Int!, $source: Int!, $start: Float!, $end: Float!) {
   reportData { report(code: $code) {
     casts: events(dataType: Casts, fightIDs: [$id], sourceID: $source,
                   startTime: $start, endTime: $end, limit: 10000) { data nextPageTimestamp }
   } }
 }`
-		if err := c.Query(ctx, pageQuery, vars, &page); err != nil {
-			return nil, err
-		}
-		casts = append(casts, page.ReportData.Report.Casts.Data...)
-		next = page.ReportData.Report.Casts.NextPageTimestamp
+
+// castVars builds the variables both cast queries take. Each call gets a fresh
+// map rather than sharing and mutating one across pages: the request bodies are
+// identical either way, since encoding/json sorts map keys, but a map rewritten
+// mid-loop is a trap for whoever adds the next query.
+func castVars(code string, fight Fight, sourceID int, start float64) map[string]any {
+	return map[string]any{
+		"code": code, "id": fight.ID, "source": sourceID,
+		"start": start, "end": fight.EndTime,
+	}
+}
+
+// Timeline fetches the cast timeline for one player in one fight, along with
+// the raid lust windows that ran during it.
+func (c *Client) Timeline(ctx context.Context, code string, fight Fight, sourceID int) (*Timeline, error) {
+	report, casts, err := c.fetchTimeline(ctx, code, fight, sourceID)
+	if err != nil {
+		return nil, err
+	}
+	return buildTimeline(report, casts, fight), nil
+}
+
+// fetchTimeline runs the timeline query and follows the cast pagination. The
+// casts come back separately from the report because the report's own Casts
+// field holds only the first page, whereas the slice is every page.
+func (c *Client) fetchTimeline(ctx context.Context, code string, fight Fight, sourceID int) (*timelineReport, []event, error) {
+	query := fmt.Sprintf(timelineQuery,
+		abilityFilter(lustAbilityIDs), abilityFilter(procAuraIDs()),
+		abilityFilter(cooldownIDs()), abilityFilter(raidCooldownIDs()))
+
+	var data timelineResponse
+	if err := c.Query(ctx, query, castVars(code, fight, sourceID, fight.StartTime), &data); err != nil {
+		return nil, nil, err
+	}
+	report := data.ReportData.Report
+	if report == nil {
+		return nil, nil, fmt.Errorf("warcraftlogs: report %q not found", code)
 	}
 
+	casts := report.Casts.Data
+	// The events API pages; a long fight can exceed one page of casts.
+	for next := report.Casts.NextPageTimestamp; next != nil; {
+		page, err := c.fetchCastPage(ctx, code, fight, sourceID, *next)
+		if err != nil {
+			return nil, nil, err
+		}
+		casts = append(casts, page.Data...)
+		next = page.NextPageTimestamp
+	}
+	return report, casts, nil
+}
+
+// fetchCastPage fetches one further page of cast events, beginning at the
+// cursor the previous page returned.
+func (c *Client) fetchCastPage(ctx context.Context, code string, fight Fight, sourceID int, start float64) (eventPage, error) {
+	var page castPageResponse
+	if err := c.Query(ctx, castPageQuery, castVars(code, fight, sourceID, start), &page); err != nil {
+		return eventPage{}, err
+	}
+	return page.ReportData.Report.Casts, nil
+}
+
+// buildTimeline assembles a decoded response into a positioned Timeline. It
+// cannot fail: nothing between here and the layout pass can. layout is the last
+// thing it does, so "every *Timeline handed to a caller has been laid out"
+// holds for every caller, not only Client.Timeline.
+func buildTimeline(report *timelineReport, casts []event, fight Fight) *Timeline {
 	names := make(map[int]string, len(report.MasterData.Abilities))
 	for _, a := range report.MasterData.Abilities {
 		names[a.GameID] = a.Name
@@ -998,7 +1048,7 @@ func (c *Client) Timeline(ctx context.Context, code string, fight Fight, sourceI
 	}
 
 	timeline.layout()
-	return timeline, nil
+	return timeline
 }
 
 // buildCasts converts raw cast events into fight-relative casts. Warcraft Logs

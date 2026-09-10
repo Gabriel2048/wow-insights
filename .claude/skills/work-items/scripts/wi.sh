@@ -126,6 +126,10 @@ cmd_branch() {
   name="$num-$slug"
   gh issue develop "$num" --repo "$REPO" --name "$name" --base main --checkout
   echo "branch: $name  (linked to #$num)"
+  # Starting a branch is the moment work begins, so move the board here rather
+  # than asking a human to remember a second command. Non-fatal: a failed status
+  # update must not leave the caller wondering whether the branch was created.
+  cmd_status "$num" "In Progress" || echo "warning: branch created, but the board was not moved" >&2
 }
 
 cmd_comment() {
