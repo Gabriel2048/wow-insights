@@ -3,6 +3,7 @@ package warcraftlogs
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -1117,10 +1118,7 @@ func buildCasts(events []event, fight Fight, names map[int]string, lusts []RaidW
 	// cast they overlap has finished, and must not read as a fresh pause.
 	var reached time.Duration
 	for i := range casts {
-		gap := casts[i].Offset - reached
-		if gap < 0 {
-			gap = 0
-		}
+		gap := max(casts[i].Offset-reached, 0)
 		casts[i].Gap = gap
 		if casts[i].End > reached {
 			reached = casts[i].End
@@ -1147,7 +1145,7 @@ func medianCastTime(casts []Cast, abilityID int) time.Duration {
 	if len(seen) == 0 {
 		return 0
 	}
-	sort.Slice(seen, func(i, j int) bool { return seen[i] < seen[j] })
+	slices.Sort(seen)
 	return seen[len(seen)/2]
 }
 
