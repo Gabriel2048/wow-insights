@@ -37,7 +37,7 @@ func fakeAPI(t *testing.T) *httptest.Server {
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Errorf("decode request: %v", err)
 		}
-		k, err := key(body.Variables)
+		k, err := key(body.OperationName, body.Variables)
 		if err != nil {
 			t.Errorf("key: %v", err)
 		}
@@ -47,6 +47,9 @@ func fakeAPI(t *testing.T) *httptest.Server {
 		}
 		responses := map[string]string{
 			"ratelimit": `{"data":{"rateLimitData":{"limitPerHour":3600,"pointsSpentThisHour":7,"pointsResetIn":900}}}`,
+			"masterdata": `{"data":{"reportData":{"report":{"masterData":{"abilities":[{"gameID":133,"name":"Fireball"},{"gameID":1,"name":"Ashen Call"},{"gameID":2,"name":"Echo"}],
+				"actors":[{"id":7,"name":"Zorbulax","subType":"Mage"},{"id":11,"name":"Ash","subType":"Priest"}],
+				"npcs":[{"id":30,"name":"The Coiled One","subType":"Boss"}]}}}}}`,
 			"report": `{"data":{"reportData":{"report":{"code":"` + realCode + `","title":"Zorbulax's Tuesday",
 				"startTime":1700000000000,"endTime":1700000600000,"owner":{"name":"` + realOwner + `"},
 				"zone":{"name":"The Venomous Abyss"},
@@ -74,7 +77,7 @@ func fakeAPI(t *testing.T) *httptest.Server {
 				              "npcs":[{"id":30,"name":"The Coiled One","subType":"Boss"}]},
 				"fights":[{"encounterID":3000,"phaseTransitions":[{"id":1,"startTime":1000}]}],
 				"phases":[{"encounterID":3000,"phases":[{"id":1,"name":"Stage One","isIntermission":false}]}]}}}}`,
-			"timeline-12-7-5000": `{"data":{"reportData":{"report":{"casts":{"data":[
+			"castpage-12-7-5000": `{"data":{"reportData":{"report":{"casts":{"data":[
 				{"timestamp":6000,"type":"cast","sourceID":7,"targetID":-1,"abilityGameID":133}],"nextPageTimestamp":null}}}}}`,
 		}
 		resp, ok := responses[k]
@@ -122,7 +125,7 @@ func record(t *testing.T) string {
 
 func TestRecordingWritesOneFilePerExchange(t *testing.T) {
 	dir := record(t)
-	for _, name := range []string{"ratelimit.json", "report.json", "fight-12.json", "timeline-12-7-1000.json", "timeline-12-7-5000.json"} {
+	for _, name := range []string{"ratelimit.json", "report.json", "masterdata.json", "fight-12.json", "timeline-12-7-1000.json", "castpage-12-7-5000.json"} {
 		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
 			t.Errorf("%s was not written: %v (the second timeline file is the cast page the cursor pointed at)", name, err)
 		}
@@ -221,7 +224,7 @@ func TestReplayServesTheRecordingThroughTheRealClient(t *testing.T) {
 		t.Fatalf("Timeline() returned error: %v", err)
 	}
 	// Two casts on the first page (a begincast/cast pair, so one Cast) and one
-	// on the second page.
+	// on the second page. The master data came from its own recording.
 	if len(timeline.Casts) != 2 {
 		t.Errorf("len(Casts) = %d, want 2 (the second page of casts was not followed)", len(timeline.Casts))
 	}
@@ -317,23 +320,28 @@ func TestReplaceWordMatchesWholeWordsCaseInsensitively(t *testing.T) {
 	}
 }
 
-func TestKeyNamesEachQueryByItsVariables(t *testing.T) {
+func TestKeyNamesEachOperationByItsVariables(t *testing.T) {
 	for _, tc := range []struct {
+		op   string
 		vars map[string]any
 		want string
 	}{
-		{nil, "ratelimit"},
-		{map[string]any{"code": "x"}, "report"},
-		{map[string]any{"code": "x", "id": 12.0}, "fight-12"},
-		{map[string]any{"code": "x", "id": 12.0, "source": 7.0, "start": 1000.0, "end": 301000.0}, "timeline-12-7-1000"},
-		{map[string]any{"code": "x", "id": 12.0, "source": 7.0, "start": 123456.5, "end": 301000.0}, "timeline-12-7-123456.5"},
+		{"RateLimit", nil, "ratelimit"},
+		{"Report", map[string]any{"code": "x"}, "report"},
+		{"MasterData", map[string]any{"code": "x"}, "masterdata"}, // same variables as Report; the name tells them apart
+		{"Fight", map[string]any{"code": "x", "id": 12.0}, "fight-12"},
+		{"Timeline", map[string]any{"code": "x", "id": 12.0, "source": 7.0, "start": 1000.0, "end": 301000.0, "procs": "ability.id in (1)"}, "timeline-12-7-1000"},
+		{"CastPage", map[string]any{"code": "x", "id": 12.0, "source": 7.0, "start": 123456.5, "end": 301000.0}, "castpage-12-7-123456.5"},
 	} {
-		got, err := key(tc.vars)
+		got, err := key(tc.op, tc.vars)
 		if err != nil || got != tc.want {
-			t.Errorf("key(%v) = %q, %v; want %q", tc.vars, got, err, tc.want)
+			t.Errorf("key(%s, %v) = %q, %v; want %q", tc.op, tc.vars, got, err, tc.want)
 		}
 	}
-	if _, err := key(map[string]any{"unknown": 1}); err == nil {
-		t.Error("key() accepted variables it has no name for")
+	if _, err := key("Unknown", map[string]any{"code": "x"}); err == nil {
+		t.Error("key() accepted an operation it has no name for")
+	}
+	if _, err := key("", map[string]any{"code": "x"}); err == nil {
+		t.Error("key() accepted a request that names no operation")
 	}
 }

@@ -1,8 +1,6 @@
 package warcraftlogs
 
 import (
-	"encoding/json"
-	"os"
 	"testing"
 	"time"
 )
@@ -302,29 +300,8 @@ func TestBuildDPSDropsASeriesOnAnotherGrid(t *testing.T) {
 // Cry from two warriors and Stampeding Roar from three druids: the numbers
 // were read before they were pinned.
 func TestGoldenRecordedKillLanes(t *testing.T) {
-	raw, err := os.ReadFile("../../testdata/timeline-1-21-1141518.json")
-	if err != nil {
-		t.Skipf("no recording: %v", err)
-	}
-	var env struct{ Data timelineResponse }
-	if err := json.Unmarshal(raw, &env); err != nil {
-		t.Fatal(err)
-	}
-	rep := env.Data.ReportData.Report
-	names := map[int]string{}
-	for _, a := range rep.MasterData.Abilities {
-		names[a.GameID] = a.Name
-	}
-	actors := map[int]string{}
-	for _, a := range rep.MasterData.Actors {
-		actors[a.ID] = a.Name
-	}
-	npcs := map[int]Actor{}
-	for _, n := range rep.MasterData.NPCs {
-		npcs[n.ID] = n
-	}
-	first := rep.Casts.Data[0].Timestamp
-	fight := Fight{StartTime: first - 168, EndTime: first + 425000}
+	rep, fight := recordedKill(t)
+	names, actors, npcs := rep.names(), rep.actorNames(), rep.npcs()
 
 	bosses := buildBossCasts(rep.BossCasts.Data, npcs, names, fight)
 	interrupted := map[string]int{}

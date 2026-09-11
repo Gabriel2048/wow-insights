@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"wowinsight/internal/warcraftlogs"
 )
@@ -193,5 +194,19 @@ func TestASubmittedLinkIsCapped(t *testing.T) {
 	}
 	if strings.Contains(rec.Body.String(), strings.Repeat("x", maxURLParam+1)) {
 		t.Error("the page echoes more of the link than the cap allows")
+	}
+}
+
+// The guard refusing to spend is a 503 that says when to come back.
+func TestBudgetGuardIsA503WithTheMinutes(t *testing.T) {
+	wcl := fakeWCL{fightDetail: func(context.Context, string, int) (*warcraftlogs.FightDetail, error) {
+		return nil, &warcraftlogs.BudgetError{Spent: 3300, Limit: 3600, ResetIn: 12 * time.Minute}
+	}}
+	rec := get(t, wcl, "/report/ExampleReport123/fight/12")
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want 503", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "Try again in about 12 minutes") {
+		t.Errorf("body lacks the minutes: %q", rec.Body.String())
 	}
 }

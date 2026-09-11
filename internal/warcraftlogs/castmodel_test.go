@@ -1,9 +1,7 @@
 package warcraftlogs
 
 import (
-	"encoding/json"
 	"math/rand/v2"
-	"os"
 	"slices"
 	"testing"
 	"time"
@@ -386,22 +384,9 @@ func FuzzBuildCasts(f *testing.F) {
 // kill, each shorter than the spell's own cast time, is what moving for
 // mechanics looks like.
 func TestGoldenRecordedKill(t *testing.T) {
-	raw, err := os.ReadFile("../../testdata/timeline-1-21-1141518.json")
-	if err != nil {
-		t.Skipf("no recording: %v (record one with go run ./cmd/dev/record)", err)
-	}
-	var env struct{ Data timelineResponse }
-	if err := json.Unmarshal(raw, &env); err != nil {
-		t.Fatal(err)
-	}
-	rep := env.Data.ReportData.Report
-	names := map[int]string{}
-	for _, a := range rep.MasterData.Abilities {
-		names[a.GameID] = a.Name
-	}
+	rep, fight := recordedKill(t)
 	events := rep.Casts.Data
-	fight := Fight{StartTime: events[0].Timestamp, EndTime: events[len(events)-1].Timestamp + 1000}
-	casts := buildCasts(events, fight, names, nil)
+	casts := buildCasts(events, fight, rep.names(), nil)
 
 	kinds := map[string]int{}
 	var wasted time.Duration

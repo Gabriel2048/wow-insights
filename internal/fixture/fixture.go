@@ -17,33 +17,37 @@ import (
 	"strings"
 )
 
-// Every response the client asks for is identified by the GraphQL variables it
-// sends, never by the query text. Keying on the text would make every edit to
-// a query a re-record, which needs credentials that agents do not have.
+// Every response the client asks for is identified by the operation's name
+// and the GraphQL variables it sends, never by the query text. Keying on the
+// text would make every edit to a query a re-record, which needs credentials
+// that agents do not have; the name is what GraphQL itself calls the
+// document, and two operations that take the same variables (Report and
+// MasterData both take {code}) need it to tell them apart.
 //
-// The shapes the client sends today:
+//	RateLimit                                    -> ratelimit
+//	Report {code}                                -> report
+//	MasterData {code}                            -> masterdata
+//	Fight {code, id}                             -> fight-<id>
+//	Timeline {code, id, source, start, end, ...} -> timeline-<id>-<source>-<start>
+//	CastPage {code, id, source, start, end}      -> castpage-<id>-<source>-<start>
 //
-//	none                                   -> ratelimit
-//	{code}                                 -> report
-//	{code, id}                             -> fight-<id>
-//	{code, id, source, start, end}         -> timeline-<id>-<source>-<start>
-//
-// start is part of the key because it is the pagination cursor: the first
-// page starts at the fight's start time and each further page of casts at the
-// nextPageTimestamp the previous one returned. The report code is deliberately
-// absent from every key — see Redact.
-func key(vars map[string]any) (string, error) {
-	switch {
-	case len(vars) == 0:
-		return "ratelimit", nil
-	case vars["source"] != nil:
-		return "timeline-" + number(vars["id"]) + "-" + number(vars["source"]) + "-" + number(vars["start"]), nil
-	case vars["id"] != nil:
-		return "fight-" + number(vars["id"]), nil
-	case vars["code"] != nil:
-		return "report", nil
+// start is part of the cast keys because it is the pagination cursor. The
+// report code is deliberately absent from every key — see Redact. The filter
+// variables are absent too: they are derived from the spec tables, not from
+// the request, and a change to them is not a different recording.
+func key(op string, vars map[string]any) (string, error) {
+	name := strings.ToLower(op)
+	switch op {
+	case "RateLimit", "Report", "MasterData":
+		return name, nil
+	case "Fight":
+		return name + "-" + number(vars["id"]), nil
+	case "Timeline", "CastPage":
+		return name + "-" + number(vars["id"]) + "-" + number(vars["source"]) + "-" + number(vars["start"]), nil
+	case "":
+		return "", fmt.Errorf("fixture: the request names no operation")
 	}
-	return "", fmt.Errorf("fixture: no key for variables %v", vars)
+	return "", fmt.Errorf("fixture: no key for operation %s", op)
 }
 
 // number formats a JSON number the way it is written in a filename. Both the
@@ -59,9 +63,11 @@ func number(v any) string {
 	return fmt.Sprint(v)
 }
 
-// graphQLRequest is the body the client posts. Only the variables matter here.
+// graphQLRequest is the body the client posts. The operation name and the
+// variables are what a recording is keyed on.
 type graphQLRequest struct {
-	Variables map[string]any `json:"variables"`
+	OperationName string         `json:"operationName"`
+	Variables     map[string]any `json:"variables"`
 }
 
 // tokenRequest reports whether a request is for the OAuth token rather than

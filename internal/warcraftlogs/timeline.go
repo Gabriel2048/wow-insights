@@ -817,65 +817,6 @@ type ability struct {
 	Name   string `json:"name"`
 }
 
-const timelineQuery = `query ($code: String!, $id: Int!, $source: Int!, $start: Float!, $end: Float!) {
-  reportData {
-    report(code: $code) {
-      casts: events(
-        dataType: Casts, fightIDs: [$id], sourceID: $source,
-        startTime: $start, endTime: $end, limit: 10000
-      ) { data nextPageTimestamp }
-      lust: events(
-        dataType: Buffs, fightIDs: [$id],
-        startTime: $start, endTime: $end, limit: 10000,
-        filterExpression: "%s"
-      ) { data nextPageTimestamp }
-      procs: events(
-        dataType: Buffs, fightIDs: [$id], targetID: $source,
-        startTime: $start, endTime: $end, limit: 10000,
-        filterExpression: "%s"
-      ) { data nextPageTimestamp }
-      cooldowns: events(
-        dataType: Buffs, fightIDs: [$id], targetID: $source,
-        startTime: $start, endTime: $end, limit: 10000,
-        filterExpression: "%s"
-      ) { data nextPageTimestamp }
-      raidCDs: events(
-        dataType: Buffs, fightIDs: [$id],
-        startTime: $start, endTime: $end, limit: 10000,
-        filterExpression: "%s"
-      ) { data nextPageTimestamp }
-      damage: graph(
-        dataType: DamageDone, fightIDs: [$id], sourceID: $source,
-        startTime: $start, endTime: $end
-      )
-      taken: graph(
-        dataType: DamageTaken, fightIDs: [$id], sourceID: $source,
-        startTime: $start, endTime: $end
-      )
-      bossCasts: events(
-        dataType: Casts, fightIDs: [$id], hostilityType: Enemies,
-        startTime: $start, endTime: $end, limit: 10000
-      ) { data nextPageTimestamp }
-      masterData {
-        abilities { gameID name }
-        actors(type: "Player") { id name subType }
-        npcs: actors(type: "NPC") { id name subType }
-      }
-      fights(fightIDs: [$id]) { encounterID phaseTransitions { id startTime } }
-      phases { encounterID phases { id name isIntermission } }
-    }
-  }
-}`
-
-// abilityFilter builds an events filter expression for a set of ability IDs.
-func abilityFilter(ids []int) string {
-	text := make([]string, len(ids))
-	for i, id := range ids {
-		text[i] = fmt.Sprint(id)
-	}
-	return "ability.id in (" + strings.Join(text, ",") + ")"
-}
-
 // procAuraIDs is the sorted key set of procAuras, so the query is stable.
 func procAuraIDs() []int {
 	ids := make([]int, 0, len(procAuras))
@@ -1016,20 +957,18 @@ type timelineReport struct {
 	// document arrived partially. Not a JSON field; set by fetchTimeline.
 	incomplete []string
 
-	Casts      eventPage        `json:"casts"`
-	Lust       eventPage        `json:"lust"`
-	Procs      eventPage        `json:"procs"`
-	Cooldowns  eventPage        `json:"cooldowns"`
-	RaidCDs    eventPage        `json:"raidCDs"`
-	Damage     dpsGraphResponse `json:"damage"`
-	Taken      dpsGraphResponse `json:"taken"`
-	BossCasts  eventPage        `json:"bossCasts"`
-	MasterData struct {
-		Abilities []ability `json:"abilities"`
-		Actors    []Actor   `json:"actors"`
-		NPCs      []Actor   `json:"npcs"`
-	} `json:"masterData"`
-	Fights []struct {
+	Casts     eventPage        `json:"casts"`
+	Lust      eventPage        `json:"lust"`
+	Procs     eventPage        `json:"procs"`
+	Cooldowns eventPage        `json:"cooldowns"`
+	RaidCDs   eventPage        `json:"raidCDs"`
+	Damage    dpsGraphResponse `json:"damage"`
+	Taken     dpsGraphResponse `json:"taken"`
+	BossCasts eventPage        `json:"bossCasts"`
+	// MasterData is fetched by its own report-scoped query and attached here
+	// by fetchTimeline, so buildTimeline sees one document as before.
+	MasterData masterData `json:"-"`
+	Fights     []struct {
 		EncounterID      int `json:"encounterID"`
 		PhaseTransitions []struct {
 			ID        int     `json:"id"`
@@ -1044,6 +983,42 @@ type timelineReport struct {
 			IsIntermission bool   `json:"isIntermission"`
 		} `json:"phases"`
 	} `json:"phases"`
+}
+
+// masterData is the report's ability, player and NPC tables — the same for
+// every fight in it.
+type masterData struct {
+	Abilities []ability `json:"abilities"`
+	Actors    []Actor   `json:"actors"`
+	NPCs      []Actor   `json:"npcs"`
+}
+
+// masterDataResponse is the envelope the master data query returns.
+type masterDataResponse struct {
+	ReportData struct {
+		Report *struct {
+			MasterData masterData `json:"masterData"`
+		} `json:"report"`
+	} `json:"reportData"`
+}
+
+// fetchMasterData runs the report-scoped master data query.
+func (c *Client) fetchMasterData(ctx context.Context, code string) (masterData, error) {
+	var data masterDataResponse
+	err := c.Query(ctx, masterDataOp, map[string]any{"code": code}, &data)
+	if data.ReportData.Report == nil {
+		return masterData{}, notFound(err, code)
+	}
+	// A partial document with the master data present is the master data;
+	// the timeline query will report its own gaps.
+	var apiErr *APIError
+	if errors.As(err, &apiErr) && apiErr.Status == http.StatusOK && !errors.Is(err, ErrRateLimited) {
+		err = nil
+	}
+	if err != nil {
+		return masterData{}, err
+	}
+	return data.ReportData.Report.MasterData, nil
 }
 
 // timelineResponse is the envelope the timeline query returns.
@@ -1066,12 +1041,19 @@ type castPageResponse struct {
 	} `json:"reportData"`
 }
 
-const castPageQuery = `query ($code: String!, $id: Int!, $source: Int!, $start: Float!, $end: Float!) {
-  reportData { report(code: $code) {
-    casts: events(dataType: Casts, fightIDs: [$id], sourceID: $source,
-                  startTime: $start, endTime: $end, limit: 10000) { data nextPageTimestamp }
-  } }
-}`
+// timelineVars is castVars plus the four filters, each present only when its
+// set is not empty. Each filter is its own named variable, so the document
+// says which lane gets which — a positional Sprintf, which this replaced,
+// mis-filled two lanes with each other's data if two arguments were swapped,
+// and said nothing.
+func timelineVars(code string, fight Fight, sourceID int) map[string]any {
+	vars := castVars(code, fight, sourceID, fight.StartTime)
+	filterVariable(vars, "lust", lustAbilityIDs)
+	filterVariable(vars, "procs", procAuraIDs())
+	filterVariable(vars, "cooldowns", cooldownIDs())
+	filterVariable(vars, "raidCDs", raidCooldownIDs())
+	return vars
+}
 
 // castVars builds the variables both cast queries take. Each call gets a fresh
 // map rather than sharing and mutating one across pages: the request bodies are
@@ -1098,12 +1080,13 @@ func (c *Client) Timeline(ctx context.Context, code string, fight Fight, sourceI
 // casts come back separately from the report because the report's own Casts
 // field holds only the first page, whereas the slice is every page.
 func (c *Client) fetchTimeline(ctx context.Context, code string, fight Fight, sourceID int) (*timelineReport, []event, error) {
-	query := fmt.Sprintf(timelineQuery,
-		abilityFilter(lustAbilityIDs), abilityFilter(procAuraIDs()),
-		abilityFilter(cooldownIDs()), abilityFilter(raidCooldownIDs()))
+	master, err := c.fetchMasterData(ctx, code)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	var data timelineResponse
-	err := c.Query(ctx, query, castVars(code, fight, sourceID, fight.StartTime), &data)
+	err = c.Query(ctx, timelineOp, timelineVars(code, fight, sourceID), &data)
 	report := data.ReportData.Report
 	// The document asks for eleven independent fields, and GraphQL may
 	// answer with ten of them and an error on the eleventh. That is a
@@ -1124,6 +1107,7 @@ func (c *Client) fetchTimeline(ctx context.Context, code string, fight Fight, so
 		return nil, nil, err
 	}
 	report.incomplete = incomplete
+	report.MasterData = master
 
 	casts := report.Casts.Data
 	// The events API pages; a long fight can exceed one page of casts.
@@ -1142,7 +1126,7 @@ func (c *Client) fetchTimeline(ctx context.Context, code string, fight Fight, so
 // cursor the previous page returned.
 func (c *Client) fetchCastPage(ctx context.Context, code string, fight Fight, sourceID int, start float64) (eventPage, error) {
 	var page castPageResponse
-	if err := c.Query(ctx, castPageQuery, castVars(code, fight, sourceID, start), &page); err != nil {
+	if err := c.Query(ctx, castPageOp, castVars(code, fight, sourceID, start), &page); err != nil {
 		return eventPage{}, err
 	}
 	return page.ReportData.Report.Casts, nil

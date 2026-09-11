@@ -42,6 +42,13 @@ func classify(err error) problem {
 			message = fmt.Sprintf("Warcraft Logs' hourly budget for this app is spent. Try again in about %d minutes.", int(apiErr.RetryAfter.Round(time.Minute).Minutes()))
 		}
 		return problem{http.StatusServiceUnavailable, message, slog.LevelWarn}
+	case errors.Is(err, warcraftlogs.ErrBudgetExhausted):
+		message := "Warcraft Logs' hourly budget for this app is nearly spent, so this page is on hold. Try again later."
+		var budgetErr *warcraftlogs.BudgetError
+		if errors.As(err, &budgetErr) && budgetErr.ResetIn > 0 {
+			message = fmt.Sprintf("Warcraft Logs' hourly budget for this app is nearly spent, so this page is on hold. Try again in about %d minutes.", max(1, int(budgetErr.ResetIn.Round(time.Minute).Minutes())))
+		}
+		return problem{http.StatusServiceUnavailable, message, slog.LevelWarn}
 	case errors.Is(err, warcraftlogs.ErrNoCredentials), errors.Is(err, warcraftlogs.ErrBadCredentials):
 		return problem{http.StatusServiceUnavailable, "This server cannot reach Warcraft Logs: its credentials are missing or rejected.", slog.LevelError}
 	case errors.Is(err, context.DeadlineExceeded):

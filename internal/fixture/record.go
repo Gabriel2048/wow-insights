@@ -50,7 +50,7 @@ func (r *Recorder) RoundTrip(req *http.Request) (*http.Response, error) {
 	if err := json.Unmarshal(payload, &body); err != nil {
 		return nil, fmt.Errorf("fixture: decode request: %w", err)
 	}
-	k, err := key(body.Variables)
+	k, err := key(body.OperationName, body.Variables)
 	if err != nil {
 		return nil, err
 	}

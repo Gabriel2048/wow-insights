@@ -62,7 +62,20 @@ type Client struct {
 	refreshing chan struct{}
 	lastErr    error
 	lastErrAt  time.Time
+
+	// The budget gauge: what the API last said about the hourly points
+	// budget, and when. Every document carries it, so it is as fresh as the
+	// last call. A gauge, not per-query attribution — under concurrency a
+	// before/after difference credits other callers' spend to whichever
+	// answer arrived next.
+	budget   RateLimit
+	budgetAt time.Time
 }
+
+// budgetGuard is the share of the hourly budget past which the expensive
+// queries are refused, so the app sheds load with a sentence saying when to
+// come back rather than failing hard at 100% with everyone's page.
+const budgetGuard = 0.9
 
 // The retry policy for the wire — a 429, a 5xx, or a transport error. Never
 // a 4xx and never a GraphQL-level error: those are the document's, and asking
@@ -319,8 +332,13 @@ func (e graphQLError) path() string {
 // out before the errors are reported, and the error returned is an *APIError
 // naming the fields that failed — a caller that can use a partial document
 // checks for it with errors.As and carries on with what it has.
-func (c *Client) Query(ctx context.Context, query string, variables map[string]any, out any) error {
-	payload, err := json.Marshal(map[string]any{"query": query, "variables": variables})
+func (c *Client) Query(ctx context.Context, op operation, variables map[string]any, out any) error {
+	if op.expensive() {
+		if err := c.checkBudget(); err != nil {
+			return err
+		}
+	}
+	payload, err := json.Marshal(map[string]any{"operationName": op.name, "query": op.document, "variables": variables})
 	if err != nil {
 		return err
 	}
@@ -355,8 +373,45 @@ func (c *Client) Query(ctx context.Context, query string, variables map[string]a
 		if status != http.StatusOK {
 			return &APIError{Status: status, Body: keepBody(body), RetryAfter: retryAfter(header.Get("Retry-After"))}
 		}
-		return decodeResponse(body, out)
+		return c.decodeResponse(body, out)
 	}
+}
+
+// Budget is what the API last said about the hourly points budget, and
+// whether it has said anything yet.
+func (c *Client) Budget() (RateLimit, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.budget, !c.budgetAt.IsZero()
+}
+
+// checkBudget refuses an expensive query when the last snapshot shows the
+// budget past the guard and the hour it measured has not rolled over yet.
+func (c *Client) checkBudget() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	b := c.budget
+	if c.budgetAt.IsZero() || b.LimitPerHour <= 0 {
+		return nil
+	}
+	resetAt := c.budgetAt.Add(time.Duration(b.PointsResetIn) * time.Second)
+	if time.Now().After(resetAt) {
+		return nil // the hour has rolled over since the snapshot
+	}
+	if b.PointsSpentThisHour < budgetGuard*float64(b.LimitPerHour) {
+		return nil
+	}
+	return &BudgetError{Spent: b.PointsSpentThisHour, Limit: b.LimitPerHour, ResetIn: time.Until(resetAt)}
+}
+
+// noteBudget records the snapshot a response carried.
+func (c *Client) noteBudget(b RateLimit) {
+	if b.LimitPerHour <= 0 {
+		return
+	}
+	c.mu.Lock()
+	c.budget, c.budgetAt = b, time.Now()
+	c.mu.Unlock()
 }
 
 // post sends one request and reads its whole body. A transport failure and a
@@ -383,9 +438,10 @@ func (c *Client) post(ctx context.Context, token string, payload []byte) (int, [
 	return resp.StatusCode, body, resp.Header, nil
 }
 
-// decodeResponse unpacks a 200: the data into out, and the GraphQL errors, if
-// any, into an *APIError returned alongside.
-func decodeResponse(body []byte, out any) error {
+// decodeResponse unpacks a 200: the data into out, the budget snapshot into
+// the gauge, and the GraphQL errors, if any, into an *APIError returned
+// alongside.
+func (c *Client) decodeResponse(body []byte, out any) error {
 	var envelope struct {
 		Data   json.RawMessage `json:"data"`
 		Errors []graphQLError  `json:"errors"`
@@ -393,9 +449,15 @@ func decodeResponse(body []byte, out any) error {
 	if err := json.Unmarshal(body, &envelope); err != nil {
 		return fmt.Errorf("%w: decode response: %w", ErrUpstream, err)
 	}
-	if out != nil && len(envelope.Data) > 0 && string(envelope.Data) != "null" {
-		if err := json.Unmarshal(envelope.Data, out); err != nil {
-			return fmt.Errorf("%w: decode data: %w", ErrUpstream, err)
+	if len(envelope.Data) > 0 && string(envelope.Data) != "null" {
+		var gauge rateLimitResponse
+		if json.Unmarshal(envelope.Data, &gauge) == nil {
+			c.noteBudget(gauge.RateLimitData)
+		}
+		if out != nil {
+			if err := json.Unmarshal(envelope.Data, out); err != nil {
+				return fmt.Errorf("%w: decode data: %w", ErrUpstream, err)
+			}
 		}
 	}
 	if len(envelope.Errors) > 0 {
@@ -425,7 +487,6 @@ type RateLimit struct {
 // offers, which makes it a good check that credentials work.
 func (c *Client) RateLimit(ctx context.Context) (RateLimit, error) {
 	var data rateLimitResponse
-	const query = `query { rateLimitData { limitPerHour pointsSpentThisHour pointsResetIn } }`
-	err := c.Query(ctx, query, nil, &data)
+	err := c.Query(ctx, rateLimitOp, nil, &data)
 	return data.RateLimitData, err
 }

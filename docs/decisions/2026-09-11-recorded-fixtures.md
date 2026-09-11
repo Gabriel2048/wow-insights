@@ -27,9 +27,12 @@ only the wire swapped, the cast pagination included. A fake `logsClient` in pack
 `main` was the obvious alternative and cannot do this: it can hand back a `Timeline`, but
 not a laid-out one, so the page it produced would be one no user ever sees.
 
-**Files are raw, compact JSON, keyed by the GraphQL variables.** One file per exchange —
-`report.json`, `fight-<id>.json`, `timeline-<id>-<source>-<start>.json` — with the
-response body as the entire content. The one risk in this change is "does a committed
+**Files are raw, compact JSON, keyed by the operation name and the GraphQL variables.**
+One file per exchange — `report.json`, `masterdata.json`, `fight-<id>.json`,
+`timeline-<id>-<source>-<start>.json`, `castpage-<id>-<source>-<start>.json` — with the
+response body as the entire content. (Keyed on variables alone until #42 named the
+operations; `Report` and `MasterData` both take `{code}` and needed the name to tell
+them apart.) The one risk in this change is "does a committed
 file hold a real name?", so a reviewer, `grep`, GitHub's blob view and secret scanning
 all have to be able to read it; gzip would defeat every one of them and save nothing,
 since git compresses blobs itself. Compact rather than indented so a re-record is not a

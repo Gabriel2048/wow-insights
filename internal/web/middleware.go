@@ -10,6 +10,8 @@ import (
 	"runtime/debug"
 	"strings"
 	"time"
+
+	"wowinsight/internal/warcraftlogs"
 )
 
 // A middleware wraps a handler. func(http.Handler) http.Handler is the whole
@@ -77,7 +79,15 @@ type ctxKey int
 const (
 	loggerKey ctxKey = iota
 	callsKey
+	budgetKey
 )
+
+// requestBudget is what the access line says about the hourly budget: the
+// last snapshot any upstream call in this request came back with.
+type requestBudget struct {
+	snapshot warcraftlogs.RateLimit
+	known    bool
+}
 
 // requestID gives every request an id, returns it in a response header so a
 // user's report can be matched to a log line, and attaches a logger carrying
@@ -167,7 +177,9 @@ func (s *Server) accessLog(mux *http.ServeMux) middleware {
 			start := time.Now()
 			rw := &responseWriter{ResponseWriter: w}
 			calls := new(int)
-			r = r.WithContext(context.WithValue(r.Context(), callsKey, calls))
+			budget := new(requestBudget)
+			ctx := context.WithValue(r.Context(), callsKey, calls)
+			r = r.WithContext(context.WithValue(ctx, budgetKey, budget))
 
 			next.ServeHTTP(rw, r)
 
@@ -179,14 +191,24 @@ func (s *Server) accessLog(mux *http.ServeMux) middleware {
 			if pattern == "" {
 				pattern = "(no route)"
 			}
-			s.logger(r).Info("request",
+			attrs := []any{
 				"method", r.Method,
 				"pattern", pattern,
 				"status", rw.status(),
 				"duration_ms", time.Since(start).Milliseconds(),
 				"bytes", rw.bytes,
 				"upstream_calls", *calls,
-			)
+			}
+			if budget.known {
+				// A gauge, not attribution: under concurrency the snapshot
+				// credits other requests' spend to this one.
+				attrs = append(attrs,
+					"points_spent", budget.snapshot.PointsSpentThisHour,
+					"points_limit", budget.snapshot.LimitPerHour,
+					"points_reset_in_s", budget.snapshot.PointsResetIn,
+				)
+			}
+			s.logger(r).Info("request", attrs...)
 		})
 	}
 }
@@ -232,5 +254,12 @@ func (w *responseWriter) status() int {
 func countCall(ctx context.Context) {
 	if n, ok := ctx.Value(callsKey).(*int); ok {
 		*n++
+	}
+}
+
+// noteBudget records the budget snapshot the last upstream call returned.
+func noteBudget(ctx context.Context, snapshot warcraftlogs.RateLimit) {
+	if b, ok := ctx.Value(budgetKey).(*requestBudget); ok {
+		b.snapshot, b.known = snapshot, true
 	}
 }
