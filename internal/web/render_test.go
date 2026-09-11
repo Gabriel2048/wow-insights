@@ -1,4 +1,4 @@
-package main
+package web
 
 import (
 	"bytes"
@@ -14,9 +14,9 @@ import (
 // failure this suite exists to catch, and why the output is buffered here.
 func render(t *testing.T, name string, data any) string {
 	t.Helper()
-	tpl, err := parseTemplates()
+	tpl, err := ParseTemplates()
 	if err != nil {
-		t.Fatalf("parseTemplates() returned error: %v", err)
+		t.Fatalf("ParseTemplates() returned error: %v", err)
 	}
 	var buf bytes.Buffer
 	if err := tpl.ExecuteTemplate(&buf, name, data); err != nil {
@@ -29,9 +29,9 @@ func render(t *testing.T, name string, data any) string {
 // without this a syntax error passes gofmt, vet, the linter, the tests and the
 // build, and panics on the first request after deploy.
 func TestTemplatesParse(t *testing.T) {
-	tpl, err := parseTemplates()
+	tpl, err := ParseTemplates()
 	if err != nil {
-		t.Fatalf("parseTemplates() returned error: %v", err)
+		t.Fatalf("ParseTemplates() returned error: %v", err)
 	}
 	for _, name := range []string{"index.html", "fight.html"} {
 		if tpl.Lookup(name) == nil {
@@ -214,7 +214,7 @@ func TestIndexLinksMatchARegisteredRoute(t *testing.T) {
 		t.Fatal("the index page emitted no fight links, so this test is asserting nothing")
 	}
 
-	mux := newTestServer(t, fakeWCL{}).routes()
+	mux := newTestServer(t, fakeWCL{}).Routes()
 	for _, m := range links {
 		req := httptest.NewRequest("GET", m[1], nil)
 		if _, pattern := mux.Handler(req); pattern == "" {

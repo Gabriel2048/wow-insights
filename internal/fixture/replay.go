@@ -30,7 +30,7 @@ type Replay struct {
 func Open(dir string) (*Replay, error) {
 	body, err := os.ReadFile(filepath.Join(dir, "report.json"))
 	if err != nil {
-		return nil, fmt.Errorf("fixture: %w (is %s a directory written by 'go run ./cmd/record'?)", err, dir)
+		return nil, fmt.Errorf("fixture: %w (is %s a directory written by 'go run ./cmd/dev/record'?)", err, dir)
 	}
 	var report struct {
 		Data struct {

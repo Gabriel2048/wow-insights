@@ -37,52 +37,67 @@ flowchart LR
 
 ## 2. How the code is organised
 
-Five packages. Solid arrows are imports and are verified; one of them — `cmd/record`
-reading `.env` through `internal/env` — is declared in the diagram source and checked,
-but not drawn, because the line would only cross `main`'s. Dotted arrows are relations that are not imports, which is what makes them
-worth drawing — including the two wires the `-fixture`
-flag chooses between: without it the client talks to Warcraft Logs, with it the replay
-transport sits under the same client and answers from `testdata/`.
+Seven packages: one that ships, two a developer runs, four they are built from. Solid
+arrows are imports and are verified. Not every import is drawn: each binary also builds
+the client with `warcraftlogs.New`, and `record` reads `.env` like `main` does — those edges
+are declared in the diagram source and checked, but left off the picture, because the
+labels already say it and the lines would only cross what matters. Dotted arrows are
+relations that are not imports, which is what makes them worth drawing — including the
+two wires under the client: in the shipped binary it talks to Warcraft Logs; under
+`serve-recorded` the replay transport sits beneath the same client and answers from
+`testdata/`.
 
 ```mermaid
 flowchart TB
     %% verified: package graph
-    templates[/"templates/*.html<br/>embedded at compile time"/]
-    main["main<br/>HTTP layer, routes, templates<br/>server.go · main.go · format.go"]
-    record["cmd/record<br/>the fixture recorder"]
+    subgraph ships["ships"]
+        main["main<br/>credentials → client → web"]
+    end
+    subgraph dev["cmd/dev — nothing here ships"]
+        serve_recorded["serve-recorded<br/>recording → client → web"]
+        record["record<br/>the fixture recorder"]
+    end
+    templates[/"internal/web/templates/*.html<br/>embedded at compile time"/]
+    web["internal/web<br/>HTTP layer, routes, templates"]
     env["internal/env<br/>.env loading"]
     fixture["internal/fixture<br/>replay and record transports"]
-    warcraftlogs["internal/warcraftlogs<br/>API client + analysis + layout<br/>client · report · fight · timeline · boss · dps"]
+    warcraftlogs["internal/warcraftlogs<br/>API client + analysis + layout"]
     api[("Warcraft Logs API")]
     testdata[/"testdata/<br/>the committed recording"/]
 
     main --> env
-    main -->|"used only with -fixture"| fixture
-    main --> warcraftlogs
+    main --> web
+    serve_recorded --> web
+    serve_recorded -->|"installs the replay<br/>under the client"| fixture
     record -->|"records through"| fixture
-    record --> warcraftlogs
-    %% cmd/record also imports env (for .env). Declared here so the test
-    %% verifies it, and not drawn: the line would only cross main's.
+    templates -.->|"go:embed"| web
+    web --> warcraftlogs
+    %% Every binary also builds the client (warcraftlogs.New), and record
+    %% reads .env. Real, verified, and not drawn: the labels say it and the
+    %% lines would only cross what matters.
+    %% main --> warcraftlogs
+    %% serve_recorded --> warcraftlogs
+    %% record --> warcraftlogs
     %% record --> env
-
-    templates -.->|"go:embed"| main
-    warcraftlogs -.->|"no -fixture: the real wire"| api
-    fixture -.->|"-fixture: replay installed<br/>under the client via WithHTTPClient"| warcraftlogs
-    fixture -.->|"-fixture: reads"| testdata
+    fixture -.->|"WithHTTPClient"| warcraftlogs
+    fixture -.->|"serve-recorded reads"| testdata
+    fixture -.->|"record writes"| testdata
+    warcraftlogs -.->|"the real wire"| api
 ```
 
 **The two seams**, which is where anything gets substituted:
 
 | Seam | Declared in | What hangs on it |
 | --- | --- | --- |
-| `logsClient` — the four methods the handlers call | `server.go`, by the consumer | `fakeWCL` in tests; the cache decorator #2 will add |
+| `logsClient` — the four methods the handlers call | `internal/web/server.go`, by the consumer | `fakeWCL` in tests; the cache decorator #2 will add |
 | `http.RoundTripper` under the client, via `WithHTTPClient` | `internal/warcraftlogs/client.go` | the recorder and the replay in `internal/fixture` |
 
 The replay sits *under* the client rather than beside it on purpose: a fake client can
 return a `Timeline`, but not a laid-out one — `layout()` is unexported and runs only
-inside `(*Client).Timeline`. `-fixture` reads the committed recording in `testdata/`
-through that seam; `cmd/record` is how a human makes one, and is otherwise out of the
-way. See `docs/decisions/2026-09-11-recorded-fixtures.md`.
+inside `(*Client).Timeline`. `cmd/dev/serve-recorded` reads the committed recording in
+`testdata/` through that seam; `cmd/dev/record` is how a human makes one. Neither is in
+the shipped binary, which has no offline mode. See
+`docs/decisions/2026-09-11-recorded-fixtures.md`.
 
 **Inside `internal/warcraftlogs`**, one file per concern. `FightDetail` and `Timeline` are
 each split into a `fetchX` method on `*Client` that does I/O and a pure `buildX` from the
@@ -103,30 +118,30 @@ one query and no build step.
 ```mermaid
 sequenceDiagram
     actor B as Browser
-    participant S as server (main)
+    participant S as internal/web
     participant C as warcraftlogs.Client
     participant T as transport
     participant W as Warcraft Logs
     participant F as testdata/
 
-    Note over S,F: main picks the transport once, at startup, from the -fixture flag:<br/>absent → the real wire to Warcraft Logs · present → replay from that directory
+    Note over S,F: the binary picks the transport once, at startup:<br/>the shipped one uses the real wire · cmd/dev/serve-recorded installs the replay
 
     B->>S: GET /report/{code}/fight/{id}?player={actor}
     S->>S: ParseReportCode, Atoi — 400 before any API call
     S->>C: FightDetail(code, id)
     C->>T: fightQuery {code, id}
-    alt no -fixture
+    alt shipped binary
         T->>W: POST /api/v2/client
-    else -fixture
+    else serve-recorded
         T->>F: read fight-{id}.json
     end
     C->>C: buildFightDetail — roster, tables, deaths
     alt player resolves to an actor in this fight
         S->>C: Timeline(code, fight, actor)
         C->>T: timelineQuery {code, id, source, start, end}
-        alt no -fixture
+        alt shipped binary
             T->>W: POST /api/v2/client
-        else -fixture
+        else serve-recorded
             T->>F: read timeline-{id}-{source}-{start}.json
         end
         loop casts.nextPageTimestamp != null
@@ -142,7 +157,7 @@ sequenceDiagram
   the notice.
 - Every `*Timeline` a caller receives has been laid out. `layout()` is the last statement
   of `buildTimeline`, and `TestBuildTimelinePositionsEverything` pins it.
-- The two flows are one code path with a different transport underneath. Everything
+- The two binaries are one code path with a different transport underneath. Everything
   from the client up — queries, paging, `build`, `layout()`, the template — is identical,
   which is what makes the offline page trustworthy. The recorder is the third transport:
   the real wire, with a copy kept of every response.
@@ -164,8 +179,8 @@ no check-in — only the diagram edit, if any.
 `%% verified: package graph`, takes its solid `-->` edges, and compares them with the
 import graph `go/build` reports for every package in the module. A package or import
 edge missing from the diagram fails the gate; so does an edge the code no longer has.
-Node ids are the last path segment of the package (`env`, `fixture`), and `main` for the
-root. An edge written in a `%%` comment is verified like a drawn one and not rendered —
+Node ids are the last path segment of the package (`env`, `fixture`) with hyphens as
+underscores (`serve_recorded`), and `main` for the root. An edge written in a `%%` comment is verified like a drawn one and not rendered —
 the escape hatch for a package whose edges would only add crossings, used by
 `cmd/record`. Dotted edges (`-.->`) are not checked, which is what they are for.
 

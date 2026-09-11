@@ -1,4 +1,8 @@
-package main
+// Package web is the HTTP layer: the routes, the handlers and the templates.
+// It is composed by two binaries — the shipped one at the module root, over
+// real credentials, and cmd/dev/serve-recorded, over a recording — and knows
+// which it is running under only through the client it is handed.
+package web
 
 import (
 	"context"
@@ -16,11 +20,11 @@ import (
 //go:embed templates/*.html
 var templateFS embed.FS
 
-// parseTemplates parses the embedded template set. It returns an error rather
+// ParseTemplates parses the embedded template set. It returns an error rather
 // than panicking: the previous template.Must ran at package init, which go
 // build never executes and no test could reach, so a broken template passed the
 // whole gate and panicked on the first request after deploy.
-func parseTemplates() (*template.Template, error) {
+func ParseTemplates() (*template.Template, error) {
 	return template.New("").Funcs(templateFuncs()).ParseFS(templateFS, "templates/*.html")
 }
 
@@ -35,21 +39,24 @@ type logsClient interface {
 	Timeline(ctx context.Context, code string, fight warcraftlogs.Fight, sourceID int) (*warcraftlogs.Timeline, error)
 }
 
-// server holds the dependencies shared by the HTTP handlers.
-type server struct {
+// Server holds the dependencies shared by the HTTP handlers.
+type Server struct {
 	wcl logsClient
 	tpl *template.Template
 	log *log.Logger
 }
 
-func newServer(wcl logsClient, tpl *template.Template, logger *log.Logger) *server {
-	return &server{wcl: wcl, tpl: tpl, log: logger}
+// New wires a Server. wcl is whatever satisfies logsClient — in production
+// a *warcraftlogs.Client over the real wire, offline the same type over a
+// replay transport, in tests a fake.
+func New(wcl logsClient, tpl *template.Template, logger *log.Logger) *Server {
+	return &Server{wcl: wcl, tpl: tpl, log: logger}
 }
 
-// routes returns the mux the server listens on. It returns the concrete type
+// Routes returns the mux the server listens on. It returns the concrete type
 // rather than http.Handler because a caller needs Handler() to ask which
 // pattern a path resolves to.
-func (s *server) routes() *http.ServeMux {
+func (s *Server) Routes() *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", s.index)
 	mux.HandleFunc("GET /report/{code}/fight/{id}", s.fight)
@@ -76,7 +83,7 @@ type pageData struct {
 	Error  string
 }
 
-func (s *server) index(w http.ResponseWriter, r *http.Request) {
+func (s *Server) index(w http.ResponseWriter, r *http.Request) {
 	data := pageData{Title: "wowinsight"}
 
 	// The form submits back to "/" with the report URL in the query string, so
@@ -101,7 +108,7 @@ func (s *server) index(w http.ResponseWriter, r *http.Request) {
 
 // wclHealth confirms the Warcraft Logs credentials work by spending a single
 // point on the cheapest query the API offers.
-func (s *server) wclHealth(w http.ResponseWriter, r *http.Request) {
+func (s *Server) wclHealth(w http.ResponseWriter, r *http.Request) {
 	limit, err := s.wcl.RateLimit(r.Context())
 	if err != nil {
 		status := http.StatusBadGateway
@@ -117,7 +124,7 @@ func (s *server) wclHealth(w http.ResponseWriter, r *http.Request) {
 
 // fight renders one encounter and, when a player is selected, that player's
 // numbers for it.
-func (s *server) fight(w http.ResponseWriter, r *http.Request) {
+func (s *Server) fight(w http.ResponseWriter, r *http.Request) {
 	code, err := warcraftlogs.ParseReportCode(r.PathValue("code"))
 	if err != nil {
 		http.Error(w, "invalid report code", http.StatusBadRequest)

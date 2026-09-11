@@ -91,7 +91,7 @@ func fakeAPI(t *testing.T) *httptest.Server {
 }
 
 // record drives the real client through a Recorder against the fake API and
-// writes the result, the way cmd/record does.
+// writes the result, the way cmd/dev/record does.
 func record(t *testing.T) string {
 	t.Helper()
 	srv := fakeAPI(t)
@@ -260,7 +260,7 @@ func TestReplayRefusesWhatWasNotRecorded(t *testing.T) {
 }
 
 func TestOpenRejectsADirectoryWithNoReport(t *testing.T) {
-	if _, err := Open(t.TempDir()); err == nil || !strings.Contains(err.Error(), "cmd/record") {
+	if _, err := Open(t.TempDir()); err == nil || !strings.Contains(err.Error(), "cmd/dev/record") {
 		t.Errorf("error = %v, want one pointing at the recorder", err)
 	}
 }

@@ -19,8 +19,9 @@ import (
 //
 // The contract, stated in the document's last section: the flowchart marked
 // "%% verified: package graph", solid "-->" edges only, node ids being the
-// last path segment of the package and "main" for the module root, and an
-// edge written in a "%%" comment counting as declared but not drawn.
+// last path segment of the package with hyphens as underscores and "main"
+// for the module root, and an edge written in a "%%" comment counting as
+// declared but not drawn.
 const moduleName = "wowinsight"
 
 func TestArchitecturePackageGraphMatchesTheCode(t *testing.T) {
@@ -115,5 +116,6 @@ func nodeID(importPath string) string {
 	if importPath == moduleName || importPath == moduleName+"/." {
 		return "main"
 	}
-	return path.Base(importPath)
+	// Mermaid ids cannot carry a hyphen, so serve-recorded is serve_recorded.
+	return strings.ReplaceAll(path.Base(importPath), "-", "_")
 }

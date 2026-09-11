@@ -15,11 +15,12 @@ they carry positions set by hand, because `layout()` is unexported and runs only
 
 ## Decision
 
-A human records one report's fights once, with `go run ./cmd/record`, and commits the
-redacted responses under `testdata/`. `go run . -fixture testdata` then serves them with
-no credentials. Three choices inside that:
+A human records one report's fights once, with `go run ./cmd/dev/record`, and commits
+the redacted responses under `testdata/`. `go run ./cmd/dev/serve-recorded` then serves
+them with no credentials. (Both commands were renamed by #29, which also took the
+offline mode out of the shipped binary; the decisions below are unchanged.) Three choices inside that:
 
-**The replay is an `http.RoundTripper`, not a fake client.** `-fixture` installs it
+**The replay is an `http.RoundTripper`, not a fake client.** `serve-recorded` installs it
 through `WithHTTPClient` under a real `*warcraftlogs.Client`. Every offline page therefore
 comes out of `Query → buildFightDetail → buildTimeline → layout()` — production code with
 only the wire swapped, the cast pagination included. A fake `logsClient` in package
