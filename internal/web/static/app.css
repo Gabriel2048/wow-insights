@@ -237,14 +237,37 @@ body.fight .tl-inner {
 }
 
 body.fight .tl-frame {
-    position: relative;
-    /* Shared so the DPS axis can be pinned beside the chart lane. */
+    /* The axes sit in a gutter to the left of the scrolling lanes, so
+       they stay put at every zoom and never cover the start of a curve. */
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    /* Shared so the axes can be lined up beside the graph lanes. */
     --rcd-row: 1.3rem;
     --rcd-h: calc(var(--rcd-rows, 0) * var(--rcd-row) + 0.3rem);
     --cd-h: calc(var(--cd-rows, 1) * var(--rcd-row) + 0.3rem);
     --boss-h: 2.6rem;
     --track-h: calc(var(--cd-h) + 3.6rem);
     --dps-h: 6rem;
+    /* Everything above the first graph lane: the frame's top border, the
+       raid and boss lanes with their bottom borders, and the track. */
+    --lanes-h: calc(var(--rcd-h) + var(--boss-h) + var(--track-h) + 3px);
+}
+
+body.fight .tl-frame.no-raid {
+    --lanes-h: calc(var(--boss-h) + var(--track-h) + 2px);
+}
+
+body.fight .tl-scroll,
+body.fight .scale {
+    grid-column: 2;
+}
+
+body.fight .tl-axes {
+    grid-row: 1;
+    display: flex;
+    flex-direction: column;
+    /* Plus the graph lane's own top border. */
+    padding-top: calc(var(--lanes-h) + 1px);
 }
 
 body.fight .tl-frame.labels {
@@ -620,29 +643,20 @@ body.fight .dps-caption {
     overflow: hidden;
 }
 
-body.fight .dps-axis {
-    position: absolute;
-    left: 0;
-    top: calc(var(--rcd-h) + var(--boss-h) + var(--track-h));
-    height: 6rem;
+body.fight .dps-axis,
+body.fight .taken-axis {
+    /* Peak at the lane's top edge, half-peak on the dashed midline, zero
+       on the baseline. */
+    height: var(--dps-h);
     display: flex;
     flex-direction: column;
     justify-content: space-between;
-    padding: 0 0.4rem;
-    box-sizing: border-box;
+    align-items: flex-end;
+    padding-right: 0.5rem;
     font-size: 0.65rem;
+    line-height: 1;
     font-variant-numeric: tabular-nums;
     color: var(--muted-2);
-    background: linear-gradient(90deg, var(--bg-deep) 70%, rgba(23, 25, 30, 0));
-    pointer-events: none;
-}
-
-body.fight .dps-axis span:nth-child(2) {
-    transform: translateY(-50%);
-}
-
-body.fight .dps-axis span:last-child {
-    transform: translateY(-0.7rem);
 }
 
 body.fight .readout {
@@ -707,28 +721,9 @@ body.fight .taken .grid {
 }
 
 body.fight .taken-axis {
-    position: absolute;
-    left: 0;
-    top: calc(var(--rcd-h) + var(--boss-h) + var(--track-h) + var(--dps-h));
-    height: var(--dps-h);
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-    padding: 0 0.4rem;
-    box-sizing: border-box;
-    font-size: 0.65rem;
-    font-variant-numeric: tabular-nums;
+    /* The lane below has its own top border. */
+    margin-top: 1px;
     color: #a08084;
-    background: linear-gradient(90deg, #1b1719 70%, rgba(27, 23, 25, 0));
-    pointer-events: none;
-}
-
-body.fight .taken-axis span:nth-child(2) {
-    transform: translateY(-50%);
-}
-
-body.fight .taken-axis span:last-child {
-    transform: translateY(-0.7rem);
 }
 
 body.fight .taken-caption {

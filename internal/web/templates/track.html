@@ -58,7 +58,23 @@
         </div>
     {{end}}
 
-    <div class="tl-frame" id="tlFrame" style="--rcd-rows: {{.RaidCDs.Rows}}; --cd-rows: {{.Cooldowns.Rows}}">
+    <div class="tl-frame{{if not .RaidCDs.Bars}} no-raid{{end}}" id="tlFrame" style="--rcd-rows: {{.RaidCDs.Rows}}; --cd-rows: {{.Cooldowns.Rows}}">
+    <div class="tl-axes">
+    {{with .DPS}}
+        <div class="dps-axis">
+            <span>{{compact .Peak}}</span>
+            <span>{{compact .HalfPeak}}</span>
+            <span>0</span>
+        </div>
+    {{end}}
+    {{with .Taken}}
+        <div class="taken-axis">
+            <span>{{compact .Peak}}</span>
+            <span>{{compact .HalfPeak}}</span>
+            <span>0</span>
+        </div>
+    {{end}}
+    </div>
     <div class="tl-scroll">
       <div class="tl-inner" id="tlInner"
            data-duration-ms="{{.DurationMS}}"
@@ -147,22 +163,8 @@
         <div class="crosshair" id="crosshair" hidden></div>
       </div>
     </div>
-    {{with .DPS}}
-        <div class="dps-axis">
-            <span>{{compact .Peak}}</span>
-            <span>{{compact .HalfPeak}}</span>
-            <span>0</span>
-        </div>
-    {{end}}
-    {{with .Taken}}
-        <div class="taken-axis">
-            <span>{{compact .Peak}}</span>
-            <span>{{compact .HalfPeak}}</span>
-            <span>0</span>
-        </div>
-    {{end}}
-    </div>
     <div class="scale"><span>&minus;{{short .LeadIn}} (pre-pull)</span><span>{{duration .Duration}}</span></div>
+    </div>
 
     {{if .HasLusts}}
         <ul class="lusts">
