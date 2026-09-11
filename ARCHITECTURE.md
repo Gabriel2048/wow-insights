@@ -64,7 +64,7 @@ flowchart TB
     binaries --> warcraftlogs
 
     templates -.->|"go:embed"| main
-    fixture -.->|"http.RoundTripper, via WithHTTPClient"| warcraftlogs
+    fixture -.->|"-fixture: replay installed via WithHTTPClient"| warcraftlogs
 ```
 
 **The two seams**, which is where anything gets substituted:
@@ -101,21 +101,32 @@ sequenceDiagram
     actor B as Browser
     participant S as server (main)
     participant C as warcraftlogs.Client
-    participant T as transport<br/>real · recorder · replay
+    participant T as transport
     participant W as Warcraft Logs
+    participant F as testdata/
+
+    Note over S,F: main picks the transport once, at startup, from the -fixture flag:<br/>absent → the real wire to Warcraft Logs · present → replay from that directory
 
     B->>S: GET /report/{code}/fight/{id}?player={actor}
     S->>S: ParseReportCode, Atoi — 400 before any API call
     S->>C: FightDetail(code, id)
     C->>T: fightQuery {code, id}
-    T->>W: POST /api/v2/client
+    alt no -fixture
+        T->>W: POST /api/v2/client
+    else -fixture
+        T->>F: read fight-{id}.json
+    end
     C->>C: buildFightDetail — roster, tables, deaths
     alt player resolves to an actor in this fight
         S->>C: Timeline(code, fight, actor)
         C->>T: timelineQuery {code, id, source, start, end}
-        T->>W: POST /api/v2/client
+        alt no -fixture
+            T->>W: POST /api/v2/client
+        else -fixture
+            T->>F: read timeline-{id}-{source}-{start}.json
+        end
         loop casts.nextPageTimestamp != null
-            C->>T: castPageQuery {…, start: cursor}
+            C->>T: castPageQuery {…, start: cursor} — same wire
         end
         C->>C: buildTimeline → layout()
     end
@@ -127,7 +138,10 @@ sequenceDiagram
   the notice.
 - Every `*Timeline` a caller receives has been laid out. `layout()` is the last statement
   of `buildTimeline`, and `TestBuildTimelinePositionsEverything` pins it.
-- The transport is the only thing that differs between production, recording and offline.
+- The two flows are one code path with a different transport underneath. Everything
+  from the client up — queries, paging, `build`, `layout()`, the template — is identical,
+  which is what makes the offline page trustworthy. The recorder is the third transport:
+  the real wire, with a copy kept of every response.
 
 ## Keeping this true
 
