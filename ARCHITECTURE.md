@@ -21,7 +21,7 @@ flowchart LR
     api[("Warcraft Logs v2 GraphQL API<br/>/api/v2/client<br/>3,600 points per hour, shared by every user")]
     zam["wow.zamimg.com/js/tooltips.js<br/>unversioned, no SRI"]
 
-    user -->|"GET /<br/>GET /report/{code}/fight/{id}?player={actor}"| app
+    user -->|"GET /?url=…<br/>GET /report/{code}/fight/{id}?player={actor}<br/>GET /health/wcl · GET /hello"| app
     app -->|"client-credentials token, cached until expiry"| oauth
     app -->|"one query per page section, every page view"| api
     user -.->|"loaded by every fight page"| zam
@@ -84,9 +84,9 @@ inside `(*Client).Timeline`. `-fixture` reads the committed recording in `testda
 through that seam; `cmd/record` is how a human makes one, and is otherwise out of the
 way. See `docs/decisions/2026-09-11-recorded-fixtures.md`.
 
-**Inside `internal/warcraftlogs`**, one file per concern, and each fetch split from its
-build: `fetchX` is a method on `*Client` that does I/O; `buildX` is a pure function from
-the decoded response. `timeline.go` is by a wide margin the largest file — cast pairing,
+**Inside `internal/warcraftlogs`**, one file per concern. `FightDetail` and `Timeline` are
+each split into a `fetchX` method on `*Client` that does I/O and a pure `buildX` from the
+decoded response; `Report` is deliberately not, being one query and a nil check. `timeline.go` is by a wide margin the largest file — cast pairing,
 aura and cooldown windows, phases and the layout pass — and its doc comments carry the
 reasoning behind each heuristic. Read them before changing a builder.
 
