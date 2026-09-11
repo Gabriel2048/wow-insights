@@ -25,6 +25,19 @@ go run .                  # http://localhost:8080
 `GET /health/wcl` spends one API point to confirm the credentials work and reports the
 hourly points budget.
 
+**Without credentials**, which is the situation an agent is in:
+
+```
+go run . -fixture testdata   # serves the recorded report; the log lists the URLs
+```
+
+`testdata/` holds real API responses, recorded once by a human with
+`go run ./cmd/record` and redacted. Every page comes through the real client with only
+the network replaced, so the timeline you see is laid out by the same code that lays it
+out in production. Anything not in the recording is an error, never a live request. If
+`testdata/` is missing, `TestFixtureRendersAFightPage` skips and its message says what to
+run. See `docs/decisions/2026-09-11-recorded-fixtures.md`.
+
 ## Non-negotiables
 
 **Never push to `main`. Never merge a pull request.** The ruleset blocks the first; the
@@ -33,8 +46,10 @@ second is the repository owner's call, always. Your work ends at `gh pr create`.
 **No real player data, anywhere.** No real character names, guild names, servers or
 Warcraft Logs report codes in tests, fixtures, doc comments or user-facing strings. Use
 `ExampleReport123` and `Testmage`. The initial commit was rewritten on 2026-09-10 to
-remove them. This is also the rule the fixture recorder in #10 must satisfy: one real API
-response carries twenty raiders' names, servers and item levels.
+remove them. `testdata/` is the one place real API responses live, and the recorder that
+writes it (`cmd/record`) redacts every name, server, owner and code before writing, and
+refuses to write if one survives. Never edit a recording by hand, and never commit one
+the recorder did not produce.
 
 **Adding a dependency is a decision, not a step.** The module has no `require` block
 today and that is worth keeping — but it is a preference, not a law. A dependency that is
@@ -43,7 +58,7 @@ carry, is a legitimate thing to add. Propose it in the pull request, saying what
 replaces and why the standard library is not enough, and let the owner decide before it
 lands. Never add one silently inside a larger change.
 
-**Templates must live under `templates/`.** `main.go` embeds them with
+**Templates must live under `templates/`.** `server.go` embeds them with
 `//go:embed templates/*.html`, resolved at compile time. A template outside that
 directory is simply not in the binary — the failure is a blank page at runtime, not a
 build error.
@@ -161,7 +176,9 @@ it only recognises known credential formats — a backstop, not a permission.
 ## Where the code lives
 
 The domain is `internal/warcraftlogs`, roughly one file per concern, with the HTTP layer
-and template funcs in `main.go` at the root. `timeline.go` is by a wide margin the
+in `server.go` and the template funcs in `format.go` at the root. `internal/fixture` is
+the recording and replay transport behind `-fixture` and `cmd/record`; it sits under the
+client, not beside it, and knows no query by name. `timeline.go` is by a wide margin the
 largest file: it holds cast pairing, aura and cooldown windows, phases and the layout
 pass together, and it is not self-navigating. Its doc comments carry the reasoning behind
 each heuristic — read them before changing a builder.
