@@ -1,5 +1,11 @@
 /* wowinsight — the one stylesheet. Colour goes through the tokens in :root; a literal
-   below is a one-off, and the census that chose these is in #17. */
+   below is a one-off, and the census that chose these is in #17.
+
+   Each page's rules are scoped by the class the layout puts on <body>, so a page gets
+   exactly the stylesheet it had when the rules were inline and nothing from another
+   page: the fight page is full width, the index and error pages are narrow centered
+   forms, and the first cut of this file let one leak into the other. Only :root is
+   shared. */
 
 :root {
     color-scheme: dark;
@@ -28,8 +34,8 @@
     --muted-2: #7d858f;
 }
 
-/* ---- shared, from the fight page ---- */
-body {
+/* ---- the fight page (body.fight) ---- */
+body.fight {
     margin: 0 auto;
     max-width: min(96vw, 100rem);
     padding: 2rem 1.5rem;
@@ -38,29 +44,29 @@ body {
     color: var(--text);
 }
 
-a {
+body.fight a {
     color: var(--cast);
 }
 
-h1 {
+body.fight h1 {
     margin: 0.5rem 0 0.25rem;
     font-size: 1.6rem;
 }
 
-.meta {
+body.fight .meta {
     margin: 0 0 1.5rem;
     color: var(--muted);
 }
 
-.kill {
+body.fight .kill {
     color: var(--kill);
 }
 
-.wipe {
+body.fight .wipe {
     color: var(--wipe);
 }
 
-.picker {
+body.fight .picker {
     display: flex;
     align-items: center;
     gap: 0.75rem;
@@ -71,7 +77,7 @@ h1 {
     background: var(--surface);
 }
 
-select {
+body.fight select {
     flex: 1;
     padding: 0.6rem 0.75rem;
     font-size: 1rem;
@@ -81,7 +87,7 @@ select {
     color: inherit;
 }
 
-button {
+body.fight button {
     padding: 0.6rem 1.25rem;
     font-size: 1rem;
     border: 0;
@@ -91,26 +97,26 @@ button {
     cursor: pointer;
 }
 
-.stats {
+body.fight .stats {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
     gap: 1rem;
 }
 
-.stat {
+body.fight .stat {
     padding: 1rem;
     border: 1px solid var(--surface-2);
     border-radius: 0.5rem;
     background: var(--surface);
 }
 
-.stat .value {
+body.fight .stat .value {
     display: block;
     font-size: 1.4rem;
     font-weight: 600;
 }
 
-.stat .label {
+body.fight .stat .label {
     display: block;
     margin-top: 0.25rem;
     font-size: 0.75rem;
@@ -119,16 +125,16 @@ button {
     letter-spacing: 0.05em;
 }
 
-.hint {
+body.fight .hint {
     color: var(--muted);
 }
 
-h3 {
+body.fight h3 {
     margin: 2rem 0 0.75rem;
     font-size: 1.1rem;
 }
 
-.tl-controls {
+body.fight .tl-controls {
     display: flex;
     align-items: center;
     gap: 0.5rem;
@@ -137,7 +143,7 @@ h3 {
     color: var(--muted);
 }
 
-.tl-controls button {
+body.fight .tl-controls button {
     padding: 0.3rem 0.7rem;
     font-size: 0.8rem;
     border: 1px solid var(--border);
@@ -146,20 +152,20 @@ h3 {
     color: var(--text-soft);
 }
 
-.tl-controls button.active {
+body.fight .tl-controls button.active {
     border-color: var(--accent);
     background: #24304d;
     color: #fff;
 }
 
-details.advanced {
+body.fight details.advanced {
     margin-bottom: 1rem;
     border: 1px solid var(--surface-2);
     border-radius: 0.4rem;
     background: var(--surface);
 }
 
-details.advanced > summary {
+body.fight details.advanced > summary {
     padding: 0.55rem 0.9rem;
     font-size: 0.85rem;
     color: var(--text-soft);
@@ -167,15 +173,15 @@ details.advanced > summary {
     user-select: none;
 }
 
-details.advanced[open] > summary {
+body.fight details.advanced[open] > summary {
     border-bottom: 1px solid var(--surface-2);
 }
 
-.advanced-body {
+body.fight .advanced-body {
     padding: 0.9rem;
 }
 
-.advanced-row {
+body.fight .advanced-row {
     display: flex;
     align-items: center;
     gap: 0.5rem;
@@ -183,7 +189,7 @@ details.advanced[open] > summary {
     color: var(--text-soft);
 }
 
-.advanced .note {
+body.fight .advanced .note {
     margin: 0.75rem 0 0;
     max-width: 60ch;
     font-size: 0.8rem;
@@ -191,12 +197,12 @@ details.advanced[open] > summary {
     color: var(--muted);
 }
 
-.advanced .note strong {
+body.fight .advanced .note strong {
     color: var(--text-soft);
 }
 
 .tl-controls input[type="number"],
-.advanced-row input[type="number"] {
+body.fight .advanced-row input[type="number"] {
     width: 6rem;
     padding: 0.3rem 0.5rem;
     font-size: 0.8rem;
@@ -206,13 +212,13 @@ details.advanced[open] > summary {
     color: var(--text-soft);
 }
 
-.tl-controls input[type="range"] {
+body.fight .tl-controls input[type="range"] {
     flex: 1;
     max-width: 18rem;
     accent-color: var(--accent);
 }
 
-.tl-scroll {
+body.fight .tl-scroll {
     overflow-x: auto;
     overflow-y: hidden;
     border: 1px solid var(--surface-2);
@@ -220,12 +226,12 @@ details.advanced[open] > summary {
     background: var(--surface);
 }
 
-.tl-inner {
+body.fight .tl-inner {
     position: relative;
     width: 100%;
 }
 
-.tl-frame {
+body.fight .tl-frame {
     position: relative;
     /* Shared so the DPS axis can be pinned beside the chart lane. */
     --rcd-row: 1.3rem;
@@ -236,12 +242,12 @@ details.advanced[open] > summary {
     --dps-h: 6rem;
 }
 
-.tl-frame.labels {
+body.fight .tl-frame.labels {
     --boss-h: 11rem;
     --track-h: calc(var(--cd-h) + 13.4rem);
 }
 
-.track {
+body.fight .track {
     /* Casts hang below this line; casts woven into them sit above it,
        and the cooldown blocks stack above that. */
     --baseline: calc(var(--cd-h) + 1.2rem);
@@ -250,12 +256,12 @@ details.advanced[open] > summary {
     overflow: hidden;
 }
 
-.tl-inner.labels .track {
+body.fight .tl-inner.labels .track {
     /* Room above and below the baseline for two rows of angled labels. */
     --baseline: calc(var(--cd-h) + 4.6rem);
 }
 
-.track::after {
+body.fight .track::after {
     content: "";
     position: absolute;
     left: 0;
@@ -265,14 +271,14 @@ details.advanced[open] > summary {
     pointer-events: none;
 }
 
-.boss {
+body.fight .boss {
     position: relative;
     height: var(--boss-h);
     border-bottom: 1px solid var(--border-soft);
     background: #191c21;
 }
 
-.boss .phase {
+body.fight .boss .phase {
     position: absolute;
     bottom: 0;
     height: 1.35rem;
@@ -281,15 +287,15 @@ details.advanced[open] > summary {
     overflow: hidden;
 }
 
-.boss .phase:nth-of-type(even) {
+body.fight .boss .phase:nth-of-type(even) {
     background: rgba(255, 255, 255, 0.09);
 }
 
-.boss .phase.intermission {
+body.fight .boss .phase.intermission {
     background: rgba(150, 120, 255, 0.18);
 }
 
-.boss .phase span {
+body.fight .boss .phase span {
     display: block;
     padding: 0.2rem 0.35rem;
     font-size: 0.68rem;
@@ -297,7 +303,7 @@ details.advanced[open] > summary {
     white-space: nowrap;
 }
 
-.boss .bcast {
+body.fight .boss .bcast {
     position: absolute;
     bottom: 1.35rem;
     height: 0.75rem;
@@ -310,14 +316,14 @@ details.advanced[open] > summary {
 
 /* A cast the boss began and never finished: kicked, or cut off by a
    phase change. Drawn hollow so it reads as "did not land". */
-.boss .bcast.interrupted {
+body.fight .boss .bcast.interrupted {
     background: transparent;
     border-left: 1px dashed var(--boss);
 }
 
 /* A 1px marker is hard to hit; widen the hover target without
    widening the mark itself. */
-.boss .bcast::before {
+body.fight .boss .bcast::before {
     content: "";
     position: absolute;
     left: -5px;
@@ -326,7 +332,7 @@ details.advanced[open] > summary {
     bottom: -3px;
 }
 
-.boss .bbar {
+body.fight .boss .bbar {
     position: absolute;
     bottom: 1.35rem;
     height: 0.3rem;
@@ -334,7 +340,7 @@ details.advanced[open] > summary {
     background: rgba(255, 157, 77, 0.4);
 }
 
-.boss .bcast .bname {
+body.fight .boss .bcast .bname {
     display: none;
     position: absolute;
     bottom: 100%;
@@ -347,23 +353,23 @@ details.advanced[open] > summary {
     white-space: nowrap;
 }
 
-.boss .bcast:hover {
+body.fight .boss .bcast:hover {
     background: #ffc48a;
 }
 
-.boss .bcast:hover .bname {
+body.fight .boss .bcast:hover .bname {
     color: #ffd9b3;
 }
 
-.tl-inner.labels .boss .bcast .bname {
+body.fight .tl-inner.labels .boss .bcast .bname {
     display: block;
 }
 
-.boss .bcast .bname.crowded {
+body.fight .boss .bcast .bname.crowded {
     visibility: hidden;
 }
 
-.track .phaseline {
+body.fight .track .phaseline {
     position: absolute;
     top: 0;
     bottom: 0;
@@ -372,7 +378,7 @@ details.advanced[open] > summary {
     pointer-events: none;
 }
 
-.track .prepull {
+body.fight .track .prepull {
     position: absolute;
     top: 0;
     bottom: 0;
@@ -381,7 +387,7 @@ details.advanced[open] > summary {
     rgba(255, 255, 255, 0.014) 0 6px, transparent 6px 12px);
 }
 
-.track .pull {
+body.fight .track .pull {
     position: absolute;
     top: 0;
     bottom: 0;
@@ -390,7 +396,7 @@ details.advanced[open] > summary {
     pointer-events: none;
 }
 
-.track .pull span {
+body.fight .track .pull span {
     position: absolute;
     top: 0.1rem;
     left: 0.3rem;
@@ -399,7 +405,7 @@ details.advanced[open] > summary {
     white-space: nowrap;
 }
 
-.track .phase {
+body.fight .track .phase {
     position: absolute;
     top: 0;
     bottom: 0;
@@ -408,15 +414,15 @@ details.advanced[open] > summary {
     overflow: hidden;
 }
 
-.track .phase:nth-child(even) {
+body.fight .track .phase:nth-child(even) {
     background: rgba(255, 255, 255, 0.05);
 }
 
-.track .phase.intermission {
+body.fight .track .phase.intermission {
     background: rgba(150, 120, 255, 0.13);
 }
 
-.track .phase span {
+body.fight .track .phase span {
     display: block;
     padding: 0.1rem 0.35rem;
     font-size: 0.68rem;
@@ -424,7 +430,7 @@ details.advanced[open] > summary {
     white-space: nowrap;
 }
 
-.track .lust {
+body.fight .track .lust {
     position: absolute;
     top: 0;
     bottom: 0;
@@ -432,7 +438,7 @@ details.advanced[open] > summary {
     border-left: 2px solid var(--warn);
 }
 
-.track .gap {
+body.fight .track .gap {
     position: absolute;
     top: 0;
     bottom: 0;
@@ -441,7 +447,7 @@ details.advanced[open] > summary {
 
 /* Something that went wrong without stopping the page: said, not
    left as an empty area that looks like data. */
-.notice {
+body.fight .notice {
     margin: 1rem 0;
     padding: 0.6rem 0.8rem;
     border-left: 3px solid var(--warn);
@@ -449,7 +455,7 @@ details.advanced[open] > summary {
     color: var(--text);
 }
 
-.track .castbar {
+body.fight .track .castbar {
     position: absolute;
     top: var(--baseline);
     height: 0.55rem;
@@ -460,17 +466,17 @@ details.advanced[open] > summary {
 
 /* A hard cast that should not have been made. */
         /* Reconstructed, not logged: the cast bar began before the report did. */
-.track .castbar.estimated {
+body.fight .track .castbar.estimated {
     background: repeating-linear-gradient(90deg,
     rgba(143, 176, 255, 0.42) 0 5px, transparent 5px 10px);
 }
 
 /* A bar that was started and abandoned: time spent, nothing landed. */
-.track .castbar.cancelled {
+body.fight .track .castbar.cancelled {
     background: rgba(255, 90, 90, 0.35);
 }
 
-        .track .tick {
+        body.fight .track .tick {
     position: absolute;
     top: var(--baseline);
     bottom: 0.6rem;
@@ -478,30 +484,30 @@ details.advanced[open] > summary {
     background: var(--cast);
 }
 
-.tl-inner.labels .track .tick {
+body.fight .tl-inner.labels .track .tick {
     bottom: 7.5rem;
 }
 
 /* A cast begun during another still sits above the baseline: it did
    not cost a slot in the rotation below. It is no longer coloured
    differently, since that is a positional fact, not a category. */
-.track .tick.woven {
+body.fight .track .tick.woven {
     top: auto;
     bottom: calc(100% - var(--baseline));
     height: 0.9rem;
 }
 
-.tl-inner.labels .track .tick.woven {
+body.fight .tl-inner.labels .track .tick.woven {
     height: 1.4rem;
 }
 
-.track .tick.cancelled {
+body.fight .track .tick.cancelled {
     background: var(--warn);
 }
 
         /* A cooldown block spans the buff, so its length is how long it was
    actually up rather than a fixed marker. */
-.track .cdblock {
+body.fight .track .cdblock {
     position: absolute;
     height: 1.15rem;
     box-sizing: border-box;
@@ -512,7 +518,7 @@ details.advanced[open] > summary {
     z-index: 3;
 }
 
-.track .cdblock span {
+body.fight .track .cdblock span {
     position: absolute;
     left: 0.25rem;
     top: 0;
@@ -523,11 +529,11 @@ details.advanced[open] > summary {
     pointer-events: none;
 }
 
-.track .cdblock.crowded span {
+body.fight .track .cdblock.crowded span {
     visibility: hidden;
 }
 
-.raidlane {
+body.fight .raidlane {
     position: relative;
     height: var(--rcd-h);
     border-bottom: 1px solid var(--surface-2);
@@ -535,7 +541,7 @@ details.advanced[open] > summary {
 }
 
 /* Raid-wide cooldowns, stacked so simultaneous ones never overlap. */
-.raidlane .rcdblock {
+body.fight .raidlane .rcdblock {
     position: absolute;
     height: 1.15rem;
     box-sizing: border-box;
@@ -546,7 +552,7 @@ details.advanced[open] > summary {
     z-index: 3;
 }
 
-.raidlane .rcdblock span {
+body.fight .raidlane .rcdblock span {
     position: absolute;
     left: 0.25rem;
     top: 0;
@@ -557,11 +563,11 @@ details.advanced[open] > summary {
     pointer-events: none;
 }
 
-.raidlane .rcdblock.crowded span {
+body.fight .raidlane .rcdblock.crowded span {
     visibility: hidden;
 }
 
-.track .tick .tname {
+body.fight .track .tick .tname {
     display: none;
     position: absolute;
     top: 100%;
@@ -578,22 +584,22 @@ details.advanced[open] > summary {
     pointer-events: none;
 }
 
-.track .tick.woven .tname {
+body.fight .track .tick.woven .tname {
     top: auto;
     bottom: 100%;
     transform: translateY(calc(var(--row, 0) * -2.75rem)) rotate(-55deg);
     transform-origin: left bottom;
 }
 
-.tl-inner.labels .track .tick .tname {
+body.fight .tl-inner.labels .track .tick .tname {
     display: block;
 }
 
-.track .tick .tname.crowded {
+body.fight .track .tick .tname.crowded {
     visibility: hidden;
 }
 
-.dps-caption {
+body.fight .dps-caption {
     display: flex;
     align-items: baseline;
     gap: 0.6rem;
@@ -609,7 +615,7 @@ details.advanced[open] > summary {
     overflow: hidden;
 }
 
-.dps-axis {
+body.fight .dps-axis {
     position: absolute;
     left: 0;
     top: calc(var(--rcd-h) + var(--boss-h) + var(--track-h));
@@ -626,15 +632,15 @@ details.advanced[open] > summary {
     pointer-events: none;
 }
 
-.dps-axis span:nth-child(2) {
+body.fight .dps-axis span:nth-child(2) {
     transform: translateY(-50%);
 }
 
-.dps-axis span:last-child {
+body.fight .dps-axis span:last-child {
     transform: translateY(-0.7rem);
 }
 
-.readout {
+body.fight .readout {
     margin-left: auto;
     flex: 0 0 auto;
     min-width: 15rem;
@@ -649,11 +655,11 @@ details.advanced[open] > summary {
    returns the hover. */
 div.wowhead-tooltip,
 #wowhead-tooltip,
-#tooltip {
+body.fight #tooltip {
     pointer-events: none !important;
 }
 
-.crosshair {
+body.fight .crosshair {
     position: absolute;
     top: 0;
     bottom: 0;
@@ -662,25 +668,25 @@ div.wowhead-tooltip,
     pointer-events: none;
 }
 
-.taken {
+body.fight .taken {
     position: relative;
     height: var(--dps-h);
     border-top: 1px solid var(--surface-2);
     background: #1b1719;
 }
 
-.taken svg {
+body.fight .taken svg {
     display: block;
     width: 100%;
     height: 100%;
 }
 
-.taken .fill {
+body.fight .taken .fill {
     fill: rgba(255, 107, 107, 0.2);
     stroke: none;
 }
 
-.taken .line {
+body.fight .taken .line {
     fill: none;
     stroke: var(--danger);
     stroke-width: 1.5;
@@ -688,14 +694,14 @@ div.wowhead-tooltip,
     vector-effect: non-scaling-stroke;
 }
 
-.taken .grid {
+body.fight .taken .grid {
     stroke: #3a2b2e;
     stroke-width: 1;
     stroke-dasharray: 3 3;
     vector-effect: non-scaling-stroke;
 }
 
-.taken-axis {
+body.fight .taken-axis {
     position: absolute;
     left: 0;
     top: calc(var(--rcd-h) + var(--boss-h) + var(--track-h) + var(--dps-h));
@@ -712,38 +718,38 @@ div.wowhead-tooltip,
     pointer-events: none;
 }
 
-.taken-axis span:nth-child(2) {
+body.fight .taken-axis span:nth-child(2) {
     transform: translateY(-50%);
 }
 
-.taken-axis span:last-child {
+body.fight .taken-axis span:last-child {
     transform: translateY(-0.7rem);
 }
 
-.taken-caption {
+body.fight .taken-caption {
     margin-top: 0.2rem;
     color: #e0b7b7;
 }
 
-.dps {
+body.fight .dps {
     position: relative;
     height: var(--dps-h);
     border-top: 1px solid var(--surface-2);
     background: var(--bg-deep);
 }
 
-.dps svg {
+body.fight .dps svg {
     display: block;
     width: 100%;
     height: 100%;
 }
 
-.dps .fill {
+body.fight .dps .fill {
     fill: rgba(79, 124, 255, 0.22);
     stroke: none;
 }
 
-.dps .line {
+body.fight .dps .line {
     fill: none;
     stroke: #6f96ff;
     stroke-width: 1.5;
@@ -752,28 +758,28 @@ div.wowhead-tooltip,
     vector-effect: non-scaling-stroke;
 }
 
-.dps .grid {
+body.fight .dps .grid {
     stroke: var(--border-soft);
     stroke-width: 1;
     stroke-dasharray: 3 3;
     vector-effect: non-scaling-stroke;
 }
 
-.ruler {
+body.fight .ruler {
     position: relative;
     height: 1.4rem;
     border-top: 1px solid var(--surface-2);
     background: var(--bg-deep);
 }
 
-.ruler .mark {
+body.fight .ruler .mark {
     position: absolute;
     top: 0;
     bottom: 0;
     border-left: 1px solid #2f353d;
 }
 
-.ruler .mark span {
+body.fight .ruler .mark span {
     padding-left: 0.25rem;
     font-size: 0.65rem;
     line-height: 1.4rem;
@@ -781,7 +787,7 @@ div.wowhead-tooltip,
     white-space: nowrap;
 }
 
-.scale {
+body.fight .scale {
     display: flex;
     justify-content: space-between;
     margin-bottom: 1.5rem;
@@ -789,7 +795,7 @@ div.wowhead-tooltip,
     color: var(--muted);
 }
 
-.legend {
+body.fight .legend {
     display: flex;
     gap: 1.25rem;
     margin-bottom: 1rem;
@@ -797,7 +803,7 @@ div.wowhead-tooltip,
     color: var(--muted);
 }
 
-.legend span::before {
+body.fight .legend span::before {
     content: "";
     display: inline-block;
     width: 0.7rem;
@@ -807,52 +813,52 @@ div.wowhead-tooltip,
     border-radius: 2px;
 }
 
-.legend .l-cast::before {
+body.fight .legend .l-cast::before {
     background: var(--cast);
 }
 
-.legend .l-gap::before {
+body.fight .legend .l-gap::before {
     background: rgba(255, 90, 90, 0.6);
 }
 
-.legend .l-lust::before {
+body.fight .legend .l-lust::before {
     background: rgba(255, 176, 60, 0.6);
 }
 
-.legend .l-boss::before {
+body.fight .legend .l-boss::before {
     background: var(--boss);
 }
 
-.legend .l-phase::before {
+body.fight .legend .l-phase::before {
     background: var(--rule);
 }
 
-        .legend .l-estimated::before {
+        body.fight .legend .l-estimated::before {
     background: repeating-linear-gradient(90deg,
     rgba(143, 176, 255, 0.9) 0 3px, transparent 3px 6px);
 }
 
-.legend .l-cd::before {
+body.fight .legend .l-cd::before {
     background: var(--cooldown);
 }
 
-.legend .l-rcd::before {
+body.fight .legend .l-rcd::before {
     background: var(--raidcd);
 }
 
-        .legend .l-cancel::before {
+        body.fight .legend .l-cancel::before {
     background: var(--warn);
 }
 
-.casts tr.cancelled td {
+body.fight .casts tr.cancelled td {
     color: #ffc978;
 }
 
-.casts tr.precast td {
+body.fight .casts tr.precast td {
     color: #9fe0d0;
 }
 
-.casts .proctag {
+body.fight .casts .proctag {
     margin-left: 0.4rem;
     padding: 0.05rem 0.35rem;
     border-radius: 0.2rem;
@@ -861,7 +867,7 @@ div.wowhead-tooltip,
     font-size: 0.7rem;
 }
 
-        .casts tr.idlerow td {
+        body.fight .casts tr.idlerow td {
     padding: 0.3rem 0.75rem;
     color: var(--danger-soft);
     background: rgba(255, 90, 90, 0.09);
@@ -869,11 +875,11 @@ div.wowhead-tooltip,
     border-left: 2px solid rgba(255, 90, 90, 0.55);
 }
 
-.casts tr.idlerow .hint {
+body.fight .casts tr.idlerow .hint {
     font-size: 0.75rem;
 }
 
-.casts tr.phasehead td {
+body.fight .casts tr.phasehead td {
     padding-top: 0.9rem;
     font-weight: 600;
     color: #d7dce3;
@@ -881,7 +887,7 @@ div.wowhead-tooltip,
     border-bottom: 1px solid #333941;
 }
 
-.table-legend {
+body.fight .table-legend {
     display: flex;
     align-items: flex-start;
     gap: 1rem;
@@ -892,7 +898,7 @@ div.wowhead-tooltip,
     background: var(--bg-deep);
 }
 
-.table-legend .sample {
+body.fight .table-legend .sample {
     flex: none;
     padding: 0.3rem 0.6rem;
     border-left: 2px solid rgba(255, 90, 90, 0.55);
@@ -902,7 +908,7 @@ div.wowhead-tooltip,
     white-space: nowrap;
 }
 
-.table-legend p {
+body.fight .table-legend p {
     margin: 0;
     max-width: 70ch;
     font-size: 0.8rem;
@@ -910,36 +916,36 @@ div.wowhead-tooltip,
     color: var(--muted);
 }
 
-.table-legend strong {
+body.fight .table-legend strong {
     color: var(--text-soft);
 }
 
 @media (max-width: 55rem) {
-    .table-legend {
+    body.fight .table-legend {
         flex-direction: column;
         gap: 0.6rem;
     }
 }
 
-.casts {
+body.fight .casts {
     max-height: 26rem;
     overflow-y: auto;
     border: 1px solid var(--surface-2);
     border-radius: 0.4rem;
 }
 
-table {
+body.fight table {
     width: 100%;
     border-collapse: collapse;
 }
 
-.casts th, .casts td {
+body.fight .casts th, body.fight .casts td {
     text-align: left;
     padding: 0.35rem 0.75rem;
     border-bottom: 1px solid #23272d;
 }
 
-.casts th {
+body.fight .casts th {
     position: sticky;
     top: 0;
     background: var(--surface);
@@ -949,28 +955,28 @@ table {
     letter-spacing: 0.05em;
 }
 
-.casts tr.downtime td {
+body.fight .casts tr.downtime td {
     color: var(--danger-soft);
 }
 
-.casts tr.lust td:first-child {
+body.fight .casts tr.lust td:first-child {
     border-left: 2px solid var(--warn);
 }
 
-.num {
+body.fight .num {
     text-align: right;
     font-variant-numeric: tabular-nums;
 }
 
-ul.lusts {
+body.fight ul.lusts {
     margin: 0 0 1.5rem;
     padding-left: 1.1rem;
     color: var(--muted);
 }
     
 
-/* ---- the index page ---- */
-body {
+/* ---- the index page (body.index) ---- */
+body.index {
     margin: 0;
     min-height: 100vh;
     display: flex;
@@ -985,7 +991,7 @@ body {
     color: var(--text);
 }
 
-form {
+body.index form {
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -993,7 +999,7 @@ form {
     width: min(90vw, 32rem);
 }
 
-input[type="url"] {
+body.index input[type="url"] {
     width: 100%;
     padding: 0.75rem 1rem;
     font-size: 1rem;
@@ -1003,7 +1009,7 @@ input[type="url"] {
     color: inherit;
 }
 
-button {
+body.index button {
     padding: 0.75rem 2rem;
     font-size: 1rem;
     border: 0;
@@ -1013,7 +1019,7 @@ button {
     cursor: pointer;
 }
 
-.error {
+body.index .error {
     width: min(90vw, 48rem);
     padding: 0.75rem 1rem;
     border: 1px solid #7a2f36;
@@ -1022,74 +1028,74 @@ button {
     color: #ffb4b4;
 }
 
-.report {
+body.index .report {
     width: min(90vw, 48rem);
 }
 
-.report h1 {
+body.index .report h1 {
     margin: 0 0 0.25rem;
     font-size: 1.5rem;
 }
 
-.meta {
+body.index .meta {
     margin: 0 0 1.5rem;
     color: var(--muted);
 }
 
-.summary {
+body.index .summary {
     display: flex;
     gap: 2rem;
     margin-bottom: 1.5rem;
 }
 
-.summary div span {
+body.index .summary div span {
     display: block;
 }
 
-.summary .value {
+body.index .summary .value {
     font-size: 1.5rem;
     font-weight: 600;
 }
 
-.summary .label {
+body.index .summary .label {
     font-size: 0.8rem;
     color: var(--muted);
     text-transform: uppercase;
     letter-spacing: 0.05em;
 }
 
-table {
+body.index table {
     width: 100%;
     border-collapse: collapse;
 }
 
-th, td {
+body.index th, body.index td {
     text-align: left;
     padding: 0.5rem 0.75rem;
     border-bottom: 1px solid var(--surface-2);
 }
 
-th {
+body.index th {
     font-size: 0.8rem;
     color: var(--muted);
     text-transform: uppercase;
     letter-spacing: 0.05em;
 }
 
-.kill {
+body.index .kill {
     color: var(--kill);
 }
 
-.wipe {
+body.index .wipe {
     color: var(--wipe);
 }
     
 
-/* ---- the error page ---- */
-body { font-family: system-ui, sans-serif; background: #1b1e24; color: var(--text); margin: 0; padding: 2rem; }
-main { max-width: 40rem; margin: 4rem auto; }
-h1 { font-size: 1.25rem; margin: 0 0 1rem; }
-p { line-height: 1.5; }
-.status { color: #8a93a2; font-size: 0.85rem; }
-a { color: var(--cast); }
+/* ---- the error page (body.error) ---- */
+body.error { font-family: system-ui, sans-serif; background: #1b1e24; color: var(--text); margin: 0; padding: 2rem; }
+body.error main { max-width: 40rem; margin: 4rem auto; }
+body.error h1 { font-size: 1.25rem; margin: 0 0 1rem; }
+body.error p { line-height: 1.5; }
+body.error .status { color: #8a93a2; font-size: 0.85rem; }
+body.error a { color: var(--cast); }
     

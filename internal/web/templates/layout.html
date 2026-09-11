@@ -1,5 +1,6 @@
-{{/* The one document shell. A page defines "title" and "content"; "scripts"
-     is for the page that needs its own. Never ExecuteTemplate a file of
+{{/* The one document shell. A page defines "title", "content" and "page" —
+     the class on <body> its stylesheet rules are scoped by; "scripts" is for
+     the page that needs its own. Never ExecuteTemplate a file of
      partials by its filename: a file holding only defines also registers an
      almost-empty template under its own name, and it renders nothing. */}}
 {{define "layout"}}<!doctype html>
@@ -10,7 +11,7 @@
     <title>{{block "title" .}}wowinsight{{end}}</title>
     <link rel="stylesheet" href="{{asset "app.css"}}">
 </head>
-<body>
+<body class="{{block "page" .}}fight{{end}}">
 {{template "content" .}}
 {{block "scripts" .}}{{end}}
 </body>

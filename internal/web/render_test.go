@@ -361,3 +361,52 @@ func TestStylesheetDeclaresItsTokensAndScheme(t *testing.T) {
 		}
 	}
 }
+
+// The index and error pages are narrow centered forms; the fight page is
+// full width. Their stylesheet rules are scoped by a class on <body> that
+// each page sets — without it, the index's centered flex body applied to the
+// fight page and squeezed the timeline into a column (found in review).
+func TestEachPageScopesItsStyles(t *testing.T) {
+	for page, data := range map[string]any{
+		"fight.html": fullFightPage(),
+		"index.html": pageData{Title: "wowinsight"},
+		"error.html": errorPageData{Title: "wowinsight", Status: 404, Message: "no"},
+	} {
+		class := strings.TrimSuffix(page, ".html")
+		if !strings.Contains(render(t, page, data), `<body class="`+class+`">`) {
+			t.Errorf("%s does not set body.%s", page, class)
+		}
+	}
+	css, err := fs.ReadFile(staticFS, "static/app.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Every rule head is scoped by a page's body class; only :root is shared.
+	// A rule head that is not is one page's style leaking into another's.
+	text := string(css)
+	inComment := false
+	for n, line := range strings.Split(text, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if inComment {
+			inComment = !strings.Contains(trimmed, "*/")
+			continue
+		}
+		if strings.HasPrefix(trimmed, "/*") {
+			inComment = !strings.Contains(trimmed, "*/")
+			continue
+		}
+		if !strings.HasSuffix(trimmed, "{") || strings.HasPrefix(trimmed, "@") || strings.HasPrefix(trimmed, ":root") {
+			continue
+		}
+		for _, sel := range strings.Split(strings.TrimSuffix(trimmed, "{"), ",") {
+			if !strings.HasPrefix(strings.TrimSpace(sel), "body.") {
+				t.Errorf("app.css line %d: %q is not scoped to a page", n+1, strings.TrimSpace(sel))
+			}
+		}
+	}
+	for _, cls := range []string{"fight", "index", "error"} {
+		if !strings.Contains(text, "\nbody."+cls+" {") {
+			t.Errorf("no body.%s rule", cls)
+		}
+	}
+}
