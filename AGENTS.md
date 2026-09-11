@@ -175,13 +175,20 @@ it only recognises known credential formats — a backstop, not a permission.
 
 ## Where the code lives
 
-The domain is `internal/warcraftlogs`, roughly one file per concern, with the HTTP layer
-in `server.go` and the template funcs in `format.go` at the root. `internal/fixture` is
-the recording and replay transport behind `-fixture` and `cmd/record`; it sits under the
-client, not beside it, and knows no query by name. `timeline.go` is by a wide margin the
-largest file: it holds cast pairing, aura and cooldown windows, phases and the layout
-pass together, and it is not self-navigating. Its doc comments carry the reasoning behind
-each heuristic — read them before changing a builder.
+`ARCHITECTURE.md` is the map: what the system talks to, how the packages relate and where
+the two seams are, and what happens on a fight page request. **Read it before the code.**
+If the two disagree, do not decide which is wrong: raise it with the owner, showing both,
+and wait — a drift can be the document rotting or the code taking a turn nobody agreed
+to, and only the owner knows which.
+
+**A structural change is argued to the owner before it is built** — a new package, a new
+edge between packages, a new external system or third-party script, a new entry point (a
+binary, a route), or a changed seam. Say what changes in the map and why, then wait.
+Adding a function or a type inside a package is not structural; it needs no check-in,
+only the diagram edit if there is one.
+
+The package view is verified by `architecture_test.go` against the real import graph, so
+it cannot go stale silently. The other views can, and the pull request template asks.
 
 ## Decision records
 
