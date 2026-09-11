@@ -16,7 +16,6 @@ import (
 // nil check here and no edit anywhere else. Do not let a second fake appear.
 type fakeWCL struct {
 	report      func(ctx context.Context, code string) (*warcraftlogs.Report, error)
-	rateLimit   func(ctx context.Context) (warcraftlogs.RateLimit, error)
 	fightDetail func(ctx context.Context, code string, fightID int) (*warcraftlogs.FightDetail, error)
 	timeline    func(ctx context.Context, code string, fight warcraftlogs.Fight, sourceID int) (*warcraftlogs.Timeline, error)
 }
@@ -33,13 +32,6 @@ func (f fakeWCL) Report(ctx context.Context, code string) (*warcraftlogs.Report,
 		return nil, errNotStubbed
 	}
 	return f.report(ctx, code)
-}
-
-func (f fakeWCL) RateLimit(ctx context.Context) (warcraftlogs.RateLimit, error) {
-	if f.rateLimit == nil {
-		return warcraftlogs.RateLimit{}, errNotStubbed
-	}
-	return f.rateLimit(ctx)
 }
 
 func (f fakeWCL) FightDetail(ctx context.Context, code string, fightID int) (*warcraftlogs.FightDetail, error) {

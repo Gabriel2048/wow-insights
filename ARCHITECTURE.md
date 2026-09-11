@@ -21,7 +21,7 @@ flowchart LR
     api[("Warcraft Logs v2 GraphQL API<br/>/api/v2/client<br/>3,600 points per hour, shared by every user")]
     zam["wow.zamimg.com/js/tooltips.js<br/>unversioned, no SRI"]
 
-    user -->|"GET /?url=…<br/>GET /report/{code}/fight/{id}?player={actor}<br/>GET /healthz · GET /health/wcl"| app
+    user -->|"GET /?url=…<br/>GET /report/{code}/fight/{id}?player={actor}<br/>GET /healthz"| app
     app -->|"client-credentials token, cached until expiry"| oauth
     app -->|"one query per page section, every page view"| api
     user -.->|"loaded by every fight page"| zam
@@ -130,7 +130,7 @@ sequenceDiagram
     Note over S,F: the binary picks the transport once, at startup:<br/>the shipped one uses the real wire · cmd/dev/serve-recorded installs the replay
 
     B->>S: GET /report/{code}/fight/{id}?player={actor}
-    S->>S: middleware: request id, panic recovery, access line
+    S->>S: middleware: request id, headers, access line, recovery, 60s deadline
     S->>S: ParseReportCode, Atoi — 400 before any API call
     S->>C: FightDetail(code, id)
     C->>T: fightQuery {code, id}
@@ -162,6 +162,10 @@ sequenceDiagram
 - Every request gets an id (`X-Request-Id` on the response) and one access line keyed by
   the route pattern, with status, duration and the number of upstream calls. A panic is a
   500 and one ERROR line with that id; a client that went away is INFO, not an error.
+- Every request has a one-minute deadline, the first end-to-end bound; the client's own
+  30s timeout is per call and the cast paging multiplies it. Every response carries
+  `nosniff`, `DENY` framing and a strict referrer policy. The CSP hook exists; its
+  content is #7's, and so is whether responses get compressed.
 - Every `*Timeline` a caller receives has been laid out. `layout()` is the last statement
   of `buildTimeline`, and `TestBuildTimelinePositionsEverything` pins it.
 - The two binaries are one code path with a different transport underneath. Everything

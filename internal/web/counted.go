@@ -18,11 +18,6 @@ func (c counted) Report(ctx context.Context, code string) (*warcraftlogs.Report,
 	return c.logsClient.Report(ctx, code)
 }
 
-func (c counted) RateLimit(ctx context.Context) (warcraftlogs.RateLimit, error) {
-	countCall(ctx)
-	return c.logsClient.RateLimit(ctx)
-}
-
 func (c counted) FightDetail(ctx context.Context, code string, fightID int) (*warcraftlogs.FightDetail, error) {
 	countCall(ctx)
 	return c.logsClient.FightDetail(ctx, code, fightID)

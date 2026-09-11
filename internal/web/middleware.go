@@ -21,18 +21,54 @@ type middleware func(http.Handler) http.Handler
 // Routes stays exposed so a test can ask the mux which pattern a path resolves
 // to; everything that actually serves a request goes through here.
 func (s *Server) Handler() http.Handler {
-	var h http.Handler = s.Routes()
-	// Listed innermost first, so that the request id exists before anything
-	// logs, and recovery sits inside the access log so a panic still gets an
-	// access line with its status.
+	mux := s.Routes()
+	var h http.Handler = mux
+	// Listed innermost first. The request id exists before anything logs;
+	// the deadline is inside recovery so a panic from a cancelled context is
+	// still caught; the headers go on everything, including a 500 from
+	// recovery. Compression, if it ever comes, goes between recovery and the
+	// access log so the bytes counted are the bytes on the wire — see #7.
 	for _, wrap := range []middleware{
+		s.deadline,
 		s.recoverPanic,
-		s.accessLog,
+		s.accessLog(mux),
+		securityHeaders,
 		s.requestID,
 	} {
 		h = wrap(h)
 	}
 	return h
+}
+
+// handlerDeadline bounds the work a request may do. It is the first
+// end-to-end bound this app has had: the client's own 30s timeout is per
+// call, and the cast paging loop multiplies it. A minute covers the slowest
+// fight page seen (a 20-minute kill is ~3s) many times over, and is what the
+// long renders #2 plans will have to fit inside or be split up.
+const handlerDeadline = time.Minute
+
+// deadline puts handlerDeadline on the request context. Upstream calls see
+// it as context.DeadlineExceeded, which upstreamFailed logs as a warning
+// rather than an upstream failure.
+func (s *Server) deadline(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), s.handlerDeadline)
+		defer cancel()
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+// securityHeaders is the conservative set that is right for any page here.
+// The Content-Security-Policy is deliberately absent: its content depends on
+// the tooltips script and the ingress, which #7 decides — this is the hook.
+func securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		next.ServeHTTP(w, r)
+	})
 }
 
 // ctxKey keys the things a request carries through its context.
@@ -46,20 +82,33 @@ const (
 // requestID gives every request an id, returns it in a response header so a
 // user's report can be matched to a log line, and attaches a logger carrying
 // it to the context, so every line written while handling this request can be
-// grouped. A Cloud Trace header, when present, is carried too — as the raw
-// trace id; the shipped binary's log handler is what knows how to spell it
-// for Cloud Logging.
+// grouped. A trace id from the proxy in front, when there is one, is carried
+// too — raw; the shipped binary's log handler is what knows how to spell it
+// for its logging backend.
 func (s *Server) requestID(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id := newRequestID()
 		w.Header().Set("X-Request-Id", id)
 		logger := s.log.With("request_id", id)
-		if trace, _, _ := strings.Cut(r.Header.Get("X-Cloud-Trace-Context"), "/"); trace != "" {
+		if trace := traceID(r.Header); trace != "" {
 			logger = logger.With("trace_id", trace)
 		}
 		ctx := context.WithValue(r.Context(), loggerKey, logger)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+// traceID reads the trace id a proxy stamped on the request. The W3C
+// traceparent header is tried first — Envoy, Istio, Cloudflare and Cloud Run
+// all send it — with Google's own header as the fallback, so the app is not
+// tied to one platform by its logs.
+func traceID(h http.Header) string {
+	// traceparent: version-traceid-spanid-flags, e.g. 00-<32 hex>-<16 hex>-01
+	if parts := strings.Split(h.Get("traceparent"), "-"); len(parts) == 4 && len(parts[1]) == 32 {
+		return parts[1]
+	}
+	trace, _, _ := strings.Cut(h.Get("X-Cloud-Trace-Context"), "/")
+	return trace
 }
 
 func newRequestID() string {
@@ -99,7 +148,7 @@ func (s *Server) recoverPanic(next http.Handler) http.Handler {
 				panic(p)
 			}
 			s.logger(r).Error("panic in handler", "panic", p, "stack", string(debug.Stack()))
-			if rw, ok := w.(*responseWriter); !ok || !rw.wrote {
+			if started, ok := w.(interface{ wroteHeader() bool }); !ok || !started.wroteHeader() {
 				http.Error(w, "internal server error", http.StatusInternalServerError)
 			}
 		}()
@@ -112,30 +161,34 @@ func (s *Server) recoverPanic(next http.Handler) http.Handler {
 // key), the status, how long it took, how much was written, and how many
 // upstream calls it cost. RED metrics fall out of those fields with no more
 // code than a log-based metric.
-func (s *Server) accessLog(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
-		rw := &responseWriter{ResponseWriter: w}
-		calls := new(int)
-		r = r.WithContext(context.WithValue(r.Context(), callsKey, calls))
+func (s *Server) accessLog(mux *http.ServeMux) middleware {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			start := time.Now()
+			rw := &responseWriter{ResponseWriter: w}
+			calls := new(int)
+			r = r.WithContext(context.WithValue(r.Context(), callsKey, calls))
 
-		next.ServeHTTP(rw, r)
+			next.ServeHTTP(rw, r)
 
-		// r.Pattern is set by the mux when it matches, on this same request,
-		// which is why it can be read here after the fact.
-		pattern := r.Pattern
-		if pattern == "" {
-			pattern = "(no route)"
-		}
-		s.logger(r).Info("request",
-			"method", r.Method,
-			"pattern", pattern,
-			"status", rw.status(),
-			"duration_ms", time.Since(start).Milliseconds(),
-			"bytes", rw.bytes,
-			"upstream_calls", *calls,
-		)
-	})
+			// The mux is asked which pattern the path resolves to, rather
+			// than reading r.Pattern: the mux sets that on the request it is
+			// handed, and the middleware between here and there hand it a
+			// clone.
+			_, pattern := mux.Handler(r)
+			if pattern == "" {
+				pattern = "(no route)"
+			}
+			s.logger(r).Info("request",
+				"method", r.Method,
+				"pattern", pattern,
+				"status", rw.status(),
+				"duration_ms", time.Since(start).Milliseconds(),
+				"bytes", rw.bytes,
+				"upstream_calls", *calls,
+			)
+		})
+	}
 }
 
 // responseWriter remembers what was written, for the access line and for the
@@ -164,6 +217,8 @@ func (w *responseWriter) Write(p []byte) (int, error) {
 	w.bytes += n
 	return n, err
 }
+
+func (w *responseWriter) wroteHeader() bool { return w.wrote }
 
 func (w *responseWriter) status() int {
 	if !w.wrote {

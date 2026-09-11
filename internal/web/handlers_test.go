@@ -123,38 +123,6 @@ func TestHealthzTouchesNothing(t *testing.T) {
 	}
 }
 
-// Missing credentials are a deployment fault, not an upstream one, and the
-// health endpoint is the thing a probe reads — so they are told apart.
-func TestHealthDistinguishesMissingCredentialsFromAnUpstreamFailure(t *testing.T) {
-	noCreds := fakeWCL{rateLimit: func(context.Context) (warcraftlogs.RateLimit, error) {
-		return warcraftlogs.RateLimit{}, warcraftlogs.ErrNoCredentials
-	}}
-	if rec := get(t, noCreds, "/health/wcl"); rec.Code != http.StatusServiceUnavailable {
-		t.Errorf("status = %d, want %d for missing credentials", rec.Code, http.StatusServiceUnavailable)
-	}
-
-	upstream := fakeWCL{rateLimit: func(context.Context) (warcraftlogs.RateLimit, error) {
-		return warcraftlogs.RateLimit{}, errors.New("bad gateway")
-	}}
-	if rec := get(t, upstream, "/health/wcl"); rec.Code != http.StatusBadGateway {
-		t.Errorf("status = %d, want %d for an upstream failure", rec.Code, http.StatusBadGateway)
-	}
-
-	ok := fakeWCL{rateLimit: func(context.Context) (warcraftlogs.RateLimit, error) {
-		return warcraftlogs.RateLimit{LimitPerHour: 3600, PointsSpentThisHour: 12, PointsResetIn: 900}, nil
-	}}
-	rec := get(t, ok, "/health/wcl")
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
-	}
-	if got := rec.Header().Get("Content-Type"); got != "application/json" {
-		t.Errorf("Content-Type = %q, want application/json", got)
-	}
-	if !strings.Contains(rec.Body.String(), `"limitPerHour":3600`) {
-		t.Errorf("body = %q, want the points budget", rec.Body.String())
-	}
-}
-
 // A bare visit renders the form; a submission renders the report.
 func TestIndexRendersTheFormAndThenTheReport(t *testing.T) {
 	wcl := fakeWCL{report: func(context.Context, string) (*warcraftlogs.Report, error) {
@@ -207,7 +175,6 @@ func TestEveryRouteIsReachable(t *testing.T) {
 		"/",
 		"/report/ExampleReport123/fight/12",
 		"/healthz",
-		"/health/wcl",
 	} {
 		req := httptest.NewRequest("GET", target, nil)
 		if _, pattern := mux.Handler(req); pattern == "" {
