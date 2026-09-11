@@ -1,0 +1,16 @@
+{{/* The selected player's numbers for the pull, or the invitation to pick one. */}}
+{{define "playerstats"}}{{with .Player}}
+    <h2>{{.Name}}{{with .Server}}-{{.}}{{end}} &middot; <span class="hint">{{.Title}}</span></h2>
+    <div class="stats">
+        <div class="stat"><span class="value">{{compact .Damage}}</span><span class="label">Damage</span></div>
+        <div class="stat"><span class="value">{{compact .DPS}}</span><span class="label">DPS</span></div>
+        <div class="stat"><span class="value">{{compact .Healing}}</span><span class="label">Healing</span></div>
+        <div class="stat"><span class="value">{{compact .HPS}}</span><span class="label">HPS</span></div>
+        <div class="stat"><span class="value">{{printf "%.1f%%" .ActivePercent}}</span><span class="label">Active time</span></div>
+        <div class="stat"><span class="value">{{printf "%.1f%%" .OverhealPercent}}</span><span class="label">Overheal</span></div>
+        <div class="stat"><span class="value">{{printf "%.0f" .ItemLevel}}</span><span class="label">Item level</span></div>
+        <div class="stat"><span class="value">{{.Deaths}}</span><span class="label">Deaths</span></div>
+    </div>
+{{else}}
+    <p class="hint">Pick a player above to see their numbers for this pull.</p>
+{{end}}{{end}}

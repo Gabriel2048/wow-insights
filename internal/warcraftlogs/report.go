@@ -68,42 +68,49 @@ func isReportCode(s string) bool {
 
 // Fight is a single pull within a report. Its times are offsets in
 // milliseconds from the start of the report, not absolute timestamps.
+//
+// This is the domain value. What the API sends is fightWire, mapped here by
+// hand, so a change to the wire format is a change to one function rather
+// than to every builder that takes a Fight; and how a fight is described on
+// a page — its difficulty's name, the id Wowhead wants — is view.Fight's.
 type Fight struct {
-	ID         int     `json:"id"`
-	Name       string  `json:"name"`
-	Kill       *bool   `json:"kill"`
-	Difficulty *int    `json:"difficulty"`
-	StartTime  float64 `json:"startTime"`
-	EndTime    float64 `json:"endTime"`
+	ID         int
+	Name       string
+	Kill       *bool // nil for trash, which has no outcome
+	Difficulty *int  // nil for trash; encounters carry one
+	StartTime  float64
+	EndTime    float64
 
 	// Requested only by the single-fight query.
+	BossPercentage  float64
+	FriendlyPlayers []int
+}
+
+// fightWire is a fight as the API sends it.
+type fightWire struct {
+	ID              int     `json:"id"`
+	Name            string  `json:"name"`
+	Kill            *bool   `json:"kill"`
+	Difficulty      *int    `json:"difficulty"`
+	StartTime       float64 `json:"startTime"`
+	EndTime         float64 `json:"endTime"`
 	BossPercentage  float64 `json:"bossPercentage"`
 	FriendlyPlayers []int   `json:"friendlyPlayers"`
 }
 
-// difficultyNames maps Warcraft Logs difficulty IDs to their raid names.
+// fight maps the wire value onto the domain one. Go converts between two
+// struct types whose fields agree ignoring tags, so this is a conversion
+// today — and the moment the wire grows a field the domain does not want,
+// it stops compiling here, in the one place that is supposed to notice.
+func (w fightWire) fight() Fight { return Fight(w) }
+
+// difficultyNames maps Warcraft Logs difficulty IDs to the names Warcraft
+// Logs itself gives them.
 var difficultyNames = map[int]string{1: "LFR", 3: "Normal", 4: "Heroic", 5: "Mythic"}
 
-// wowheadDifficulties maps Warcraft Logs difficulty IDs to the game's own
-// difficulty IDs, which Wowhead takes as its "dd" tooltip parameter. Without
-// it Wowhead shows Mythic values for every spell.
-var wowheadDifficulties = map[int]int{
-	1: 17, // Looking For Raid
-	3: 14, // Normal
-	4: 15, // Heroic
-	5: 16, // Mythic
-}
-
-// WowheadDifficulty is the difficulty id to ask Wowhead for, or 0 when the
-// fight has no difficulty we can map.
-func (f Fight) WowheadDifficulty() int {
-	if f.Difficulty == nil {
-		return 0
-	}
-	return wowheadDifficulties[*f.Difficulty]
-}
-
-// DifficultyName is the human name of the fight difficulty, or "" for trash.
+// DifficultyName is what the difficulty is called, or "" for trash. A fact
+// about the fight rather than a way of drawing it, which is why it is here
+// and the Wowhead tooltip parameter is view.Fight's.
 func (f Fight) DifficultyName() string {
 	if f.Difficulty == nil {
 		return ""
@@ -112,6 +119,14 @@ func (f Fight) DifficultyName() string {
 		return name
 	}
 	return fmt.Sprintf("Difficulty %d", *f.Difficulty)
+}
+
+func fightsFromWire(wire []fightWire) []Fight {
+	fights := make([]Fight, len(wire))
+	for i, w := range wire {
+		fights[i] = w.fight()
+	}
+	return fights
 }
 
 // IsBoss reports whether the fight is an encounter rather than trash. Only
@@ -136,6 +151,17 @@ func (f Fight) Duration() time.Duration {
 
 // Report is the basic metadata of a logged raid or dungeon session.
 type Report struct {
+	Code      string
+	Title     string
+	StartTime float64
+	EndTime   float64
+	Owner     struct{ Name string }
+	Zone      struct{ Name string }
+	Fights    []Fight
+}
+
+// reportWire is a report as the API sends it.
+type reportWire struct {
 	Code      string  `json:"code"`
 	Title     string  `json:"title"`
 	StartTime float64 `json:"startTime"`
@@ -146,7 +172,14 @@ type Report struct {
 	Zone struct {
 		Name string `json:"name"`
 	} `json:"zone"`
-	Fights []Fight `json:"fights"`
+	Fights []fightWire `json:"fights"`
+}
+
+func (w *reportWire) report() *Report {
+	r := &Report{Code: w.Code, Title: w.Title, StartTime: w.StartTime, EndTime: w.EndTime, Fights: fightsFromWire(w.Fights)}
+	r.Owner.Name = w.Owner.Name
+	r.Zone.Name = w.Zone.Name
+	return r
 }
 
 // StartedAt is the report's start as an absolute time.
@@ -195,7 +228,7 @@ func (r Report) BossFights() []Fight {
 // reportResponse is the envelope the report query returns.
 type reportResponse struct {
 	ReportData struct {
-		Report *Report `json:"report"`
+		Report *reportWire `json:"report"`
 	} `json:"reportData"`
 }
 
@@ -214,5 +247,5 @@ func (c *Client) Report(ctx context.Context, code string) (*Report, error) {
 	if err != nil {
 		return nil, err
 	}
-	return data.ReportData.Report, nil
+	return data.ReportData.Report.report(), nil
 }

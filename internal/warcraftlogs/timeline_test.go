@@ -1,7 +1,6 @@
 package warcraftlogs
 
 import (
-	"math"
 	"testing"
 	"time"
 )
@@ -112,7 +111,7 @@ func TestBuildCastsGapsAndLustOverlap(t *testing.T) {
 	if !casts[1].DuringLust || !casts[2].DuringLust {
 		t.Errorf("casts at 11s and 12s are inside the lust window")
 	}
-	// Positions are assigned by Timeline.layout, not here.
+	// Positions are internal/view's business, not this package's.
 }
 
 func TestUnknownAbilityFallsBackToID(t *testing.T) {
@@ -790,77 +789,6 @@ func TestInstantRepeatOnBarEndIsStillSuppressed(t *testing.T) {
 
 // The drawn timeline starts before the pull so a precast has room to be shown
 // as a bar crossing the pull line rather than a point stacked on the next cast.
-func TestLayoutLeadInAndPositions(t *testing.T) {
-	tl := &Timeline{
-		Duration: 100 * time.Second,
-		Casts: []Cast{
-			// A precast: begun 1.9s before the pull, landing 0.1s after it.
-			{Name: "Pyroblast", Offset: -1900 * time.Millisecond, End: 100 * time.Millisecond,
-				CastTime: 2 * time.Second, Precast: true, Estimated: true},
-			{Name: "Fireball", Offset: 100 * time.Millisecond, End: 1400 * time.Millisecond,
-				CastTime: 1300 * time.Millisecond},
-		},
-		Phases: []Phase{{Name: "One", Start: 0, End: 100 * time.Second}},
-		Lusts:  []RaidWindow{{Name: "Time Warp", Start: 10 * time.Second, End: 50 * time.Second}},
-	}
-	tl.layout()
-
-	// The lead-in must cover the precast plus a margin.
-	if tl.LeadIn < 1900*time.Millisecond+leadInMargin {
-		t.Errorf("LeadIn = %v, too small for a cast starting 1.9s before the pull", tl.LeadIn)
-	}
-	if tl.Total != tl.LeadIn+tl.Duration {
-		t.Errorf("Total = %v, want LeadIn + Duration", tl.Total)
-	}
-
-	// The pull is inside the drawn span, not at its left edge.
-	if tl.PullPercent <= 0 || tl.PullPercent >= 100 {
-		t.Errorf("PullPercent = %v, want somewhere inside the timeline", tl.PullPercent)
-	}
-	// The precast begins left of the pull; the next cast begins right of it.
-	if tl.Casts[0].Percent >= tl.PullPercent {
-		t.Errorf("precast at %v%% should start before the pull at %v%%", tl.Casts[0].Percent, tl.PullPercent)
-	}
-	if tl.Casts[1].Percent <= tl.PullPercent {
-		t.Errorf("Fireball at %v%% should start after the pull", tl.Casts[1].Percent)
-	}
-	// Nothing may be positioned off the drawn area.
-	for _, c := range tl.Casts {
-		if c.Percent < 0 || c.Percent > 100 {
-			t.Errorf("%s positioned at %v%%, outside the timeline", c.Name, c.Percent)
-		}
-	}
-
-	// A phase covering the whole fight runs from the pull to the right edge.
-	p := tl.Phases[0]
-	if math.Abs(p.StartPercent-tl.PullPercent) > 0.001 {
-		t.Errorf("phase starts at %v%%, want the pull at %v%%", p.StartPercent, tl.PullPercent)
-	}
-	if math.Abs(p.StartPercent+p.WidthPercent-100) > 0.001 {
-		t.Errorf("phase ends at %v%%, want 100", p.StartPercent+p.WidthPercent)
-	}
-
-	// Everything shares one domain: a lust window and a cast at the same
-	// moment must land on the same position.
-	if got, want := tl.percent(10*time.Second), tl.Lusts[0].StartPercent; math.Abs(got-want) > 0.001 {
-		t.Errorf("lust at %v%% but percent(10s) = %v%%", want, got)
-	}
-}
-
-func TestLayoutWithoutPrecastKeepsMinimumLeadIn(t *testing.T) {
-	tl := &Timeline{
-		Duration: 60 * time.Second,
-		Casts:    []Cast{{Name: "Fire Blast", Offset: time.Second, End: time.Second}},
-	}
-	tl.layout()
-	if tl.LeadIn != minLeadIn {
-		t.Errorf("LeadIn = %v, want the %v minimum", tl.LeadIn, minLeadIn)
-	}
-	if tl.PullPercent <= 0 {
-		t.Errorf("PullPercent = %v, want the pull drawn inside the span", tl.PullPercent)
-	}
-}
-
 func TestFormatOffsetHandlesPrePullTimes(t *testing.T) {
 	cases := []struct {
 		in   time.Duration
@@ -902,28 +830,6 @@ func TestCooldownsAreMarked(t *testing.T) {
 	}
 	if marked["Fire Blast"] {
 		t.Error("Fire Blast is filler, not a cooldown")
-	}
-}
-
-func TestWowheadDifficulty(t *testing.T) {
-	id := func(v int) *int { return &v }
-	cases := []struct {
-		name       string
-		difficulty *int
-		want       int
-	}{
-		{"LFR", id(1), 17},
-		{"Normal", id(3), 14},
-		{"Heroic", id(4), 15},
-		{"Mythic", id(5), 16},
-		{"trash has no difficulty", nil, 0},
-		{"unknown difficulty", id(99), 0},
-	}
-	for _, c := range cases {
-		got := Fight{Difficulty: c.difficulty}.WowheadDifficulty()
-		if got != c.want {
-			t.Errorf("%s: WowheadDifficulty() = %d, want %d", c.name, got, c.want)
-		}
 	}
 }
 
@@ -982,39 +888,6 @@ func TestRaidCooldownWindowsKeepsSingleTargetChannels(t *testing.T) {
 	}
 }
 
-func TestPackRaidWindowsStacksOverlaps(t *testing.T) {
-	sec := func(n int) time.Duration { return time.Duration(n) * time.Second }
-	windows := []RaidWindow{
-		{Name: "A", Start: sec(0), End: sec(10)},
-		{Name: "B", Start: sec(5), End: sec(15)},  // overlaps A
-		{Name: "C", Start: sec(6), End: sec(9)},   // overlaps A and B
-		{Name: "D", Start: sec(20), End: sec(25)}, // overlaps nothing
-	}
-	rows := packRaidWindows(windows)
-	if rows != 3 {
-		t.Fatalf("used %d rows, want 3", rows)
-	}
-	got := map[string]int{}
-	for _, w := range windows {
-		got[w.Name] = w.Row
-	}
-	if got["A"] != 0 || got["B"] != 1 || got["C"] != 2 {
-		t.Errorf("overlapping windows share rows: %v", got)
-	}
-	if got["D"] != 0 {
-		t.Errorf("D = row %d, want row 0 reused once A has ended", got["D"])
-	}
-	// Nothing on the same row may overlap in time.
-	for i := range windows {
-		for j := i + 1; j < len(windows); j++ {
-			a, b := windows[i], windows[j]
-			if a.Row == b.Row && a.Start < b.End && b.Start < a.End {
-				t.Errorf("%s and %s overlap on row %d", a.Name, b.Name, a.Row)
-			}
-		}
-	}
-}
-
 // Anti-Magic Zone is a ground effect: players walk in and out, so one placement
 // produces many apply/remove pairs. Re-entries must fold into the placement
 // they happened inside rather than becoming zero-width segments of their own.
@@ -1067,61 +940,4 @@ func TestRaidCooldownWindowsCapsUnclosedBuffs(t *testing.T) {
 	if d := windows[0].Duration(); d > 9*time.Second {
 		t.Errorf("window lasted %v; an unclosed buff must not run to the fight end", d)
 	}
-}
-
-// buildTimeline is the half of Client.Timeline that has no I/O in it. The one
-// thing that could go wrong when it was split out is that layout() stops being
-// called, which is silent: every lane still renders, at left: 0.000%. This
-// asserts positions exist, which is the property layout() is there to produce.
-func TestBuildTimelinePositionsEverything(t *testing.T) {
-	fight := fightAt(100)
-	const fireball, timeWarp = 133, 80353
-
-	report := &timelineReport{
-		Casts: eventPage{Data: []event{
-			{Timestamp: 11000, Type: "begincast", AbilityGameID: fireball},
-			{Timestamp: 13000, Type: "cast", AbilityGameID: fireball},
-		}},
-		Lust: eventPage{Data: lustEvents(timeWarp, 21000, 61000, 22)},
-	}
-	report.MasterData.Abilities = []ability{
-		{GameID: fireball, Name: "Fireball"},
-		{GameID: timeWarp, Name: "Time Warp"},
-	}
-	report.MasterData.Actors = []Actor{{ID: 21, Name: "Testmage"}}
-
-	tl := buildTimeline(report, report.Casts.Data, fight)
-
-	if tl.Total <= 0 {
-		t.Fatalf("Total = %v, want a positive drawn span (layout was not run)", tl.Total)
-	}
-	if tl.PullPercent <= 0 {
-		t.Errorf("PullPercent = %v, want the pull placed after the lead-in", tl.PullPercent)
-	}
-	if len(tl.Casts) != 1 {
-		t.Fatalf("got %d casts, want 1 (the begincast/cast pair is one cast)", len(tl.Casts))
-	}
-	if tl.Casts[0].Percent <= 0 || tl.Casts[0].CastWidthPercent <= 0 {
-		t.Errorf("cast is at Percent=%v width=%v, want both positive — this is what a missing layout() looks like",
-			tl.Casts[0].Percent, tl.Casts[0].CastWidthPercent)
-	}
-	if len(tl.Lusts) != 1 {
-		t.Fatalf("got %d lust windows, want 1", len(tl.Lusts))
-	}
-	if tl.Lusts[0].StartPercent <= 0 || tl.Lusts[0].WidthPercent <= 0 {
-		t.Errorf("lust window is at %v wide %v, want both positive", tl.Lusts[0].StartPercent, tl.Lusts[0].WidthPercent)
-	}
-}
-
-// lustEvents builds a raid-wide buff: one apply and one remove per target, which
-// is what clears the raidLustMinTargets filter.
-func lustEvents(ability int, start, end float64, targets int) []event {
-	var events []event
-	for target := 1; target <= targets; target++ {
-		events = append(events,
-			event{Timestamp: start, Type: "applybuff", AbilityGameID: ability, SourceID: 21, TargetID: target},
-			event{Timestamp: end, Type: "removebuff", AbilityGameID: ability, SourceID: 21, TargetID: target},
-		)
-	}
-	return events
 }

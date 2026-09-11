@@ -63,10 +63,16 @@ carry, is a legitimate thing to add. Propose it in the pull request, saying what
 replaces and why the standard library is not enough, and let the owner decide before it
 lands. Never add one silently inside a larger change.
 
-**Templates must live under `internal/web/templates/`.** `internal/web/server.go` embeds
-them with `//go:embed templates/*.html`, resolved at compile time. A template outside that
-directory is simply not in the binary — the failure is a blank page at runtime, not a
-build error.
+**Templates live under `internal/web/templates/`, static files under `internal/web/static/`.**
+`internal/web/templates.go` embeds both at compile time; a file outside those directories
+is simply not in the binary — the failure is a blank page or a 404 at runtime, not a build
+error. A page is a file defining `title` and `content` and listed in `pages`; the layout
+and the partials are parsed once and cloned per page, which is what lets two pages both
+define `content`. **Never `ExecuteTemplate` a partials file by its filename**: a file
+holding only `{{define}}` blocks also registers an almost-empty template under its own
+name, and it renders nothing without an error. A page links its stylesheet and script with
+`{{asset "app.css"}}`, which resolves to a content-hashed path; no page carries an inline
+`<style>` or `<script>`, and #7's Content-Security-Policy depends on that staying true.
 
 ## Go idioms this project expects
 
@@ -97,6 +103,12 @@ These are the calls tooling cannot make.
   comparators, `cmp.Or` over an if-chain. `go fix` catches some of this, not all of it.
 - **`context.Context` is the first parameter and must be honoured.** Anything doing I/O
   takes one and passes it down; never stash it in a struct.
+- **The analysis carries no geometry.** `internal/warcraftlogs` produces times relative
+  to the pull; `internal/view` turns them into positions against an axis the page chooses.
+  A percentage, a row or an SVG path on an analysis type is a defect: the analysis does
+  not import the view, so the compiler catches the import, and a reviewer catches the
+  field. Every lane on a page is a `view.Lane` of `view.Bar`s, packed by one function and
+  drawn by one template block; a new lane is a `Lane`, not a struct, a packer and a loop.
 - **A GraphQL document is a named `const` in `operations.go`, never built by
   concatenation.** Anything that varies is a declared variable — a filter is a nullable
   `String` left out of the variables map when its set is empty, which omits the argument.
@@ -247,9 +259,8 @@ These are the shapes today's code has. New work should not deepen them.
 - **No persistence.** Nothing is stored between requests, so every page view re-queries
   Warcraft Logs against a single hourly points budget (measured: 3,600) shared by all
   users. #2 owns the cache; do not invent an ad-hoc one.
-- **Presentation lives inside the domain.** Analysis types carry `Percent` and `Row`
-  fields and pre-rendered SVG strings, all relative to a single pull, which is why they
-  cannot yet be compared across pulls. #17 splits them.
+- **A `Timeline` is one pull's.** `view.Options` can draw two on one axis, which is what
+  #3 needs; nothing yet does.
 
 ## Work items
 

@@ -25,6 +25,7 @@ flowchart LR
     app -->|"client-credentials token, cached until expiry,<br/>one fetch shared by concurrent callers"| oauth
     app -->|"one query per page section, every page view"| api
     user -.->|"loaded by every fight page"| zam
+    app -->|"GET /static/{hash}/…<br/>the stylesheet and the script, cached for a year"| user
 ```
 
 - The binary is the whole deployment. Nothing is stored between requests, so every page
@@ -42,7 +43,7 @@ flowchart LR
 
 ## 2. How the code is organised
 
-Seven packages: one that ships, two a developer runs, four they are built from. Solid
+Eight packages: one that ships, two a developer runs, five they are built from. Solid
 arrows are imports and are verified. Not every import is drawn: each binary also builds
 the client with `warcraftlogs.New`, and all three read their configuration — those edges
 are declared in the diagram source and checked, but left off the picture, because the
@@ -62,8 +63,9 @@ flowchart TB
         serve_recorded["serve-recorded<br/>recording → client → web"]
         record["record<br/>the fixture recorder"]
     end
-    templates[/"internal/web/templates/*.html<br/>embedded at compile time"/]
+    templates[/"internal/web/templates/ and static/<br/>embedded at compile time"/]
     web["internal/web<br/>HTTP layer, routes, templates<br/>middleware, the http.Server and its shutdown"]
+    view["internal/view<br/>the drawing model: positions, lanes, paths<br/>against an axis the page chooses"]
     config["internal/config<br/>PORT and credentials, from the environment or .env"]
     fixture["internal/fixture<br/>replay and record transports"]
     warcraftlogs["internal/warcraftlogs<br/>API client + analysis + layout"]
@@ -77,6 +79,8 @@ flowchart TB
     record -->|"records through"| fixture
     templates -.->|"go:embed"| web
     web --> warcraftlogs
+    web --> view
+    view --> warcraftlogs
     %% Every binary also builds the client (warcraftlogs.New) and reads its
     %% configuration. Real, verified, and not drawn: the labels say it and
     %% the lines would only cross what matters.
@@ -91,16 +95,24 @@ flowchart TB
     warcraftlogs -.->|"the real wire"| api
 ```
 
+**The analysis carries no geometry.** `internal/warcraftlogs` produces times relative to
+the pull and nothing else; `internal/view` draws them against an axis the page chooses
+(`Options{LeadIn, Total}`), so the same analysis can be laid out at two scales — two pulls
+on one shared axis is what #3 needs. The analysis does not import the view, so "no
+position, percentage or path in the domain" is a fact the compiler checks. Every lane on
+the page is one `Lane` of `Bar`s packed by one function and drawn by one template block.
+
 **The two seams**, which is where anything gets substituted:
 
 | Seam | Declared in | What hangs on it |
 | --- | --- | --- |
-| `logsClient` — the four methods the handlers call | `internal/web/server.go`, by the consumer | `fakeWCL` in tests; the cache decorator #2 will add |
+| `logsClient` — the three methods the handlers call | `internal/web/server.go`, by the consumer | `fakeWCL` in tests; the cache decorator #2 will add |
 | `http.RoundTripper` under the client, via `WithHTTPClient` | `internal/warcraftlogs/client.go` | the recorder and the replay in `internal/fixture` |
 
-The replay sits *under* the client rather than beside it on purpose: a fake client can
-return a `Timeline`, but not a laid-out one — `layout()` is unexported and runs only
-inside `(*Client).Timeline`. `cmd/dev/serve-recorded` reads the committed recording in
+The replay sits *under* the client rather than beside it on purpose: a fake client would
+hand back whatever it was told, while the replay drives the real client's decoding,
+paging and building — the offline page comes from the production path with only the
+wire swapped. `cmd/dev/serve-recorded` reads the committed recording in
 `testdata/` through that seam; `cmd/dev/record` is how a human makes one. Neither is in
 the shipped binary, which has no offline mode. See
 `docs/decisions/2026-09-11-recorded-fixtures.md`.
@@ -112,8 +124,7 @@ aura and cooldown windows, phases and the layout pass — and its doc comments c
 reasoning behind each heuristic. Read them before changing a builder.
 
 **Known shape problems**, each owned by an issue: spec knowledge is package-level globals
-(#16); presentation fields (`Percent`, `Row`, SVG strings) live on the analysis types
-(#17). `AGENTS.md` says how to build around them in the meantime.
+(#16). `AGENTS.md` says how to build around it in the meantime.
 
 ## 3. What happens on a fight page request
 
@@ -155,7 +166,8 @@ sequenceDiagram
         loop casts.nextPageTimestamp != null, bounded
             C->>T: CastPage {…, start: cursor} — same wire
         end
-        C->>C: buildTimeline → layout()
+        C->>C: buildTimeline — times, no positions
+        S->>S: view.Layout — positions against this pull's axis
     end
     S->>B: fight.html — 200 even when Timeline failed (stats render, with a notice)
 ```
@@ -171,10 +183,10 @@ sequenceDiagram
   30s timeout is per call and the cast paging multiplies it. Every response carries
   `nosniff`, `DENY` framing and a strict referrer policy. The CSP hook exists; its
   content is #7's, and so is whether responses get compressed.
-- Every `*Timeline` a caller receives has been laid out. `layout()` is the last statement
-  of `buildTimeline`, and `TestBuildTimelinePositionsEverything` pins it.
+- A `*Timeline` from the client carries no positions; the page lays it out. The reverse
+  was true until #17 and a test pinned it; the boundary is now the compiler's.
 - The two binaries are one code path with a different transport underneath. Everything
-  from the client up — queries, paging, `build`, `layout()`, the template — is identical,
+  from the client up — queries, paging, `build`, `view.Layout`, the template — is identical,
   which is what makes the offline page trustworthy. The recorder is the third transport:
   the real wire, with a copy kept of every response.
 

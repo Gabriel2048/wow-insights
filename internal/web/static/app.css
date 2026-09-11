@@ -1,0 +1,1101 @@
+/* wowinsight — the one stylesheet. Colour goes through the tokens in :root; a literal
+   below is a one-off, and the census that chose these is in #17.
+
+   Each page's rules are scoped by the class the layout puts on <body>, so a page gets
+   exactly the stylesheet it had when the rules were inline and nothing from another
+   page: the fight page is full width, the index and error pages are narrow centered
+   forms, and the first cut of this file let one leak into the other. Only :root is
+   shared. */
+
+:root {
+    color-scheme: dark;
+    --muted: #9aa3ad;
+    --surface-2: #262a30;
+    --text-soft: #cfd5dd;
+    --cast: #8fb0ff;
+    --surface: #1a1d22;
+    --warn: #ffb03c;
+    --text: #e8e8e8;
+    --border: #3a3f47;
+    --surface-1: #1c1f24;
+    --accent: #4f7cff;
+    --bg-deep: #17191e;
+    --border-soft: #2b313a;
+    --rule: #3d4450;
+    --boss: #ff9d4d;
+    --cooldown: #ffd479;
+    --danger-soft: #ff9b9b;
+    --bg: #14161a;
+    --kill: #6ee7a0;
+    --wipe: #ff8c8c;
+    --text-dim: #aab2bd;
+    --danger: #ff6b6b;
+    --raidcd: #7fd6ff;
+    --muted-2: #7d858f;
+}
+
+/* ---- the fight page (body.fight) ---- */
+body.fight {
+    margin: 0 auto;
+    max-width: min(96vw, 100rem);
+    padding: 2rem 1.5rem;
+    font-family: system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+}
+
+body.fight a {
+    color: var(--cast);
+}
+
+body.fight h1 {
+    margin: 0.5rem 0 0.25rem;
+    font-size: 1.6rem;
+}
+
+body.fight .meta {
+    margin: 0 0 1.5rem;
+    color: var(--muted);
+}
+
+body.fight .kill {
+    color: var(--kill);
+}
+
+body.fight .wipe {
+    color: var(--wipe);
+}
+
+body.fight .picker {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 1rem;
+    margin-bottom: 1.5rem;
+    border: 1px solid var(--surface-2);
+    border-radius: 0.5rem;
+    background: var(--surface);
+}
+
+body.fight select {
+    flex: 1;
+    padding: 0.6rem 0.75rem;
+    font-size: 1rem;
+    border: 1px solid var(--border);
+    border-radius: 0.4rem;
+    background: var(--surface-1);
+    color: inherit;
+}
+
+body.fight button {
+    padding: 0.6rem 1.25rem;
+    font-size: 1rem;
+    border: 0;
+    border-radius: 0.4rem;
+    background: var(--accent);
+    color: #fff;
+    cursor: pointer;
+}
+
+body.fight .stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+    gap: 1rem;
+}
+
+body.fight .stat {
+    padding: 1rem;
+    border: 1px solid var(--surface-2);
+    border-radius: 0.5rem;
+    background: var(--surface);
+}
+
+body.fight .stat .value {
+    display: block;
+    font-size: 1.4rem;
+    font-weight: 600;
+}
+
+body.fight .stat .label {
+    display: block;
+    margin-top: 0.25rem;
+    font-size: 0.75rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+body.fight .hint {
+    color: var(--muted);
+}
+
+body.fight h3 {
+    margin: 2rem 0 0.75rem;
+    font-size: 1.1rem;
+}
+
+body.fight .tl-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.6rem;
+    font-size: 0.8rem;
+    color: var(--muted);
+}
+
+body.fight .tl-controls button {
+    padding: 0.3rem 0.7rem;
+    font-size: 0.8rem;
+    border: 1px solid var(--border);
+    border-radius: 0.3rem;
+    background: var(--surface-1);
+    color: var(--text-soft);
+}
+
+body.fight .tl-controls button.active {
+    border-color: var(--accent);
+    background: #24304d;
+    color: #fff;
+}
+
+body.fight details.advanced {
+    margin-bottom: 1rem;
+    border: 1px solid var(--surface-2);
+    border-radius: 0.4rem;
+    background: var(--surface);
+}
+
+body.fight details.advanced > summary {
+    padding: 0.55rem 0.9rem;
+    font-size: 0.85rem;
+    color: var(--text-soft);
+    cursor: pointer;
+    user-select: none;
+}
+
+body.fight details.advanced[open] > summary {
+    border-bottom: 1px solid var(--surface-2);
+}
+
+body.fight .advanced-body {
+    padding: 0.9rem;
+}
+
+body.fight .advanced-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.85rem;
+    color: var(--text-soft);
+}
+
+body.fight .advanced .note {
+    margin: 0.75rem 0 0;
+    max-width: 60ch;
+    font-size: 0.8rem;
+    line-height: 1.5;
+    color: var(--muted);
+}
+
+body.fight .advanced .note strong {
+    color: var(--text-soft);
+}
+
+.tl-controls input[type="number"],
+body.fight .advanced-row input[type="number"] {
+    width: 6rem;
+    padding: 0.3rem 0.5rem;
+    font-size: 0.8rem;
+    border: 1px solid var(--border);
+    border-radius: 0.3rem;
+    background: var(--surface-1);
+    color: var(--text-soft);
+}
+
+body.fight .tl-controls input[type="range"] {
+    flex: 1;
+    max-width: 18rem;
+    accent-color: var(--accent);
+}
+
+body.fight .tl-scroll {
+    overflow-x: auto;
+    overflow-y: hidden;
+    border: 1px solid var(--surface-2);
+    border-radius: 0.4rem;
+    background: var(--surface);
+}
+
+body.fight .tl-inner {
+    position: relative;
+    width: 100%;
+    /* A label on the last block of a lane can stick out past the end of
+       the fight. Clip it rather than let it widen the scroll container:
+       otherwise Fit grows a scrollbar, and the first zoom that keeps its
+       centre scrolls the whole timeline a few pixels to the left. */
+    overflow-x: clip;
+}
+
+body.fight .tl-frame {
+    /* The axes sit in a gutter to the left of the scrolling lanes, so
+       they stay put at every zoom and never cover the start of a curve. */
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    /* Shared so the axes can be lined up beside the graph lanes. */
+    --rcd-row: 1.3rem;
+    --rcd-h: calc(var(--rcd-rows, 0) * var(--rcd-row) + 0.3rem);
+    --cd-h: calc(var(--cd-rows, 1) * var(--rcd-row) + 0.3rem);
+    --boss-h: 2.6rem;
+    --track-h: calc(var(--cd-h) + 3.6rem);
+    --dps-h: 6rem;
+    /* Everything above the first graph lane: the frame's top border, the
+       raid and boss lanes with their bottom borders, and the track. */
+    --lanes-h: calc(var(--rcd-h) + var(--boss-h) + var(--track-h) + 3px);
+}
+
+body.fight .tl-frame.no-raid {
+    --lanes-h: calc(var(--boss-h) + var(--track-h) + 2px);
+}
+
+body.fight .tl-scroll,
+body.fight .scale {
+    grid-column: 2;
+}
+
+body.fight .tl-axes {
+    grid-row: 1;
+    display: flex;
+    flex-direction: column;
+    /* Plus the graph lane's own top border. */
+    padding-top: calc(var(--lanes-h) + 1px);
+}
+
+body.fight .tl-frame.labels {
+    --boss-h: 11rem;
+    --track-h: calc(var(--cd-h) + 13.4rem);
+}
+
+body.fight .track {
+    /* Casts hang below this line; casts woven into them sit above it,
+       and the cooldown blocks stack above that. */
+    --baseline: calc(var(--cd-h) + 1.2rem);
+    position: relative;
+    height: var(--track-h);
+    overflow: hidden;
+}
+
+body.fight .tl-inner.labels .track {
+    /* Room above and below the baseline for two rows of angled labels. */
+    --baseline: calc(var(--cd-h) + 4.6rem);
+}
+
+body.fight .track::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: var(--baseline);
+    border-top: 1px solid var(--border-soft);
+    pointer-events: none;
+}
+
+body.fight .boss {
+    position: relative;
+    height: var(--boss-h);
+    border-bottom: 1px solid var(--border-soft);
+    background: #191c21;
+}
+
+body.fight .boss .phase {
+    position: absolute;
+    bottom: 0;
+    height: 1.35rem;
+    border-left: 1px solid var(--rule);
+    background: rgba(255, 255, 255, 0.04);
+    overflow: hidden;
+}
+
+body.fight .boss .phase:nth-of-type(even) {
+    background: rgba(255, 255, 255, 0.09);
+}
+
+body.fight .boss .phase.intermission {
+    background: rgba(150, 120, 255, 0.18);
+}
+
+body.fight .boss .phase span {
+    display: block;
+    padding: 0.2rem 0.35rem;
+    font-size: 0.68rem;
+    color: var(--text-dim);
+    white-space: nowrap;
+}
+
+body.fight .boss .bcast {
+    position: absolute;
+    bottom: 1.35rem;
+    height: 0.75rem;
+    width: 1px;
+    background: var(--boss);
+    display: block;
+    color: inherit;
+    text-decoration: none;
+}
+
+/* A cast the boss began and never finished: kicked, or cut off by a
+   phase change. Drawn hollow so it reads as "did not land". */
+body.fight .boss .bcast.interrupted {
+    background: transparent;
+    border-left: 1px dashed var(--boss);
+}
+
+/* A 1px marker is hard to hit; widen the hover target without
+   widening the mark itself. */
+body.fight .boss .bcast::before {
+    content: "";
+    position: absolute;
+    left: -5px;
+    right: -5px;
+    top: -3px;
+    bottom: -3px;
+}
+
+body.fight .boss .bbar {
+    position: absolute;
+    bottom: 1.35rem;
+    height: 0.3rem;
+    min-width: 1px;
+    background: rgba(255, 157, 77, 0.4);
+}
+
+body.fight .boss .bcast .bname {
+    display: none;
+    position: absolute;
+    bottom: 100%;
+    left: 1px;
+    transform: translateY(calc(var(--row, 0) * -2.75rem)) rotate(-55deg);
+    transform-origin: left bottom;
+    font-size: 0.62rem;
+    line-height: 1;
+    color: #ffb37a;
+    white-space: nowrap;
+}
+
+body.fight .boss .bcast:hover {
+    background: #ffc48a;
+}
+
+body.fight .boss .bcast:hover .bname {
+    color: #ffd9b3;
+}
+
+body.fight .tl-inner.labels .boss .bcast .bname {
+    display: block;
+}
+
+body.fight .boss .bcast .bname.crowded {
+    visibility: hidden;
+}
+
+body.fight .track .phaseline {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 0;
+    border-left: 1px dashed #333a44;
+    pointer-events: none;
+}
+
+body.fight .track .prepull {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    background: repeating-linear-gradient(135deg,
+    rgba(255, 255, 255, 0.014) 0 6px, transparent 6px 12px);
+}
+
+body.fight .track .pull {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 0;
+    border-left: 2px solid var(--danger);
+    pointer-events: none;
+}
+
+body.fight .track .pull span {
+    position: absolute;
+    top: 0.1rem;
+    left: 0.3rem;
+    font-size: 0.65rem;
+    color: #ff8f8f;
+    white-space: nowrap;
+}
+
+body.fight .track .phase {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    border-left: 1px solid var(--rule);
+    background: rgba(255, 255, 255, 0.018);
+    overflow: hidden;
+}
+
+body.fight .track .phase:nth-child(even) {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+body.fight .track .phase.intermission {
+    background: rgba(150, 120, 255, 0.13);
+}
+
+body.fight .track .phase span {
+    display: block;
+    padding: 0.1rem 0.35rem;
+    font-size: 0.68rem;
+    color: var(--text-dim);
+    white-space: nowrap;
+}
+
+body.fight .track .lust {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    background: rgba(255, 176, 60, 0.22);
+    border-left: 2px solid var(--warn);
+}
+
+body.fight .track .gap {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    background: rgba(255, 90, 90, 0.28);
+}
+
+/* Something that went wrong without stopping the page: said, not
+   left as an empty area that looks like data. */
+body.fight .notice {
+    margin: 1rem 0;
+    padding: 0.6rem 0.8rem;
+    border-left: 3px solid var(--warn);
+    background: rgba(255, 176, 60, 0.08);
+    color: var(--text);
+}
+
+body.fight .track .castbar {
+    position: absolute;
+    top: var(--baseline);
+    height: 0.55rem;
+    min-width: 1px;
+    border-radius: 1px;
+    background: rgba(143, 176, 255, 0.4);
+}
+
+/* A hard cast that should not have been made. */
+        /* Reconstructed, not logged: the cast bar began before the report did. */
+body.fight .track .castbar.estimated {
+    background: repeating-linear-gradient(90deg,
+    rgba(143, 176, 255, 0.42) 0 5px, transparent 5px 10px);
+}
+
+/* A bar that was started and abandoned: time spent, nothing landed. */
+body.fight .track .castbar.cancelled {
+    background: rgba(255, 90, 90, 0.35);
+}
+
+        body.fight .track .tick {
+    position: absolute;
+    top: var(--baseline);
+    bottom: 0.6rem;
+    width: 1px;
+    background: var(--cast);
+}
+
+body.fight .tl-inner.labels .track .tick {
+    bottom: 7.5rem;
+}
+
+/* A cast begun during another still sits above the baseline: it did
+   not cost a slot in the rotation below. It is no longer coloured
+   differently, since that is a positional fact, not a category. */
+body.fight .track .tick.woven {
+    top: auto;
+    bottom: calc(100% - var(--baseline));
+    height: 0.9rem;
+}
+
+body.fight .tl-inner.labels .track .tick.woven {
+    height: 1.4rem;
+}
+
+body.fight .track .tick.cancelled {
+    background: var(--warn);
+}
+
+        /* A cooldown block spans the buff, so its length is how long it was
+   actually up rather than a fixed marker. */
+body.fight .track .cdblock {
+    position: absolute;
+    height: 1.15rem;
+    box-sizing: border-box;
+    min-width: 2px;
+    border-radius: 0.2rem;
+    border-left: 2px solid var(--cooldown);
+    background: rgba(255, 200, 90, 0.18);
+    z-index: 3;
+}
+
+body.fight .track .cdblock span {
+    position: absolute;
+    left: 0.25rem;
+    top: 0;
+    line-height: 1.15rem;
+    font-size: 0.62rem;
+    color: var(--cooldown);
+    white-space: nowrap;
+    pointer-events: none;
+}
+
+body.fight .track .cdblock.crowded span {
+    visibility: hidden;
+}
+
+body.fight .raidlane {
+    position: relative;
+    height: var(--rcd-h);
+    border-bottom: 1px solid var(--surface-2);
+    background: #171a1f;
+}
+
+/* Raid-wide cooldowns, stacked so simultaneous ones never overlap. */
+body.fight .raidlane .rcdblock {
+    position: absolute;
+    height: 1.15rem;
+    box-sizing: border-box;
+    min-width: 2px;
+    border-radius: 0.2rem;
+    border-left: 2px solid var(--raidcd);
+    background: rgba(127, 214, 255, 0.16);
+    z-index: 3;
+}
+
+body.fight .raidlane .rcdblock span {
+    position: absolute;
+    left: 0.25rem;
+    top: 0;
+    line-height: 1.15rem;
+    font-size: 0.62rem;
+    color: #9fdcff;
+    white-space: nowrap;
+    pointer-events: none;
+}
+
+body.fight .raidlane .rcdblock.crowded span {
+    visibility: hidden;
+}
+
+body.fight .track .tick .tname {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 2px;
+    /* Angled so it reads at a glance. --row drops a label onto a
+       parallel line below, clear of the one before it; anything that
+       still will not fit is hidden rather than overprinted. */
+    transform: translateY(calc(var(--row, 0) * 2.75rem)) rotate(55deg);
+    transform-origin: left top;
+    font-size: 0.62rem;
+    line-height: 1;
+    color: var(--muted);
+    white-space: nowrap;
+    pointer-events: none;
+}
+
+body.fight .track .tick.woven .tname {
+    top: auto;
+    bottom: 100%;
+    transform: translateY(calc(var(--row, 0) * -2.75rem)) rotate(-55deg);
+    transform-origin: left bottom;
+}
+
+body.fight .tl-inner.labels .track .tick .tname {
+    display: block;
+}
+
+body.fight .track .tick .tname.crowded {
+    visibility: hidden;
+}
+
+body.fight .dps-caption {
+    display: flex;
+    align-items: baseline;
+    gap: 0.6rem;
+    margin: 0.9rem 0 0.35rem;
+    font-size: 0.8rem;
+    color: var(--text-soft);
+    /* Fixed height and no wrapping: the readout changes on every mouse
+       move, and a caption that reflowed would shift the timeline out
+       from under the pointer. */
+    min-height: 1.4rem;
+    flex-wrap: nowrap;
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+body.fight .dps-axis,
+body.fight .taken-axis {
+    /* Peak at the lane's top edge, half-peak on the dashed midline, zero
+       on the baseline. */
+    height: var(--dps-h);
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    align-items: flex-end;
+    padding-right: 0.5rem;
+    font-size: 0.65rem;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    color: var(--muted-2);
+}
+
+body.fight .readout {
+    margin-left: auto;
+    flex: 0 0 auto;
+    min-width: 15rem;
+    text-align: right;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+    color: var(--cast);
+}
+
+/* Wowhead injects its tooltip near the pointer; if it can take the
+   pointer itself, hovering a link flickers as the tooltip steals and
+   returns the hover. */
+div.wowhead-tooltip,
+#wowhead-tooltip,
+body.fight #tooltip {
+    pointer-events: none !important;
+}
+
+body.fight .crosshair {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 0;
+    border-left: 1px solid rgba(255, 255, 255, 0.35);
+    pointer-events: none;
+}
+
+body.fight .taken {
+    position: relative;
+    height: var(--dps-h);
+    border-top: 1px solid var(--surface-2);
+    background: #1b1719;
+}
+
+body.fight .taken svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
+body.fight .taken .fill {
+    fill: rgba(255, 107, 107, 0.2);
+    stroke: none;
+}
+
+body.fight .taken .line {
+    fill: none;
+    stroke: var(--danger);
+    stroke-width: 1.5;
+    stroke-linejoin: round;
+    vector-effect: non-scaling-stroke;
+}
+
+body.fight .taken .grid {
+    stroke: #3a2b2e;
+    stroke-width: 1;
+    stroke-dasharray: 3 3;
+    vector-effect: non-scaling-stroke;
+}
+
+body.fight .taken-axis {
+    /* The lane below has its own top border. */
+    margin-top: 1px;
+    color: #a08084;
+}
+
+body.fight .taken-caption {
+    margin-top: 0.2rem;
+    color: #e0b7b7;
+}
+
+body.fight .dps {
+    position: relative;
+    height: var(--dps-h);
+    border-top: 1px solid var(--surface-2);
+    background: var(--bg-deep);
+}
+
+body.fight .dps svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
+body.fight .dps .fill {
+    fill: rgba(79, 124, 255, 0.22);
+    stroke: none;
+}
+
+body.fight .dps .line {
+    fill: none;
+    stroke: #6f96ff;
+    stroke-width: 1.5;
+    stroke-linejoin: round;
+    /* Keep the stroke even as the viewBox is stretched by the zoom. */
+    vector-effect: non-scaling-stroke;
+}
+
+body.fight .dps .grid {
+    stroke: var(--border-soft);
+    stroke-width: 1;
+    stroke-dasharray: 3 3;
+    vector-effect: non-scaling-stroke;
+}
+
+body.fight .ruler {
+    position: relative;
+    height: 1.4rem;
+    border-top: 1px solid var(--surface-2);
+    background: var(--bg-deep);
+}
+
+body.fight .ruler .mark {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    border-left: 1px solid #2f353d;
+}
+
+body.fight .ruler .mark span {
+    padding-left: 0.25rem;
+    font-size: 0.65rem;
+    line-height: 1.4rem;
+    color: var(--muted-2);
+    white-space: nowrap;
+}
+
+body.fight .scale {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 1.5rem;
+    font-size: 0.75rem;
+    color: var(--muted);
+}
+
+body.fight .legend {
+    display: flex;
+    gap: 1.25rem;
+    margin-bottom: 1rem;
+    font-size: 0.8rem;
+    color: var(--muted);
+}
+
+body.fight .legend span::before {
+    content: "";
+    display: inline-block;
+    width: 0.7rem;
+    height: 0.7rem;
+    margin-right: 0.35rem;
+    vertical-align: -1px;
+    border-radius: 2px;
+}
+
+body.fight .legend .l-cast::before {
+    background: var(--cast);
+}
+
+body.fight .legend .l-gap::before {
+    background: rgba(255, 90, 90, 0.6);
+}
+
+body.fight .legend .l-lust::before {
+    background: rgba(255, 176, 60, 0.6);
+}
+
+body.fight .legend .l-boss::before {
+    background: var(--boss);
+}
+
+body.fight .legend .l-phase::before {
+    background: var(--rule);
+}
+
+        body.fight .legend .l-estimated::before {
+    background: repeating-linear-gradient(90deg,
+    rgba(143, 176, 255, 0.9) 0 3px, transparent 3px 6px);
+}
+
+body.fight .legend .l-cd::before {
+    background: var(--cooldown);
+}
+
+body.fight .legend .l-rcd::before {
+    background: var(--raidcd);
+}
+
+        body.fight .legend .l-cancel::before {
+    background: var(--warn);
+}
+
+body.fight .casts tr.cancelled td {
+    color: #ffc978;
+}
+
+body.fight .casts tr.precast td {
+    color: #9fe0d0;
+}
+
+body.fight .casts .proctag {
+    margin-left: 0.4rem;
+    padding: 0.05rem 0.35rem;
+    border-radius: 0.2rem;
+    background: rgba(190, 140, 255, 0.18);
+    color: #d3b6ff;
+    font-size: 0.7rem;
+}
+
+        body.fight .casts tr.idlerow td {
+    padding: 0.3rem 0.75rem;
+    color: var(--danger-soft);
+    background: rgba(255, 90, 90, 0.09);
+    border-bottom: 0;
+    border-left: 2px solid rgba(255, 90, 90, 0.55);
+}
+
+body.fight .casts tr.idlerow .hint {
+    font-size: 0.75rem;
+}
+
+body.fight .casts tr.phasehead td {
+    padding-top: 0.9rem;
+    font-weight: 600;
+    color: #d7dce3;
+    background: #1e2228;
+    border-bottom: 1px solid #333941;
+}
+
+body.fight .table-legend {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    padding: 0.75rem 0.9rem;
+    margin-bottom: 0.6rem;
+    border: 1px solid var(--surface-2);
+    border-radius: 0.4rem;
+    background: var(--bg-deep);
+}
+
+body.fight .table-legend .sample {
+    flex: none;
+    padding: 0.3rem 0.6rem;
+    border-left: 2px solid rgba(255, 90, 90, 0.55);
+    background: rgba(255, 90, 90, 0.09);
+    color: var(--danger-soft);
+    font-size: 0.85rem;
+    white-space: nowrap;
+}
+
+body.fight .table-legend p {
+    margin: 0;
+    max-width: 70ch;
+    font-size: 0.8rem;
+    line-height: 1.55;
+    color: var(--muted);
+}
+
+body.fight .table-legend strong {
+    color: var(--text-soft);
+}
+
+@media (max-width: 55rem) {
+    body.fight .table-legend {
+        flex-direction: column;
+        gap: 0.6rem;
+    }
+}
+
+body.fight .casts {
+    max-height: 26rem;
+    overflow-y: auto;
+    border: 1px solid var(--surface-2);
+    border-radius: 0.4rem;
+}
+
+body.fight table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+body.fight .casts th, body.fight .casts td {
+    text-align: left;
+    padding: 0.35rem 0.75rem;
+    border-bottom: 1px solid #23272d;
+}
+
+body.fight .casts th {
+    position: sticky;
+    top: 0;
+    background: var(--surface);
+    font-size: 0.75rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+body.fight .casts tr.downtime td {
+    color: var(--danger-soft);
+}
+
+body.fight .casts tr.lust td:first-child {
+    border-left: 2px solid var(--warn);
+}
+
+body.fight .num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+body.fight ul.lusts {
+    margin: 0 0 1.5rem;
+    padding-left: 1.1rem;
+    color: var(--muted);
+}
+    
+
+/* ---- the index page (body.index) ---- */
+body.index {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2rem;
+    padding: 2rem 1rem;
+    box-sizing: border-box;
+    font-family: system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+}
+
+body.index form {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+    width: min(90vw, 32rem);
+}
+
+body.index input[type="url"] {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    font-size: 1rem;
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    background: var(--surface-1);
+    color: inherit;
+}
+
+body.index button {
+    padding: 0.75rem 2rem;
+    font-size: 1rem;
+    border: 0;
+    border-radius: 0.5rem;
+    background: var(--accent);
+    color: #fff;
+    cursor: pointer;
+}
+
+body.index .error {
+    width: min(90vw, 48rem);
+    padding: 0.75rem 1rem;
+    border: 1px solid #7a2f36;
+    border-radius: 0.5rem;
+    background: #2a1619;
+    color: #ffb4b4;
+}
+
+body.index .report {
+    width: min(90vw, 48rem);
+}
+
+body.index .report h1 {
+    margin: 0 0 0.25rem;
+    font-size: 1.5rem;
+}
+
+body.index .meta {
+    margin: 0 0 1.5rem;
+    color: var(--muted);
+}
+
+body.index .summary {
+    display: flex;
+    gap: 2rem;
+    margin-bottom: 1.5rem;
+}
+
+body.index .summary div span {
+    display: block;
+}
+
+body.index .summary .value {
+    font-size: 1.5rem;
+    font-weight: 600;
+}
+
+body.index .summary .label {
+    font-size: 0.8rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+body.index table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+body.index th, body.index td {
+    text-align: left;
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid var(--surface-2);
+}
+
+body.index th {
+    font-size: 0.8rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+body.index .kill {
+    color: var(--kill);
+}
+
+body.index .wipe {
+    color: var(--wipe);
+}
+    
+
+/* ---- the error page (body.error) ---- */
+body.error { font-family: system-ui, sans-serif; background: #1b1e24; color: var(--text); margin: 0; padding: 2rem; }
+body.error main { max-width: 40rem; margin: 4rem auto; }
+body.error h1 { font-size: 1.25rem; margin: 0 0 1rem; }
+body.error p { line-height: 1.5; }
+body.error .status { color: #8a93a2; font-size: 0.85rem; }
+body.error a { color: var(--cast); }
+    

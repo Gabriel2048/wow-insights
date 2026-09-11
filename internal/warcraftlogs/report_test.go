@@ -72,3 +72,15 @@ func TestReportCounts(t *testing.T) {
 		t.Errorf("Duration() = %v, want 1m", r.Duration())
 	}
 }
+
+func TestDifficultyName(t *testing.T) {
+	id := func(v int) *int { return &v }
+	for _, c := range []struct {
+		difficulty *int
+		want       string
+	}{{id(4), "Heroic"}, {nil, ""}, {id(99), "Difficulty 99"}} {
+		if got := (Fight{Difficulty: c.difficulty}).DifficultyName(); got != c.want {
+			t.Errorf("DifficultyName() = %q, want %q", got, c.want)
+		}
+	}
+}

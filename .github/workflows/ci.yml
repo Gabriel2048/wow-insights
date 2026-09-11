@@ -47,7 +47,7 @@ jobs:
 
       - name: go fix (no pending stdlib modernizations)
         run: |
-          pending=$(go fix -diff ./...)
+          pending=$(go fix -diff ./... || true)
           if [ -n "$pending" ]; then
             echo "pending modernizations — run 'go fix ./...':"; echo "$pending"; exit 1
           fi

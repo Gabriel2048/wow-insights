@@ -321,7 +321,6 @@ type Cast struct {
 	CastTime   time.Duration // time spent casting
 	Gap        time.Duration // idle time since the previous cast finished
 	DuringLust bool
-	Percent    float64 // position along the fight, 0-100
 
 	// HadBegincast distinguishes a spell the game considers castable but which
 	// resolved instantly (a proc) from one that is inherently instant.
@@ -369,11 +368,6 @@ type Cast struct {
 	// out before it landed. The damage bonus applies on impact, so the cast
 	// gained nothing and the proc was wasted.
 	ProcExpired string
-
-	// Positions for the timeline track.
-	GapStartPercent  float64
-	GapWidthPercent  float64
-	CastWidthPercent float64
 }
 
 // IsInstant reports whether the spell never entered a cast bar at all.
@@ -429,19 +423,12 @@ func (c Cast) GapMS() int64 { return c.Gap.Milliseconds() }
 
 // RaidWindow is a period during which a raid-wide haste buff was active.
 type RaidWindow struct {
-	AbilityID    int
-	Name         string
-	Source       string // who cast it, when known
-	Start        time.Duration
-	End          time.Duration
-	Targets      int
-	StartPercent float64
-	WidthPercent float64
-
-	// Row is the stacking row within the raid cooldown lane. Two cooldowns
-	// running at once are drawn one above the other rather than on top of
-	// each other.
-	Row int
+	AbilityID int
+	Name      string
+	Source    string // who cast it, when known
+	Start     time.Duration
+	End       time.Duration
+	Targets   int
 }
 
 // Duration is how long the buff was up.
@@ -466,13 +453,6 @@ type CooldownWindow struct {
 	Name      string
 	Start     time.Duration
 	End       time.Duration
-
-	StartPercent float64
-	WidthPercent float64
-
-	// Row is the stacking row, so two cooldowns up at once are drawn one above
-	// the other rather than overlapping.
-	Row int
 }
 
 // Duration is how long the cooldown lasted.
@@ -549,8 +529,6 @@ type Phase struct {
 	IsIntermission bool
 	Start          time.Duration
 	End            time.Duration
-	StartPercent   float64
-	WidthPercent   float64
 }
 
 // Duration is how long the phase lasted in this pull.
@@ -577,6 +555,9 @@ type Section struct {
 // Timeline is one player's casts across a fight, with the raid lust windows
 // that overlap them.
 type Timeline struct {
+	// Subject is whose timeline this is.
+	Subject Subject
+
 	// Incomplete names the parts of the document the API reported errors on,
 	// when it answered partially. Empty when everything arrived. The lanes
 	// built from a missing field are simply empty, and a page must say why.
@@ -598,150 +579,30 @@ type Timeline struct {
 	// Taken is the damage the player received, on the same bucket grid as DPS.
 	Taken *DPSGraph
 
-	// Duration is the length of the fight itself. The drawn timeline starts
-	// LeadIn before the pull, so a cast begun beforehand has somewhere to be
-	// drawn, and spans Total.
+	// Duration is the length of the fight itself. Where anything is drawn
+	// against it is internal/view's decision, not this package's: every
+	// time here is absolute and relative to the pull, and there is no
+	// position, percentage or path anywhere in the analysis.
 	Duration time.Duration
-	LeadIn   time.Duration
-	Total    time.Duration
-
-	// PullPercent is where the pull sits along the drawn timeline.
-	PullPercent float64
-
-	// RaidCDRows and CooldownRows are how many stacking rows each cooldown
-	// lane needs.
-	RaidCDRows   int
-	CooldownRows int
 }
 
-// packCooldownWindows stacks the player's own cooldowns the same way, so a
-// cooldown starting as another ends does not have its label hidden.
-func packCooldownWindows(windows []CooldownWindow) int {
-	var rowEnds []time.Duration
-	for i := range windows {
-		placed := false
-		for row, end := range rowEnds {
-			if windows[i].Start >= end {
-				windows[i].Row = row
-				rowEnds[row] = windows[i].End
-				placed = true
-				break
-			}
-		}
-		if !placed {
-			windows[i].Row = len(rowEnds)
-			rowEnds = append(rowEnds, windows[i].End)
-		}
-	}
-	return len(rowEnds)
+// Subject is what a Timeline is about: whose casts, in which pull, in which
+// report. The analysis used to carry none of this — the identity existed
+// only as arguments to the method that built it and was discarded on
+// return — so a []Timeline could not be labelled, sorted or attributed, and
+// there was nothing to key a cache on. Subject is comparable, so it can be
+// a map key as it is. That is the point of it being its own struct rather
+// than Fight: Fight holds *bool and *int, and a struct containing it as a
+// key would compare pointers and silently never hit.
+type Subject struct {
+	ReportCode string
+	FightID    int
+	ActorID    int
+	// Spec is the player's specialisation, when the caller knows it. The
+	// analysis is spec-shaped (#16), so two timelines of the same actor
+	// under different spec tables are different subjects.
+	Spec string
 }
-
-// packRaidWindows assigns each window the first row already free at the moment
-// it starts, so overlapping cooldowns stack instead of colliding. Windows must
-// already be sorted by start. It returns the number of rows used.
-func packRaidWindows(windows []RaidWindow) int {
-	var rowEnds []time.Duration
-	for i := range windows {
-		placed := false
-		for row, end := range rowEnds {
-			if windows[i].Start >= end {
-				windows[i].Row = row
-				rowEnds[row] = windows[i].End
-				placed = true
-				break
-			}
-		}
-		if !placed {
-			windows[i].Row = len(rowEnds)
-			rowEnds = append(rowEnds, windows[i].End)
-		}
-	}
-	return len(rowEnds)
-}
-
-// minLeadIn keeps a sliver of pre-pull room even when nothing was precast, so
-// the pull reads as a moment on a timeline rather than a hard edge.
-const minLeadIn = 1500 * time.Millisecond
-
-// leadInMargin is the breathing room left to the left of the earliest cast.
-const leadInMargin = 750 * time.Millisecond
-
-// layout fixes the drawn time span and converts every offset into a percentage
-// of it. Positions are computed in one place so the casts, phases, lust
-// windows and DPS curve cannot drift out of alignment.
-func (t *Timeline) layout() {
-	t.LeadIn = minLeadIn
-	for _, c := range t.Casts {
-		if c.Offset < 0 && -c.Offset+leadInMargin > t.LeadIn {
-			t.LeadIn = -c.Offset + leadInMargin
-		}
-	}
-	t.Total = t.LeadIn + t.Duration
-	if t.Total <= 0 {
-		return
-	}
-	t.PullPercent = t.percent(0)
-
-	for i := range t.Casts {
-		c := &t.Casts[i]
-		c.Percent = t.percent(c.Offset)
-		c.CastWidthPercent = t.span(c.End - c.Offset) // a completed bar, or an abandoned one
-		c.GapWidthPercent = t.span(c.Gap)
-		c.GapStartPercent = c.Percent - c.GapWidthPercent
-	}
-	for i := range t.Lusts {
-		l := &t.Lusts[i]
-		l.StartPercent = t.percent(l.Start)
-		l.WidthPercent = t.span(l.End - l.Start)
-	}
-	for i := range t.Phases {
-		p := &t.Phases[i]
-		p.StartPercent = t.percent(p.Start)
-		p.WidthPercent = t.span(p.End - p.Start)
-	}
-	t.RaidCDRows = packRaidWindows(t.RaidCDs)
-	for i := range t.RaidCDs {
-		r := &t.RaidCDs[i]
-		r.StartPercent = t.percent(r.Start)
-		r.WidthPercent = t.span(r.End - r.Start)
-	}
-	t.CooldownRows = packCooldownWindows(t.Cooldowns)
-	for i := range t.Cooldowns {
-		c := &t.Cooldowns[i]
-		c.StartPercent = t.percent(c.Start)
-		c.WidthPercent = t.span(c.End - c.Start)
-	}
-	for i := range t.BossCasts {
-		b := &t.BossCasts[i]
-		b.Percent = t.percent(b.Offset)
-		b.WidthPercent = t.span(b.End - b.Offset)
-	}
-	for _, graph := range []*DPSGraph{t.DPS, t.Taken} {
-		if graph == nil {
-			continue
-		}
-		for i := range graph.Points {
-			graph.Points[i].Percent = t.percent(graph.Points[i].Offset)
-		}
-		graph.Line, graph.Area = plot(graph.Points, graph.Peak)
-	}
-}
-
-// percent places a fight-relative offset along the drawn timeline.
-func (t *Timeline) percent(offset time.Duration) float64 {
-	return 100 * float64(offset+t.LeadIn) / float64(t.Total)
-}
-
-// span converts a length of time into a width along the drawn timeline.
-func (t *Timeline) span(d time.Duration) float64 {
-	return 100 * float64(d) / float64(t.Total)
-}
-
-// TotalMS is the drawn span in milliseconds, for the timeline ruler.
-func (t *Timeline) TotalMS() int64 { return t.Total.Milliseconds() }
-
-// LeadInMS is the pre-pull span in milliseconds, for the timeline ruler.
-func (t *Timeline) LeadInMS() int64 { return t.LeadIn.Milliseconds() }
 
 // Sections groups the casts by phase. When the encounter has no phase data,
 // every cast lands in a single unnamed section.
@@ -1108,7 +969,9 @@ func (c *Client) Timeline(ctx context.Context, code string, fight Fight, sourceI
 	if err != nil {
 		return nil, err
 	}
-	return buildTimeline(report, casts, fight), nil
+	timeline := buildTimeline(report, casts, fight)
+	timeline.Subject = Subject{ReportCode: code, FightID: fight.ID, ActorID: sourceID}
+	return timeline, nil
 }
 
 // fetchTimeline runs the timeline query and follows the cast pagination. The
@@ -1192,10 +1055,9 @@ func (c *Client) fetchCastPage(ctx context.Context, code string, fight Fight, so
 	return page.ReportData.Report.Casts, nil
 }
 
-// buildTimeline assembles a decoded response into a positioned Timeline. It
-// cannot fail: nothing between here and the layout pass can. layout is the last
-// thing it does, so "every *Timeline handed to a caller has been laid out"
-// holds for every caller, not only Client.Timeline.
+// buildTimeline assembles a decoded response into a Timeline. It cannot fail:
+// nothing after decoding can. What comes out carries times, never positions;
+// internal/view draws it against whatever axis the page chooses.
 func buildTimeline(report *timelineReport, casts []event, fight Fight) *Timeline {
 	names := make(map[int]string, len(report.MasterData.Abilities))
 	for _, a := range report.MasterData.Abilities {
@@ -1238,8 +1100,6 @@ func buildTimeline(report *timelineReport, casts []event, fight Fight) *Timeline
 		}
 		timeline.Phases = buildPhases(transitions, labels, fight)
 	}
-
-	timeline.layout()
 	return timeline
 }
 
