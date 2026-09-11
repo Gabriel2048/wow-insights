@@ -61,6 +61,13 @@ the tooling enforces:
 The test: **if the acceptance criteria cannot be stated without the word "then", it is
 probably two issues.**
 
+**A finished item's branch is deleted, remote and local.** One branch, one pull request,
+then nothing: the squash commit on `main` and the issue's summary are the record, and a
+branch kept "in case" is a branch someone will one day push to. GitHub deletes the remote
+side on merge; `wi.sh status <n> Done` deletes the local side once GitHub reports the pull
+request merged — the only test that works under squash merges, where a branch's commits are
+never ancestors of `main`.
+
 **Enforced where it can be.** `wi.sh branch` refuses a parent, a closed issue, an issue
 that already has a linked branch and an issue that already has an open pull request,
 saying in each case what to do instead. `wi.sh status <n> Done` on the last child says

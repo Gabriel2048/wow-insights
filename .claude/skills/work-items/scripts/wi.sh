@@ -163,11 +163,29 @@ cmd_status() {
     --single-select-option-id "$oid" >/dev/null
   echo "set Status=$want on $(jq -r '.title' <<<"$item")"
 
-  # Finishing a child may finish its parent. Closing the parent is the
-  # owner's call, so this only says so — loudly enough not to be missed.
   local num facts parent
   num="$(jq -r '.content.number // empty' <<<"$item")"
   if [ -n "$num" ] && [ "$(tr '[:upper:]' '[:lower:]' <<<"$want")" = "done" ]; then
+    # A finished item's branch has served its purpose. GitHub deletes the
+    # remote one on merge; this is the local half. main is squash-only, so
+    # `git branch -d` would refuse every merged branch (its commits are never
+    # ancestors of main); the merged pull request is the real evidence.
+    if git rev-parse --git-dir >/dev/null 2>&1; then
+      git fetch --prune --quiet origin 2>/dev/null || true
+      for b in $(git for-each-ref --format='%(refname:short)' "refs/heads/$num-*"); do
+        if [ -z "$(gh pr list --repo "$REPO" --state merged --head "$b" --json number --jq '.[0].number')" ]; then
+          echo "warning: no merged pull request for local branch $b, left alone" >&2
+          continue
+        fi
+        if [ "$(git branch --show-current)" = "$b" ]; then
+          git checkout --quiet main || { echo "warning: could not leave $b (uncommitted changes?), left alone" >&2; continue; }
+        fi
+        git branch -D "$b" >/dev/null && echo "deleted local branch $b (its pull request is merged)"
+      done
+    fi
+
+    # Finishing a child may finish its parent. Closing the parent is the
+    # owner's call, so this only says so — loudly enough not to be missed.
     facts="$(issue_facts "$num")"
     parent="$(jq -r '.parent // empty' <<<"$facts")"
     if [ -n "$parent" ]; then

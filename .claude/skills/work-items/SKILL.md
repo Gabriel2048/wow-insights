@@ -50,6 +50,14 @@ After the owner merges, and only then: comment an implementation summary on the 
 the last open child of a parent, `status` says so — tell the owner; closing the parent
 is theirs to do.
 
+**A finished item's branch is deleted.** It served one pull request and is never needed
+again: the squash commit on `main` carries the PR body, and the issue carries the
+summary. GitHub deletes the remote branch on merge (`deleteBranchOnMerge` is on), and
+`wi.sh status 12 Done` deletes the local `12-*` branch, switching to `main` first if you
+are on it. It deletes only a branch whose pull request GitHub reports as merged — not
+`git branch -d`'s own test, which `main` being squash-only would fail for every branch —
+so a mistaken Done cannot lose work. A clone full of merged branches is the sign someone skipped this step.
+
 ## One work item, one pull request
 
 **Every work item produces exactly one branch and exactly one pull request, and that pull
