@@ -16,3 +16,4 @@ Closes #
 - [ ] `./scripts/check.sh` passes locally
 - [ ] Checked against a real report/fight in the running app, or explained why not
 - [ ] If builder output changed: named every existing assertion that changed, and why the old one was wrong
+- [ ] `ARCHITECTURE.md` updated, or the change is not structural (no new package, edge, external system, entry point or seam)
