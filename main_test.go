@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"errors"
+	"io"
+	"log/slog"
 	"testing"
 
 	"wowinsight/internal/config"
@@ -12,7 +14,7 @@ import (
 // what is missing, never a server that starts and fails every request.
 func TestRunRefusesToStartWithoutCredentials(t *testing.T) {
 	var missing *config.MissingError
-	err := run(context.Background(), config.Config{Port: "0"})
+	err := run(context.Background(), config.Config{Port: "0"}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if !errors.As(err, &missing) {
 		t.Fatalf("run() with no credentials returned %v, want a *config.MissingError", err)
 	}

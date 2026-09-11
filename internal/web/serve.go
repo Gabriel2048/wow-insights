@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"time"
@@ -53,17 +54,17 @@ func (s *Server) Run(ctx context.Context, addr string) error {
 // serve is Run past the listen, so a test can hand in a listener on port 0.
 func (s *Server) serve(ctx context.Context, ln net.Listener) error {
 	srv := &http.Server{
-		Handler:           s.Routes(),
+		Handler:           s.Handler(),
 		ReadHeaderTimeout: readHeaderTimeout,
 		ReadTimeout:       readTimeout,
 		IdleTimeout:       idleTimeout,
 		MaxHeaderBytes:    maxHeaderBytes,
-		ErrorLog:          s.log,
+		ErrorLog:          slog.NewLogLogger(s.log.Handler(), slog.LevelError),
 	}
 
 	errc := make(chan error, 1)
 	go func() { errc <- srv.Serve(ln) }()
-	s.log.Printf("listening on %s", ln.Addr())
+	s.log.Info("listening", "addr", ln.Addr().String())
 
 	select {
 	case err := <-errc:
@@ -73,7 +74,7 @@ func (s *Server) serve(ctx context.Context, ln net.Listener) error {
 	case <-ctx.Done():
 	}
 
-	s.log.Printf("shutting down, draining for up to %s", shutdownBudget)
+	s.log.Info("shutting down", "drain_budget", shutdownBudget.String())
 	drain, cancel := context.WithTimeout(context.Background(), shutdownBudget)
 	defer cancel()
 	if err := srv.Shutdown(drain); err != nil {
