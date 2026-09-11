@@ -9,7 +9,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -27,10 +26,6 @@ const (
 	// never leaves with a token that dies in flight.
 	expiryLeeway = time.Minute
 )
-
-// ErrNoCredentials is returned when the client was built without a client ID
-// and secret.
-var ErrNoCredentials = errors.New("warcraftlogs: missing client ID or secret")
 
 // Client is a Warcraft Logs API client. It is safe for concurrent use; the
 // access token is cached and renewed on demand.
@@ -114,16 +109,22 @@ func (c *Client) accessToken(ctx context.Context) (string, error) {
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("warcraftlogs: token request: %w", err)
+		return "", fmt.Errorf("%w: token request: %w", ErrUpstream, err)
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("%w: reading token response: %w", ErrUpstream, err)
 	}
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("warcraftlogs: token request returned %s: %s", resp.Status, strings.TrimSpace(string(body)))
+	switch resp.StatusCode {
+	case http.StatusOK:
+	case http.StatusBadRequest, http.StatusUnauthorized, http.StatusForbidden:
+		// The OAuth endpoint answers a wrong client id or secret with one of
+		// these; it is a deployment fault, not an outage.
+		return "", fmt.Errorf("%w: token endpoint returned HTTP %d", ErrBadCredentials, resp.StatusCode)
+	default:
+		return "", &APIError{Status: resp.StatusCode, Body: keepBody(body), RetryAfter: retryAfter(resp.Header.Get("Retry-After"))}
 	}
 
 	var token struct {
@@ -131,10 +132,10 @@ func (c *Client) accessToken(ctx context.Context) (string, error) {
 		ExpiresIn   int64  `json:"expires_in"`
 	}
 	if err := json.Unmarshal(body, &token); err != nil {
-		return "", fmt.Errorf("warcraftlogs: decode token: %w", err)
+		return "", fmt.Errorf("%w: decode token: %w", ErrUpstream, err)
 	}
 	if token.AccessToken == "" {
-		return "", errors.New("warcraftlogs: token response contained no access token")
+		return "", fmt.Errorf("%w: token response carried no access token", ErrUpstream)
 	}
 
 	c.token = token.AccessToken
@@ -142,12 +143,29 @@ func (c *Client) accessToken(ctx context.Context) (string, error) {
 	return c.token, nil
 }
 
-// graphQLError is a single error entry returned by the API.
+// graphQLError is a single error entry returned by the API. Path names the
+// field the error sits on, so a caller can say which part of a document was
+// lost.
 type graphQLError struct {
 	Message string `json:"message"`
+	Path    []any  `json:"path"`
+}
+
+func (e graphQLError) path() string {
+	parts := make([]string, 0, len(e.Path))
+	for _, p := range e.Path {
+		parts = append(parts, fmt.Sprint(p))
+	}
+	return strings.Join(parts, ".")
 }
 
 // Query runs a GraphQL query and unmarshals the "data" object into out.
+//
+// GraphQL permits a 200 carrying both data and errors: one failing field in a
+// document of eleven leaves the other ten intact. So the data is decoded into
+// out before the errors are reported, and the error returned is an *APIError
+// naming the fields that failed — a caller that can use a partial document
+// checks for it with errors.As and carries on with what it has.
 func (c *Client) Query(ctx context.Context, query string, variables map[string]any, out any) error {
 	token, err := c.accessToken(ctx)
 	if err != nil {
@@ -168,16 +186,16 @@ func (c *Client) Query(ctx context.Context, query string, variables map[string]a
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return fmt.Errorf("warcraftlogs: query: %w", err)
+		return fmt.Errorf("%w: query: %w", ErrUpstream, err)
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 	if err != nil {
-		return err
+		return fmt.Errorf("%w: reading response: %w", ErrUpstream, err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("warcraftlogs: query returned %s: %s", resp.Status, strings.TrimSpace(string(body)))
+		return &APIError{Status: resp.StatusCode, Body: keepBody(body), RetryAfter: retryAfter(resp.Header.Get("Retry-After"))}
 	}
 
 	var envelope struct {
@@ -185,19 +203,22 @@ func (c *Client) Query(ctx context.Context, query string, variables map[string]a
 		Errors []graphQLError  `json:"errors"`
 	}
 	if err := json.Unmarshal(body, &envelope); err != nil {
-		return fmt.Errorf("warcraftlogs: decode response: %w", err)
+		return fmt.Errorf("%w: decode response: %w", ErrUpstream, err)
+	}
+	if out != nil && len(envelope.Data) > 0 && string(envelope.Data) != "null" {
+		if err := json.Unmarshal(envelope.Data, out); err != nil {
+			return fmt.Errorf("%w: decode data: %w", ErrUpstream, err)
+		}
 	}
 	if len(envelope.Errors) > 0 {
-		messages := make([]string, len(envelope.Errors))
-		for i, e := range envelope.Errors {
-			messages[i] = e.Message
+		apiErr := &APIError{Status: http.StatusOK}
+		for _, e := range envelope.Errors {
+			apiErr.Messages = append(apiErr.Messages, e.Message)
+			apiErr.Paths = append(apiErr.Paths, e.path())
 		}
-		return fmt.Errorf("warcraftlogs: %s", strings.Join(messages, "; "))
+		return apiErr
 	}
-	if out == nil {
-		return nil
-	}
-	return json.Unmarshal(envelope.Data, out)
+	return nil
 }
 
 // rateLimitResponse is the envelope the rate limit query returns.

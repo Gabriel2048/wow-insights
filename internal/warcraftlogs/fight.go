@@ -184,15 +184,16 @@ func (c *Client) FightDetail(ctx context.Context, code string, fightID int) (*Fi
 // fightID, which is why they belong here rather than in the assembly.
 func (c *Client) fetchFightDetail(ctx context.Context, code string, fightID int) (*fightDetailReport, error) {
 	var data fightDetailResponse
-	if err := c.Query(ctx, fightQuery, map[string]any{"code": code, "id": fightID}, &data); err != nil {
-		return nil, err
-	}
+	err := c.Query(ctx, fightQuery, map[string]any{"code": code, "id": fightID}, &data)
 	report := data.ReportData.Report
 	if report == nil {
-		return nil, fmt.Errorf("warcraftlogs: report %q not found (it may be private)", code)
+		return nil, notFound(err, code)
+	}
+	if err != nil {
+		return nil, err
 	}
 	if len(report.Fights) == 0 {
-		return nil, fmt.Errorf("warcraftlogs: report %q has no fight %d", code, fightID)
+		return nil, fmt.Errorf("%w: %s has no fight %d", ErrFightNotFound, code, fightID)
 	}
 	return report, nil
 }

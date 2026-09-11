@@ -3,10 +3,12 @@ package web
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"wowinsight/internal/warcraftlogs"
 )
@@ -154,16 +156,35 @@ func TestIndexRejectsSomethingThatIsNotAReportURL(t *testing.T) {
 	}
 }
 
-// Today the upstream error string is rendered verbatim. This pins it so that
-// #12 replacing it with a taxonomy is a deliberate, visible change rather than
-// something a reviewer has to notice.
-func TestIndexCurrentlyShowsTheUpstreamErrorVerbatim(t *testing.T) {
-	wcl := fakeWCL{report: func(context.Context, string) (*warcraftlogs.Report, error) {
-		return nil, errors.New(`warcraftlogs: report "ExampleReport123" not found (it may be private)`)
-	}}
-	rec := get(t, wcl, "/?url=https://www.warcraftlogs.com/reports/ExampleReport123")
-	if !strings.Contains(rec.Body.String(), "not found (it may be private)") {
-		t.Error("the upstream message is currently surfaced to the user; if that changed, #12 is why")
+// A failure on the index page is a fixed sentence beside the form, chosen by
+// what kind of failure it was. What Warcraft Logs actually said goes to the
+// log and never to the page. (Until #12 the upstream string was rendered
+// verbatim, and a test pinned that so the change would be visible; this is
+// that change.)
+func TestIndexShowsAFixedSentenceAndNeverTheUpstreamText(t *testing.T) {
+	const secret = "UPSTREAM SAID SOMETHING NOBODY SHOULD SEE"
+	for _, tc := range []struct {
+		err  error
+		want string
+	}{
+		{fmt.Errorf("%w: ExampleReport123", warcraftlogs.ErrReportNotFound), "That report was not found"},
+		{&warcraftlogs.APIError{Status: 503, Body: secret}, "did not answer properly"},
+		{&warcraftlogs.APIError{Status: 429, Body: secret, RetryAfter: 5 * time.Minute}, "Try again in about 5 minutes"},
+		{&warcraftlogs.APIError{Status: 200, Messages: []string{secret}}, "did not answer properly"},
+		{warcraftlogs.ErrNoCredentials, "credentials are missing or rejected"},
+	} {
+		wcl := fakeWCL{report: func(context.Context, string) (*warcraftlogs.Report, error) { return nil, tc.err }}
+		rec := get(t, wcl, "/?url=https://www.warcraftlogs.com/reports/ExampleReport123")
+		body := rec.Body.String()
+		if rec.Code != http.StatusOK {
+			t.Errorf("%v: status = %d, want 200 — a form error is not an HTTP error", tc.err, rec.Code)
+		}
+		if !strings.Contains(body, tc.want) {
+			t.Errorf("%v: page lacks %q", tc.err, tc.want)
+		}
+		if strings.Contains(body, secret) || strings.Contains(body, tc.err.Error()) {
+			t.Errorf("%v: the page carries upstream or error text", tc.err)
+		}
 	}
 }
 

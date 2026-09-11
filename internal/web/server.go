@@ -7,12 +7,11 @@ package web
 import (
 	"context"
 	"embed"
-	"encoding/json"
-	"errors"
 	"html/template"
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"wowinsight/internal/warcraftlogs"
@@ -58,23 +57,6 @@ func New(wcl logsClient, tpl *template.Template, logger *slog.Logger) *Server {
 	return &Server{wcl: counted{wcl}, tpl: tpl, log: logger, handlerDeadline: handlerDeadline}
 }
 
-// upstreamFailed logs a failed call to Warcraft Logs at the right severity.
-// A user who navigated away cancels the request context, and the client
-// reports that as an error like any other — but it is not one, and logging
-// it as one would drown the failures that matter in the ones that are not.
-func (s *Server) upstreamFailed(r *http.Request, level slog.Level, msg string, err error, attrs ...any) {
-	switch {
-	case errors.Is(err, context.Canceled):
-		s.logger(r).Info("client went away during "+msg, attrs...)
-	case errors.Is(err, context.DeadlineExceeded):
-		// The handler deadline fired. That is this app's bound, not an
-		// upstream fault, and it is worth a warning rather than an error.
-		s.logger(r).Warn("deadline exceeded during "+msg, attrs...)
-	default:
-		s.logger(r).Log(r.Context(), level, msg, append(attrs, "err", err)...)
-	}
-}
-
 // Routes returns the mux the server listens on. It returns the concrete type
 // rather than http.Handler because a caller needs Handler() to ask which
 // pattern a path resolves to.
@@ -86,6 +68,11 @@ func (s *Server) Routes() *http.ServeMux {
 	return mux
 }
 
+// maxURLParam bounds the report link a user submits. A real one is under a
+// hundred characters; the parser and the page that echoes it back on failure
+// should never see more than this.
+const maxURLParam = 512
+
 // fightPageData is what the fight template renders. Player is nil until one is
 // picked from the dropdown.
 type fightPageData struct {
@@ -94,6 +81,11 @@ type fightPageData struct {
 	SelectedID int
 	Player     *warcraftlogs.PlayerStats
 	Timeline   *warcraftlogs.Timeline
+	// Notices are the things that went wrong without stopping the page: the
+	// timeline could not be fetched, a player could not be resolved, part of
+	// the document did not arrive. An empty area with nothing said is the
+	// wrong default for a product whose whole value is the timeline.
+	Notices []string
 }
 
 // pageData is what the index template renders.
@@ -109,22 +101,24 @@ func (s *Server) index(w http.ResponseWriter, r *http.Request) {
 
 	// The form submits back to "/" with the report URL in the query string, so
 	// a bare visit renders an empty form and a submission renders the report.
+	// A failure here is the form's result, not an HTTP failure: the page is
+	// still the page, with the sentence beside the field.
 	if data.URL = r.URL.Query().Get("url"); data.URL != "" {
+		if len(data.URL) > maxURLParam {
+			data.URL = data.URL[:maxURLParam]
+		}
 		code, err := warcraftlogs.ParseReportCode(data.URL)
 		if err != nil {
 			data.Error = "That does not look like a Warcraft Logs report link. Expected something like https://www.warcraftlogs.com/reports/ExampleReport123"
 		} else if report, err := s.wcl.Report(r.Context(), code); err != nil {
-			s.upstreamFailed(r, slog.LevelError, "fetch report", err, "code", code)
-			data.Error = err.Error()
+			p := classify(err)
+			s.logProblem(r, p, "fetch report", err, "code", code)
+			data.Error = p.message
 		} else {
 			data.Report = report
 		}
 	}
-
-	if err := s.tpl.ExecuteTemplate(w, "index.html", data); err != nil {
-		s.logger(r).Error("render index", "err", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
-	}
+	s.render(w, r, http.StatusOK, "index.html", data)
 }
 
 // fight renders one encounter and, when a player is selected, that player's
@@ -143,33 +137,49 @@ func (s *Server) fight(w http.ResponseWriter, r *http.Request) {
 
 	detail, err := s.wcl.FightDetail(r.Context(), code, fightID)
 	if err != nil {
-		s.upstreamFailed(r, slog.LevelError, "fetch fight", err, "code", code, "fight", fightID)
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		p := classify(err)
+		s.logProblem(r, p, "fetch fight", err, "code", code, "fight", fightID)
+		s.fail(w, r, p)
 		return
 	}
 
 	data := fightPageData{Detail: detail, Fight: detail.Fight}
 	if raw := r.URL.Query().Get("player"); raw != "" {
-		if id, err := strconv.Atoi(raw); err == nil {
-			if player, ok := detail.Player(id); ok {
-				data.SelectedID = id
-				data.Player = &player
+		id, err := strconv.Atoi(raw)
+		player, ok := detail.Player(id)
+		switch {
+		case err != nil:
+			s.logger(r).Info("player is not a number", "player", raw)
+			data.Notices = append(data.Notices, "The player in the link is not one this page knows; pick one above.")
+		case !ok:
+			s.logger(r).Info("player is not in this fight", "player", id)
+			data.Notices = append(data.Notices, "That player is not in this fight; pick one above.")
+		default:
+			data.SelectedID = id
+			data.Player = &player
 
-				timeline, err := s.wcl.Timeline(r.Context(), code, detail.Fight, id)
-				if err != nil {
-					// The stats above are still worth showing without it, and
-					// the page renders 200 — so this is a warning, not an error.
-					s.upstreamFailed(r, slog.LevelWarn, "fetch timeline", err, "code", code, "fight", fightID, "player", id)
-				} else {
-					data.Timeline = timeline
+			timeline, err := s.wcl.Timeline(r.Context(), code, detail.Fight, id)
+			if err != nil {
+				// The stats above are still worth showing without it, and the
+				// page renders 200 — a warning, not an error, and a sentence
+				// where the timeline would have been rather than an empty
+				// area that looks like a player who cast nothing.
+				p := classify(err)
+				if p.status != 0 {
+					p.level = min(p.level, slog.LevelWarn)
+				}
+				s.logProblem(r, p, "fetch timeline", err, "code", code, "fight", fightID, "player", id)
+				data.Notices = append(data.Notices, "The cast timeline could not be loaded. "+p.message)
+			} else {
+				data.Timeline = timeline
+				if len(timeline.Incomplete) > 0 {
+					s.logger(r).Warn("timeline arrived incomplete", "missing", timeline.Incomplete)
+					data.Notices = append(data.Notices, "Part of the timeline was unavailable from Warcraft Logs: "+strings.Join(timeline.Incomplete, ", ")+".")
 				}
 			}
 		}
 	}
-
-	if err := s.tpl.ExecuteTemplate(w, "fight.html", data); err != nil {
-		s.logger(r).Error("render fight", "err", err)
-	}
+	s.render(w, r, http.StatusOK, "fight.html", data)
 }
 
 // healthz is the probe target: it answers without touching anything, so it
@@ -180,12 +190,4 @@ func (s *Server) fight(w http.ResponseWriter, r *http.Request) {
 // the 502 rate in the access log.
 func (s *Server) healthz(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, r, http.StatusOK, map[string]string{"status": "ok"})
-}
-
-func (s *Server) writeJSON(w http.ResponseWriter, r *http.Request, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		s.logger(r).Error("encode response", "err", err)
-	}
 }

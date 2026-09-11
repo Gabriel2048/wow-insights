@@ -110,8 +110,7 @@ reasoning behind each heuristic. Read them before changing a builder.
 
 **Known shape problems**, each owned by an issue: spec knowledge is package-level globals
 (#16); presentation fields (`Percent`, `Row`, SVG strings) live on the analysis types
-(#17); errors are strings shown verbatim (#12). `AGENTS.md` says how to build around them
-in the meantime.
+(#17). `AGENTS.md` says how to build around them in the meantime.
 
 ## 3. What happens on a fight page request
 
@@ -153,12 +152,13 @@ sequenceDiagram
         end
         C->>C: buildTimeline → layout()
     end
-    S->>B: fight.html — 200 even when Timeline failed (stats still render)
+    S->>B: fight.html — 200 even when Timeline failed (stats render, with a notice)
 ```
 
-- The page degrades rather than fails: a `Timeline` error is logged and the stats render
-  without it. Today that is indistinguishable from a player who cast nothing; #12 adds
-  the notice.
+- The page degrades rather than fails: a `Timeline` error is logged with what the API
+  said, the stats render without it, and a notice says so where the timeline would be.
+  A failure that stops the page is classified once into a status and a fixed sentence
+  (`docs/decisions/2026-09-11-error-taxonomy.md`); upstream text never reaches a page.
 - Every request gets an id (`X-Request-Id` on the response) and one access line keyed by
   the route pattern, with status, duration and the number of upstream calls. A panic is a
   500 and one ERROR line with that id; a client that went away is INFO, not an error.
