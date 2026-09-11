@@ -37,10 +37,9 @@ flowchart LR
 
 ## 2. How the code is organised
 
-Five packages. Solid arrows are imports and are verified. `cmd/record` imports the same
-three packages as `main`; its edges are declared in the diagram source and checked by the
-same test, but not drawn, because six lines from two boxes cannot be routed without
-crossing. Dotted arrows are relations that are not imports, which is what makes them
+Five packages. Solid arrows are imports and are verified; one of them — `cmd/record`
+reading `.env` through `internal/env` — is declared in the diagram source and checked,
+but not drawn, because the line would only cross `main`'s. Dotted arrows are relations that are not imports, which is what makes them
 worth drawing — including the two wires the `-fixture`
 flag chooses between: without it the client talks to Warcraft Logs, with it the replay
 transport sits under the same client and answers from `testdata/`.
@@ -50,7 +49,7 @@ flowchart TB
     %% verified: package graph
     templates[/"templates/*.html<br/>embedded at compile time"/]
     main["main<br/>HTTP layer, routes, templates<br/>server.go · main.go · format.go"]
-    record["cmd/record<br/>the fixture recorder<br/>imports the same three as main"]
+    record["cmd/record<br/>the fixture recorder"]
     env["internal/env<br/>.env loading"]
     fixture["internal/fixture<br/>replay and record transports"]
     warcraftlogs["internal/warcraftlogs<br/>API client + analysis + layout<br/>client · report · fight · timeline · boss · dps"]
@@ -58,14 +57,13 @@ flowchart TB
     testdata[/"testdata/<br/>the committed recording"/]
 
     main --> env
-    main --> fixture
+    main -->|"used only with -fixture"| fixture
     main --> warcraftlogs
-
-    %% cmd/record's imports duplicate main's. They are declared here so the
-    %% test verifies them, and not drawn, so the picture stays readable.
+    record -->|"records through"| fixture
+    record --> warcraftlogs
+    %% cmd/record also imports env (for .env). Declared here so the test
+    %% verifies it, and not drawn: the line would only cross main's.
     %% record --> env
-    %% record --> fixture
-    %% record --> warcraftlogs
 
     templates -.->|"go:embed"| main
     warcraftlogs -.->|"no -fixture: the real wire"| api
