@@ -424,6 +424,11 @@
             rgba(143, 176, 255, 0.42) 0 5px, transparent 5px 10px);
         }
 
+        /* A bar that was started and abandoned: time spent, nothing landed. */
+        .track .castbar.cancelled {
+            background: rgba(255, 90, 90, 0.35);
+        }
+
                 .track .tick {
             position: absolute;
             top: var(--baseline);
@@ -1079,7 +1084,7 @@
         {{end}}
         {{range .Casts}}
             {{if .CastWidthPercent}}
-                <div class="castbar{{if .Estimated}} estimated{{end}}"
+                <div class="castbar{{if .Estimated}} estimated{{end}}{{if .Cancelled}} cancelled{{end}}"
                      style="left: {{printf "%.3f" .Percent}}%; width: {{printf "%.3f" .CastWidthPercent}}%"
                      {{with .ProcLabel}}title="{{.}}"{{end}}></div>
             {{end}}

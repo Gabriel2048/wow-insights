@@ -1,6 +1,7 @@
 package warcraftlogs
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"slices"
@@ -105,7 +106,7 @@ func raidCooldownIDs() []int {
 // minimum number of targets applies: the curated list is the filter, and a
 // channelled cooldown only ever buffs its caster.
 func raidCooldownWindows(events []event, fight Fight, actors map[int]string) []RaidWindow {
-	sort.SliceStable(events, func(i, j int) bool { return events[i].Timestamp < events[j].Timestamp })
+	events = sortedByTime(events)
 
 	type key struct{ ability, target int }
 	// closed records whether a removebuff was actually seen. Players who die,
@@ -150,8 +151,9 @@ func raidCooldownWindows(events []event, fight Fight, actors map[int]string) []R
 	}
 
 	var windows []RaidWindow
-	for abilityID, list := range intervals {
-		sort.Slice(list, func(i, j int) bool { return list[i].start < list[j].start })
+	for _, abilityID := range sortedKeys(intervals) {
+		list := intervals[abilityID]
+		slices.SortStableFunc(list, func(a, b interval) int { return cmp.Compare(a.start, b.start) })
 
 		// An interval left open by a player who died or dropped out of the log
 		// is capped at how long the buff usually lasts. Running it to the end
@@ -203,8 +205,27 @@ func raidCooldownWindows(events []event, fight Fight, actors map[int]string) []R
 			})
 		}
 	}
-	sort.Slice(windows, func(i, j int) bool { return windows[i].Start < windows[j].Start })
+	sortRaidWindows(windows)
 	return windows
+}
+
+// sortRaidWindows orders windows by start, then ability, so two that start
+// together always come out the same way round.
+func sortRaidWindows(windows []RaidWindow) {
+	slices.SortStableFunc(windows, func(a, b RaidWindow) int {
+		return cmp.Or(cmp.Compare(a.Start, b.Start), cmp.Compare(a.AbilityID, b.AbilityID))
+	})
+}
+
+// sortedKeys is the ascending key set of a map keyed by int, so a slice
+// seeded from the map comes out the same way every time.
+func sortedKeys[V any](m map[int]V) []int {
+	keys := make([]int, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+	return keys
 }
 
 // raidLustMinTargets is how many players a haste buff must land on before it
@@ -217,10 +238,29 @@ const raidLustMinTargets = 5
 // of the previous cast before their labels overlap on the timeline.
 const labelCollision = 50 * time.Millisecond
 
-// precastWindow is how far into a pull an unpaired cast can land and still be
-// read as a precast. A spell started before the pull lands within roughly one
-// cast bar of it; later unpaired casts are more likely a gap in the log.
-const precastWindow = 5 * time.Second
+// precastWindow is how soon after the pull a cast with no begincast in the
+// log can still be the precast — the bar begun before the fight, landing on
+// it. Only the first such cast qualifies. An instant always brings its
+// begincast (in the same millisecond), so this never mistakes one; the window
+// only has to allow for an off-GCD instant landing a few hundred milliseconds
+// before the precast does.
+const precastWindow = 1500 * time.Millisecond
+
+// instantTolerance is how far apart a begincast and its cast may be and still
+// be one instant. The two events of a proc-instant usually share a millisecond
+// but sometimes straddle one, and a median that counted those 1ms "casts"
+// would call the spell's typical cast time one millisecond.
+const instantTolerance = 50 * time.Millisecond
+
+// maxCastBar is longer than any cast bar in the game. A begincast older than
+// this when a cast of the same spell arrives is an abandoned bar, not the
+// start of this cast; pairing them would draw a bar across a minute of fight
+// and swallow every gap under it.
+const maxCastBar = 10 * time.Second
+
+// unknownCastBar stands in for a spell's typical cast time when it was never
+// completed in the fight, to bound how long an abandoned bar of it is drawn.
+const unknownCastBar = time.Second
 
 // Cast is a single spell cast, positioned relative to the start of the fight.
 // A hard cast is one Cast built from a begincast/cast pair, not two rows.
@@ -239,8 +279,10 @@ type Cast struct {
 	HadBegincast bool
 
 	// Cancelled marks a cast that started and never landed, because it was
-	// interrupted, moved out of, or replaced.
+	// interrupted, moved out of, or replaced. End is when the bar is judged
+	// to have been abandoned, and Wasted is how long it ran.
 	Cancelled bool
+	Wasted    time.Duration
 
 	// Precast marks a spell that landed just after the pull but whose cast bar
 	// began before it, so the begincast falls outside the logged fight.
@@ -287,6 +329,10 @@ type Cast struct {
 
 // IsInstant reports whether the spell never entered a cast bar at all.
 func (c Cast) IsInstant() bool { return !c.HadBegincast }
+
+// resolvedInstantly reports whether a cast with a bar took no measurable time
+// on it: a proc.
+func (c Cast) resolvedInstantly() bool { return c.CastTime <= instantTolerance }
 
 // ProcLabel describes why the cast was taken: the aura that enabled it, or
 // "no proc" for a hard cast that had none.
@@ -389,7 +435,7 @@ func (c CooldownWindow) Timestamp() string { return formatOffset(c.Start) }
 // cooldownWindows pairs apply and remove events into the spans a cooldown was
 // up for. One still running when the fight ends is closed at the end.
 func cooldownWindows(events []event, fight Fight, names map[int]string) []CooldownWindow {
-	sort.SliceStable(events, func(i, j int) bool { return events[i].Timestamp < events[j].Timestamp })
+	events = sortedByTime(events)
 
 	relative := func(t float64) time.Duration {
 		return time.Duration(t-fight.StartTime) * time.Millisecond
@@ -422,10 +468,12 @@ func cooldownWindows(events []event, fight Fight, names map[int]string) []Cooldo
 			}
 		}
 	}
-	for id, start := range open {
-		add(id, start, fight.Duration())
+	for _, id := range sortedKeys(open) {
+		add(id, open[id], fight.Duration())
 	}
-	sort.Slice(windows, func(i, j int) bool { return windows[i].Start < windows[j].Start })
+	slices.SortStableFunc(windows, func(a, b CooldownWindow) int {
+		return cmp.Or(cmp.Compare(a.Start, b.Start), cmp.Compare(a.AbilityID, b.AbilityID))
+	})
 	return windows
 }
 
@@ -562,7 +610,7 @@ func (t *Timeline) layout() {
 	for i := range t.Casts {
 		c := &t.Casts[i]
 		c.Percent = t.percent(c.Offset)
-		c.CastWidthPercent = t.span(c.CastTime)
+		c.CastWidthPercent = t.span(c.End - c.Offset) // a completed bar, or an abandoned one
 		c.GapWidthPercent = t.span(c.Gap)
 		c.GapStartPercent = c.Percent - c.GapWidthPercent
 	}
@@ -787,7 +835,7 @@ type auraWindow struct {
 // auraWindows turns buff events into per-aura intervals, relative to the
 // fight. Stack events are ignored: only whether the aura was up matters.
 func auraWindows(events []event, fight Fight) []auraWindow {
-	sort.SliceStable(events, func(i, j int) bool { return events[i].Timestamp < events[j].Timestamp })
+	events = sortedByTime(events)
 
 	relative := func(t float64) time.Duration {
 		return time.Duration(t-fight.StartTime) * time.Millisecond
@@ -811,8 +859,8 @@ func auraWindows(events []event, fight Fight) []auraWindow {
 			}
 		}
 	}
-	for id, start := range open {
-		windows = append(windows, auraWindow{procAuras[id], start, fight.Duration()})
+	for _, id := range sortedKeys(open) {
+		windows = append(windows, auraWindow{procAuras[id], open[id], fight.Duration()})
 	}
 	return windows
 }
@@ -834,7 +882,7 @@ var (
 // being up says nothing about why it was cast.
 func classifyProcs(casts []Cast, windows []auraWindow) {
 	for i := range casts {
-		if casts[i].AbilityID != pyroblastID || casts[i].Precast || casts[i].Cancelled {
+		if casts[i].AbilityID != pyroblastID || casts[i].Cancelled {
 			continue
 		}
 		activeAt := func(at time.Duration) map[string]bool {
@@ -848,7 +896,7 @@ func classifyProcs(casts []Cast, windows []auraWindow) {
 		}
 
 		order := hardCastProcOrder
-		if casts[i].CastTime <= time.Millisecond {
+		if casts[i].resolvedInstantly() {
 			order = instantProcOrder
 		}
 
@@ -872,7 +920,10 @@ func classifyProcs(casts []Cast, windows []auraWindow) {
 		}
 		casts[i].Proc = strings.Join(found, " + ")
 		casts[i].ProcExpired = strings.Join(expired, " + ")
-		if casts[i].Proc == "" && casts[i].ProcExpired == "" && casts[i].CastTime > time.Millisecond {
+		// A hard cast with nothing behind it should not have been made — unless
+		// it is the precast, which is hard cast on purpose so that it lands
+		// with the pull. It still gets its verdict above; it is not a mistake.
+		if casts[i].Proc == "" && casts[i].ProcExpired == "" && !casts[i].resolvedInstantly() && !casts[i].Precast {
 			casts[i].ProcMissing = true
 		}
 	}
@@ -1056,7 +1107,7 @@ func buildTimeline(report *timelineReport, casts []event, fight Fight) *Timeline
 // paired into a single Cast carrying its cast time; a begincast that never
 // completes is kept as a cancelled cast.
 func buildCasts(events []event, fight Fight, names map[int]string, lusts []RaidWindow) []Cast {
-	sort.SliceStable(events, func(i, j int) bool { return events[i].Timestamp < events[j].Timestamp })
+	events = sortedByTime(events)
 
 	name := func(abilityID int) string {
 		if n := names[abilityID]; n != "" {
@@ -1079,13 +1130,25 @@ func buildCasts(events []event, fight Fight, names map[int]string, lusts []RaidW
 	}
 
 	casts := make([]Cast, 0, len(events))
-	pending := map[int]int{} // ability -> index of its unfinished cast
+	type pendingCast struct {
+		index int     // the row opened by the begincast
+		at    float64 // when
+	}
+	pending := map[int]pendingCast{} // ability -> its unfinished bar
 
+	// Events are read in the order the game produced them, and that order
+	// carries meaning even inside one millisecond: a begincast followed by a
+	// cast on the same tick is an instant (a proc), while a cast followed by
+	// a begincast of the same spell is a hard cast landing and the next one
+	// beginning — chain-casting. In a real log every cast-first pair sits one
+	// cast time after its begincast; treating the two orders as equivalent
+	// would turn every chain-cast into a phantom bar.
 	for _, e := range events {
 		offset := relative(e.Timestamp)
 		switch e.Type {
 		case "begincast":
-			// Assumed cancelled until a matching cast arrives.
+			// Assumed cancelled until a matching cast arrives. A bar still
+			// pending from before was abandoned, and stays cancelled.
 			casts = append(casts, Cast{
 				Offset:       offset,
 				End:          offset,
@@ -1094,23 +1157,26 @@ func buildCasts(events []event, fight Fight, names map[int]string, lusts []RaidW
 				HadBegincast: true,
 				Cancelled:    true,
 			})
-			pending[e.AbilityGameID] = len(casts) - 1
+			pending[e.AbilityGameID] = pendingCast{len(casts) - 1, e.Timestamp}
 		case "cast":
-			if i, open := pending[e.AbilityGameID]; open {
+			if p, open := pending[e.AbilityGameID]; open {
 				delete(pending, e.AbilityGameID)
-				casts[i].Cancelled = false
-				casts[i].End = offset
-				casts[i].CastTime = offset - casts[i].Offset
-				continue
+				// A bar older than any cast in the game was abandoned, not
+				// completed by this; pairing them would draw a bar across a
+				// minute of fight and swallow every gap under it.
+				if time.Duration(e.Timestamp-p.at)*time.Millisecond <= maxCastBar {
+					casts[p.index].Cancelled = false
+					casts[p.index].End = offset
+					casts[p.index].CastTime = offset - casts[p.index].Offset
+					continue
+				}
 			}
-			// No begincast to pair with: either an inherently instant spell, or
-			// one whose cast bar started before the pull.
+			// No bar to complete: an inherently instant spell, or the precast.
 			casts = append(casts, Cast{
 				Offset:    offset,
 				End:       offset,
 				AbilityID: e.AbilityGameID,
 				Name:      name(e.AbilityGameID),
-				Precast:   castable[e.AbilityGameID] && offset <= precastWindow,
 			})
 		}
 	}
@@ -1119,21 +1185,51 @@ func buildCasts(events []event, fight Fight, names map[int]string, lusts []RaidW
 		casts[i].Cooldown = personalCooldowns[casts[i].AbilityID]
 	}
 
-	// A precast landed at a known moment but began before the log starts. Its
-	// bar is reconstructed from how long the same spell took elsewhere in this
-	// fight, which puts the start before the pull where it belongs.
+	// The precast: the first cast of a castable spell with no bar in the log,
+	// if it landed within the window. A bar cannot have begun before the
+	// previous cast finished, so nothing after the first can be one.
 	for i := range casts {
-		if !casts[i].Precast {
+		if casts[i].HadBegincast || !castable[casts[i].AbilityID] {
 			continue
 		}
-		if estimate := medianCastTime(casts, casts[i].AbilityID); estimate > 0 {
-			casts[i].Offset = casts[i].End - estimate
-			casts[i].CastTime = estimate
-			casts[i].Estimated = true
+		if casts[i].Offset <= precastWindow {
+			casts[i].Precast = true
+			// Its bar began before the log starts, and is reconstructed from
+			// how long the same spell took elsewhere in this fight — from
+			// observed bars only, never from a value this loop wrote.
+			if estimate := medianCastTime(casts, casts[i].AbilityID); estimate > 0 {
+				casts[i].Offset = casts[i].End - estimate
+				casts[i].CastTime = estimate
+				casts[i].Estimated = true
+			}
 		}
+		break
 	}
 
 	sort.SliceStable(casts, func(i, j int) bool { return casts[i].Offset < casts[j].Offset })
+
+	// An abandoned bar ran until the player did something else or until it
+	// would have finished, whichever came first. That is time spent, not
+	// idle, and the gap loop below treats it so.
+	typical := medianCastTime(casts, 0)
+	if typical == 0 {
+		typical = unknownCastBar
+	}
+	for i := range casts {
+		if !casts[i].Cancelled {
+			continue
+		}
+		bar := medianCastTime(casts, casts[i].AbilityID)
+		if bar == 0 {
+			bar = typical
+		}
+		end := min(casts[i].Offset+bar, fight.Duration())
+		if i+1 < len(casts) && casts[i+1].Offset < end {
+			end = casts[i+1].Offset
+		}
+		casts[i].End = end
+		casts[i].Wasted = end - casts[i].Offset
+	}
 
 	// A cast beginning strictly inside another cast's bar was woven into it.
 	// A woven cast never becomes the enclosing cast itself, so two instants
@@ -1143,7 +1239,7 @@ func buildCasts(events []event, fight Fight, names map[int]string, lusts []RaidW
 		switch {
 		case casts[i].Offset > 0 && casts[i].Offset < castingUntil:
 			casts[i].DuringCast = true
-		case casts[i].CastTime > 0:
+		case casts[i].CastTime > instantTolerance:
 			castingUntil = casts[i].End
 		}
 	}
@@ -1156,7 +1252,7 @@ func buildCasts(events []event, fight Fight, names map[int]string, lusts []RaidW
 		}
 		if previous >= 0 &&
 			casts[previous].AbilityID == casts[i].AbilityID &&
-			casts[i].CastTime <= time.Millisecond &&
+			casts[i].resolvedInstantly() &&
 			casts[i].Offset-casts[previous].End <= labelCollision {
 			casts[i].RepeatsPrevious = true
 		}
@@ -1183,12 +1279,25 @@ func buildCasts(events []event, fight Fight, names map[int]string, lusts []RaidW
 	return casts
 }
 
+// sortedByTime returns a copy of the events in timestamp order, stable so
+// that events sharing a millisecond keep the order the API sent. A copy,
+// because the caller's slice is not this function's to reorder: the decoded
+// response is shared by every builder, and will be shared across requests
+// once #2 caches it.
+func sortedByTime(events []event) []event {
+	events = slices.Clone(events)
+	slices.SortStableFunc(events, func(a, b event) int { return cmp.Compare(a.Timestamp, b.Timestamp) })
+	return events
+}
+
 // medianCastTime is the typical time this spell took to cast in the fight,
-// ignoring instants. It returns zero when the spell was never hard cast.
+// from bars that were actually logged: not instants, not abandoned bars, and
+// not a bar this file reconstructed. It returns zero when the spell was never
+// hard cast. An abilityID of 0 asks across every spell.
 func medianCastTime(casts []Cast, abilityID int) time.Duration {
 	var seen []time.Duration
 	for _, c := range casts {
-		if c.AbilityID == abilityID && c.CastTime > 0 {
+		if (abilityID == 0 || c.AbilityID == abilityID) && !c.Cancelled && !c.Estimated && c.CastTime > instantTolerance {
 			seen = append(seen, c.CastTime)
 		}
 	}
@@ -1203,7 +1312,7 @@ func medianCastTime(casts []Cast, abilityID int) time.Duration {
 // Buffs that landed on only a handful of players are discarded: the same spell
 // IDs are sometimes reused for personal effects.
 func lustWindows(events []event, fight Fight, names, actors map[int]string) []RaidWindow {
-	sort.Slice(events, func(i, j int) bool { return events[i].Timestamp < events[j].Timestamp })
+	events = sortedByTime(events)
 
 	type key struct{ ability, target int }
 	type interval struct{ start, end float64 }
@@ -1240,11 +1349,12 @@ func lustWindows(events []event, fight Fight, names, actors map[int]string) []Ra
 	}
 
 	var windows []RaidWindow
-	for abilityID, list := range intervals {
+	for _, abilityID := range sortedKeys(intervals) {
+		list := intervals[abilityID]
 		if len(targets[abilityID]) < raidLustMinTargets {
 			continue
 		}
-		sort.Slice(list, func(i, j int) bool { return list[i].start < list[j].start })
+		slices.SortStableFunc(list, func(a, b interval) int { return cmp.Compare(a.start, b.start) })
 
 		// Everyone receives the buff at once, so overlapping per-player
 		// intervals collapse into one window per cast.
@@ -1276,7 +1386,7 @@ func lustWindows(events []event, fight Fight, names, actors map[int]string) []Ra
 			windows = append(windows, w)
 		}
 	}
-	sort.Slice(windows, func(i, j int) bool { return windows[i].Start < windows[j].Start })
+	sortRaidWindows(windows)
 	return windows
 }
 
@@ -1299,7 +1409,8 @@ func buildPhases(transitions []phaseTransition, labels map[int]phaseLabel, fight
 	if len(transitions) == 0 {
 		return nil
 	}
-	sort.Slice(transitions, func(i, j int) bool { return transitions[i].StartTime < transitions[j].StartTime })
+	transitions = slices.Clone(transitions)
+	slices.SortStableFunc(transitions, func(a, b phaseTransition) int { return cmp.Compare(a.StartTime, b.StartTime) })
 
 	duration := fight.Duration()
 	phases := make([]Phase, 0, len(transitions))

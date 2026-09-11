@@ -58,7 +58,13 @@ They are not re-litigated here; they are tracked:
 
 - Cast pairing is unbounded, so a stale `begincast` pairs with a much later cast and
   produces a phantom multi-minute cast bar that zeroes every idle gap after it. The
-  5 s precast window also relabels ordinary opener procs as precasts. → **#13**
+  5 s precast window also relabels ordinary opener procs as precasts. → **#13**, done
+  2026-09-11: pairing is bounded, the precast is the first bare cast inside 1.5 s, an
+  abandoned bar has an end and its time is cancelled rather than idle, and the median
+  ignores millisecond jitter. One premise of #13 was found wrong against the recorded
+  kill and kept as it was: the order of events inside a millisecond is the game's and
+  means something — `begincast` then `cast` is an instant, `cast` then `begincast` of
+  the same spell is a hard cast landing as the next begins.
 - Boss markers cannot express an interrupted cast, and the burst merge is keyed on
   ability alone, so two NPCs casting the same spell collapse into one marker. Lust and
   personal-cooldown windows never cap an unclosed buff. → **#14**
