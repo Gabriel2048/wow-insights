@@ -37,9 +37,11 @@ flowchart LR
 
 ## 2. How the code is organised
 
-Five packages. Solid arrows are imports and are verified; an arrow leaving a group means
-every package in the group has that import. Dotted arrows are relations that are not
-imports, which is what makes them worth drawing — including the two wires the `-fixture`
+Five packages. Solid arrows are imports and are verified. `cmd/record` imports the same
+three packages as `main`; its edges are declared in the diagram source and checked by the
+same test, but not drawn, because six lines from two boxes cannot be routed without
+crossing. Dotted arrows are relations that are not imports, which is what makes them
+worth drawing — including the two wires the `-fixture`
 flag chooses between: without it the client talks to Warcraft Logs, with it the replay
 transport sits under the same client and answers from `testdata/`.
 
@@ -47,22 +49,23 @@ transport sits under the same client and answers from `testdata/`.
 flowchart TB
     %% verified: package graph
     templates[/"templates/*.html<br/>embedded at compile time"/]
-
-    subgraph binaries["binaries — both import all three"]
-        direction LR
-        main["main<br/>HTTP layer, routes, templates<br/>server.go · main.go · format.go"]
-        record["cmd/record<br/>the fixture recorder"]
-    end
-
+    main["main<br/>HTTP layer, routes, templates<br/>server.go · main.go · format.go"]
+    record["cmd/record<br/>the fixture recorder<br/>imports the same three as main"]
     env["internal/env<br/>.env loading"]
     fixture["internal/fixture<br/>replay and record transports"]
     warcraftlogs["internal/warcraftlogs<br/>API client + analysis + layout<br/>client · report · fight · timeline · boss · dps"]
     api[("Warcraft Logs API")]
     testdata[/"testdata/<br/>the committed recording"/]
 
-    binaries --> env
-    binaries --> fixture
-    binaries --> warcraftlogs
+    main --> env
+    main --> fixture
+    main --> warcraftlogs
+
+    %% cmd/record's imports duplicate main's. They are declared here so the
+    %% test verifies them, and not drawn, so the picture stays readable.
+    %% record --> env
+    %% record --> fixture
+    %% record --> warcraftlogs
 
     templates -.->|"go:embed"| main
     warcraftlogs -.->|"no -fixture: the real wire"| api
@@ -164,9 +167,9 @@ no check-in — only the diagram edit, if any.
 import graph `go/build` reports for every package in the module. A package or import
 edge missing from the diagram fails the gate; so does an edge the code no longer has.
 Node ids are the last path segment of the package (`env`, `fixture`), and `main` for the
-root. An edge from or to a `subgraph` stands for one edge per package inside it, so the
-two binaries' identical imports are drawn once. Dotted edges (`-.->`) are not checked,
-which is what they are for.
+root. An edge written in a `%%` comment is verified like a drawn one and not rendered —
+the escape hatch for a package whose edges would only add crossings, used by
+`cmd/record`. Dotted edges (`-.->`) are not checked, which is what they are for.
 
 **The other two views are prose-maintained.** The pull request template asks whether this
 document was updated or the change was not structural; answer it honestly. There is no
