@@ -6,7 +6,7 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -24,11 +24,12 @@ func main() {
 	defer stop()
 
 	cfg, err := config.Load(".env")
+	logger := newLogger(os.Stdout, cfg.Project)
 	if err == nil {
-		err = run(ctx, cfg)
+		err = run(ctx, cfg, logger)
 	}
 	if err != nil {
-		log.Print(err)
+		logger.Error("exiting", "err", err)
 		os.Exit(1)
 	}
 }
@@ -36,7 +37,7 @@ func main() {
 // run is main's body with an error return, so that every deferred function
 // above it still runs. log.Fatal and a bare os.Exit run none of them, and
 // main is the only place that exits.
-func run(ctx context.Context, cfg config.Config) error {
+func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	// A revision with a mistyped secret name must fail here, once, naming
 	// the variable — not start cleanly, pass the probe, and fail every request.
 	if err := cfg.Validate(); err != nil {
@@ -46,6 +47,6 @@ func run(ctx context.Context, cfg config.Config) error {
 	if err != nil {
 		return fmt.Errorf("parse templates: %w", err)
 	}
-	s := web.New(warcraftlogs.New(cfg.ClientID, cfg.ClientSecret), tpl, log.Default())
+	s := web.New(warcraftlogs.New(cfg.ClientID, cfg.ClientSecret), tpl, logger)
 	return s.Run(ctx, cfg.Addr())
 }

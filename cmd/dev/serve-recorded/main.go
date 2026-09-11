@@ -14,7 +14,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"strings"
@@ -29,13 +29,16 @@ import (
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	if err := run(ctx, os.Args[1:], os.Stderr); err != nil {
-		log.Print(err)
+	// Text, not JSON: this is read by a person at a terminal, and the URL
+	// listing below has to be readable as it scrolls past.
+	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	if err := run(ctx, os.Args[1:], os.Stderr, logger); err != nil {
+		logger.Error("exiting", "err", err)
 		os.Exit(1)
 	}
 }
 
-func run(ctx context.Context, args []string, stderr io.Writer) error {
+func run(ctx context.Context, args []string, stderr io.Writer, logger *slog.Logger) error {
 	fs := flag.NewFlagSet("serve-recorded", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	dir := fs.String("dir", "testdata", "directory written by cmd/dev/record")
@@ -64,26 +67,26 @@ func run(ctx context.Context, args []string, stderr io.Writer) error {
 	// own token. They only need to be non-empty for the client to make the
 	// request at all.
 	wcl := warcraftlogs.New("recorded", "recorded", warcraftlogs.WithHTTPClient(replay.Client()))
-	announce(replay, wcl, cfg.Addr())
+	announce(logger, replay, wcl, cfg.Addr())
 
-	return web.New(wcl, tpl, log.Default()).Run(ctx, cfg.Addr())
+	return web.New(wcl, tpl, logger).Run(ctx, cfg.Addr())
 }
 
 // announce logs every page the recording can serve, so that what is being
 // served is visible where a developer is already looking — the output of go
 // run — with no banner in the page and no branch in the templates. The fight
 // names and outcomes come from the recording itself, through the real client.
-func announce(replay *fixture.Replay, wcl *warcraftlogs.Client, addr string) {
+func announce(logger *slog.Logger, replay *fixture.Replay, wcl *warcraftlogs.Client, addr string) {
 	base := "http://" + addr
 	if strings.HasPrefix(addr, ":") {
 		base = "http://localhost" + addr
 	}
-	log.Printf("serving the recording in %s; Warcraft Logs is not contacted", replay.Dir())
-	log.Printf("  %s/?url=%s", base, replay.Code())
+	logger.Info("serving the recording; Warcraft Logs is not contacted", "dir", replay.Dir())
+	logger.Info(base + "/?url=" + replay.Code())
 
 	report, err := wcl.Report(context.Background(), replay.Code())
 	if err != nil {
-		log.Printf("  (could not read the recorded report: %v)", err)
+		logger.Warn("could not read the recorded report", "err", err)
 		return
 	}
 	for _, f := range replay.Fights() {
@@ -93,9 +96,9 @@ func announce(replay *fixture.Replay, wcl *warcraftlogs.Client, addr string) {
 				label = fmt.Sprintf("%s, %s %s", fight.Name, fight.DifficultyName(), fight.Outcome())
 			}
 		}
-		log.Printf("  %s/report/%s/fight/%d  (%s)", base, replay.Code(), f.ID, label)
+		logger.Info(fmt.Sprintf("%s/report/%s/fight/%d", base, replay.Code(), f.ID), "fight", label)
 		for _, player := range f.Players {
-			log.Printf("  %s/report/%s/fight/%d?player=%d", base, replay.Code(), f.ID, player)
+			logger.Info(fmt.Sprintf("%s/report/%s/fight/%d?player=%d", base, replay.Code(), f.ID, player))
 		}
 	}
 }

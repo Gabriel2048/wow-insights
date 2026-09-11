@@ -23,6 +23,7 @@ const (
 	PortVar         = "PORT"
 	ClientIDVar     = "WARCRAFTLOGS_CLIENT_ID"
 	ClientSecretVar = "WARCRAFTLOGS_CLIENT_SECRET"
+	ProjectVar      = "GOOGLE_CLOUD_PROJECT"
 
 	defaultPort = "8080"
 )
@@ -34,6 +35,9 @@ type Config struct {
 	// ClientID and ClientSecret are the Warcraft Logs OAuth credentials.
 	ClientID     string
 	ClientSecret string
+	// Project is the Google Cloud project, used only to spell trace ids the
+	// way Cloud Logging groups them. Optional; nothing fails without it.
+	Project string
 }
 
 // Addr is the listen address for Port.
@@ -90,6 +94,7 @@ func Load(path string) (Config, error) {
 		Port:         cmp.Or(get(PortVar), defaultPort),
 		ClientID:     get(ClientIDVar),
 		ClientSecret: get(ClientSecretVar),
+		Project:      get(ProjectVar),
 	}, nil
 }
 

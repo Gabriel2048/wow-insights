@@ -161,6 +161,17 @@ values, never package-level vars** — `buildCasts`, `auraWindows` and `buildPha
 their input slice in place, and the suite runs with `-shuffle=on`, so a shared fixture would
 be silently mutated by whichever test ran first.
 
+## Logging
+
+`log/slog`, never `log`. Inside a handler use `s.logger(r)`, which carries the request id;
+the middleware writes the one access line per request, so a handler logs only what went
+wrong. Severity means something: **ERROR** is a request that failed; **WARNING** is a
+request that degraded but rendered (the timeline branch of the fight page); a client that
+went away (`context.Canceled`) is **INFO**, through `s.upstreamFailed`, because logging
+it as a failure would drown the failures that matter. The shipped binary writes JSON
+spelt for Cloud Logging (`severity`, `message`); the dev binaries write text. Same calls,
+different handler, chosen in each `main`.
+
 ## The one third-party thing that actually executes
 
 `templates/fight.html` loads `https://wow.zamimg.com/js/tooltips.js` — unversioned, no

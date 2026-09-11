@@ -60,7 +60,7 @@ flowchart TB
         record["record<br/>the fixture recorder"]
     end
     templates[/"internal/web/templates/*.html<br/>embedded at compile time"/]
-    web["internal/web<br/>HTTP layer, routes, templates<br/>the http.Server and its shutdown"]
+    web["internal/web<br/>HTTP layer, routes, templates<br/>middleware, the http.Server and its shutdown"]
     config["internal/config<br/>PORT and credentials, from the environment or .env"]
     fixture["internal/fixture<br/>replay and record transports"]
     warcraftlogs["internal/warcraftlogs<br/>API client + analysis + layout"]
@@ -130,6 +130,7 @@ sequenceDiagram
     Note over S,F: the binary picks the transport once, at startup:<br/>the shipped one uses the real wire · cmd/dev/serve-recorded installs the replay
 
     B->>S: GET /report/{code}/fight/{id}?player={actor}
+    S->>S: middleware: request id, panic recovery, access line
     S->>S: ParseReportCode, Atoi — 400 before any API call
     S->>C: FightDetail(code, id)
     C->>T: fightQuery {code, id}
@@ -158,6 +159,9 @@ sequenceDiagram
 - The page degrades rather than fails: a `Timeline` error is logged and the stats render
   without it. Today that is indistinguishable from a player who cast nothing; #12 adds
   the notice.
+- Every request gets an id (`X-Request-Id` on the response) and one access line keyed by
+  the route pattern, with status, duration and the number of upstream calls. A panic is a
+  500 and one ERROR line with that id; a client that went away is INFO, not an error.
 - Every `*Timeline` a caller receives has been laid out. `layout()` is the last statement
   of `buildTimeline`, and `TestBuildTimelinePositionsEverything` pins it.
 - The two binaries are one code path with a different transport underneath. Everything

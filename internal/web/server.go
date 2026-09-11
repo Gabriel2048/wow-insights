@@ -10,7 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"html/template"
-	"log"
+	"log/slog"
 	"net/http"
 	"strconv"
 
@@ -43,14 +43,28 @@ type logsClient interface {
 type Server struct {
 	wcl logsClient
 	tpl *template.Template
-	log *log.Logger
+	log *slog.Logger
 }
 
 // New wires a Server. wcl is whatever satisfies logsClient — in production
 // a *warcraftlogs.Client over the real wire, offline the same type over a
-// replay transport, in tests a fake.
-func New(wcl logsClient, tpl *template.Template, logger *log.Logger) *Server {
-	return &Server{wcl: wcl, tpl: tpl, log: logger}
+// replay transport, in tests a fake. The logger decides the format: the
+// shipped binary hands in JSON shaped for Cloud Logging, the dev binaries
+// hand in text.
+func New(wcl logsClient, tpl *template.Template, logger *slog.Logger) *Server {
+	return &Server{wcl: counted{wcl}, tpl: tpl, log: logger}
+}
+
+// upstreamFailed logs a failed call to Warcraft Logs at the right severity.
+// A user who navigated away cancels the request context, and the client
+// reports that as an error like any other — but it is not one, and logging
+// it as one would drown the failures that matter in the ones that are not.
+func (s *Server) upstreamFailed(r *http.Request, level slog.Level, msg string, err error, attrs ...any) {
+	if errors.Is(err, context.Canceled) {
+		s.logger(r).Info("client went away during "+msg, attrs...)
+		return
+	}
+	s.logger(r).Log(r.Context(), level, msg, append(attrs, "err", err)...)
 }
 
 // Routes returns the mux the server listens on. It returns the concrete type
@@ -60,7 +74,7 @@ func (s *Server) Routes() *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", s.index)
 	mux.HandleFunc("GET /report/{code}/fight/{id}", s.fight)
-	mux.HandleFunc("GET /healthz", healthz)
+	mux.HandleFunc("GET /healthz", s.healthz)
 	mux.HandleFunc("GET /health/wcl", s.wclHealth)
 	return mux
 }
@@ -93,7 +107,7 @@ func (s *Server) index(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			data.Error = "That does not look like a Warcraft Logs report link. Expected something like https://www.warcraftlogs.com/reports/ExampleReport123"
 		} else if report, err := s.wcl.Report(r.Context(), code); err != nil {
-			s.log.Printf("fetch report %s: %v", code, err)
+			s.upstreamFailed(r, slog.LevelError, "fetch report", err, "code", code)
 			data.Error = err.Error()
 		} else {
 			data.Report = report
@@ -101,7 +115,7 @@ func (s *Server) index(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.tpl.ExecuteTemplate(w, "index.html", data); err != nil {
-		s.log.Printf("render index: %v", err)
+		s.logger(r).Error("render index", "err", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 	}
 }
@@ -115,11 +129,11 @@ func (s *Server) wclHealth(w http.ResponseWriter, r *http.Request) {
 		if errors.Is(err, warcraftlogs.ErrNoCredentials) {
 			status = http.StatusServiceUnavailable
 		}
-		s.log.Printf("warcraft logs health: %v", err)
-		writeJSON(w, status, map[string]string{"status": "error", "error": err.Error()})
+		s.upstreamFailed(r, slog.LevelError, "warcraft logs health", err)
+		s.writeJSON(w, r, status, map[string]string{"status": "error", "error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "rateLimit": limit})
+	s.writeJSON(w, r, http.StatusOK, map[string]any{"status": "ok", "rateLimit": limit})
 }
 
 // fight renders one encounter and, when a player is selected, that player's
@@ -138,7 +152,7 @@ func (s *Server) fight(w http.ResponseWriter, r *http.Request) {
 
 	detail, err := s.wcl.FightDetail(r.Context(), code, fightID)
 	if err != nil {
-		s.log.Printf("fetch fight %s#%d: %v", code, fightID, err)
+		s.upstreamFailed(r, slog.LevelError, "fetch fight", err, "code", code, "fight", fightID)
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
@@ -152,8 +166,9 @@ func (s *Server) fight(w http.ResponseWriter, r *http.Request) {
 
 				timeline, err := s.wcl.Timeline(r.Context(), code, detail.Fight, id)
 				if err != nil {
-					// The stats above are still worth showing without it.
-					s.log.Printf("fetch timeline %s#%d player %d: %v", code, fightID, id, err)
+					// The stats above are still worth showing without it, and
+					// the page renders 200 — so this is a warning, not an error.
+					s.upstreamFailed(r, slog.LevelWarn, "fetch timeline", err, "code", code, "fight", fightID, "player", id)
 				} else {
 					data.Timeline = timeline
 				}
@@ -162,21 +177,21 @@ func (s *Server) fight(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.tpl.ExecuteTemplate(w, "fight.html", data); err != nil {
-		s.log.Printf("render fight: %v", err)
+		s.logger(r).Error("render fight", "err", err)
 	}
 }
 
 // healthz is the probe target: it answers without touching anything, so it
 // says "the process is up" and nothing more. /health/wcl is the one that
 // spends a point to say whether the credentials work.
-func healthz(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+func (s *Server) healthz(w http.ResponseWriter, r *http.Request) {
+	s.writeJSON(w, r, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
+func (s *Server) writeJSON(w http.ResponseWriter, r *http.Request, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(v); err != nil {
-		log.Printf("encode response: %v", err)
+		s.logger(r).Error("encode response", "err", err)
 	}
 }

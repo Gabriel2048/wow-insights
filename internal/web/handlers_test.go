@@ -11,13 +11,14 @@ import (
 	"wowinsight/internal/warcraftlogs"
 )
 
-// get drives one request through the real route table and returns the recorder.
-// Going through routes() rather than calling the handler directly is what makes
-// the registered patterns part of what is being tested.
+// get drives one request through the real route table and the whole
+// middleware chain, and returns the recorder. Going through Handler() rather
+// than calling the handler directly is what makes the registered patterns,
+// and the middleware, part of what is being tested.
 func get(t *testing.T, wcl logsClient, target string) *httptest.ResponseRecorder {
 	t.Helper()
 	rec := httptest.NewRecorder()
-	newTestServer(t, wcl).Routes().ServeHTTP(rec, httptest.NewRequest("GET", target, nil))
+	newTestServer(t, wcl).Handler().ServeHTTP(rec, httptest.NewRequest("GET", target, nil))
 	return rec
 }
 

@@ -3,7 +3,8 @@ package web
 import (
 	"context"
 	"errors"
-	"log"
+	"io"
+	"log/slog"
 	"testing"
 	"time"
 
@@ -63,12 +64,8 @@ func newTestServer(t *testing.T, wcl logsClient) *Server {
 	if err != nil {
 		t.Fatalf("ParseTemplates() returned error: %v", err)
 	}
-	return New(wcl, tpl, log.New(discard{}, "", 0))
+	return New(wcl, tpl, slog.New(slog.NewTextHandler(io.Discard, nil)))
 }
-
-type discard struct{}
-
-func (discard) Write(p []byte) (int, error) { return len(p), nil }
 
 // Every fixture below is a function returning a fresh value, never a
 // package-level var. buildCasts, auraWindows and buildPhases sort their input
