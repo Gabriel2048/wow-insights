@@ -6,7 +6,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -16,20 +18,39 @@ import (
 // real service, which is why WithBaseURL takes both and why one server has to
 // answer both here.
 type fakeAPI struct {
+	mu          sync.Mutex
 	tokens      int    // how many times the OAuth endpoint was hit
 	queries     int    // how many times the GraphQL endpoint was hit
 	expires     int    // seconds to report for the token; 3600 when zero
 	status      int    // status for the GraphQL endpoint; 200 when zero
+	statuses    []int  // per-call statuses for the GraphQL endpoint, consumed in order, before status
 	body        string // body for the GraphQL endpoint
 	retryAfter  string // Retry-After header for the GraphQL endpoint, when set
 	tokenStatus int    // status for the OAuth endpoint; 200 when zero
+	tokenDelay  time.Duration
+	// rotated is the number of tokens issued before the secret was rotated:
+	// tokens issued up to then are rejected with 401. Zero means never.
+	rotated   int
+	userAgent string // the last User-Agent seen
+}
+
+// rotate invalidates every token issued so far, as a secret rotation does.
+func (f *fakeAPI) rotate() {
+	f.mu.Lock()
+	f.rotated = f.tokens
+	f.mu.Unlock()
 }
 
 func (f *fakeAPI) start(t *testing.T) *Client {
 	t.Helper()
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /oauth/token", func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(f.tokenDelay)
+		f.mu.Lock()
 		f.tokens++
+		n := f.tokens
+		f.userAgent = r.Header.Get("User-Agent")
+		f.mu.Unlock()
 		if f.tokenStatus != 0 && f.tokenStatus != http.StatusOK {
 			http.Error(w, "invalid_client", f.tokenStatus)
 			return
@@ -39,17 +60,30 @@ func (f *fakeAPI) start(t *testing.T) *Client {
 			expires = 3600
 		}
 		w.Header().Set("Content-Type", "application/json")
-		if _, err := w.Write([]byte(`{"access_token":"tok","expires_in":` + itoa(expires) + `}`)); err != nil {
+		if _, err := w.Write([]byte(`{"access_token":"tok-` + itoa(n) + `","expires_in":` + itoa(expires) + `}`)); err != nil {
 			t.Errorf("write token response: %v", err)
 		}
 	})
 	mux.HandleFunc("POST /api", func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
 		f.queries++
+		f.userAgent = r.Header.Get("User-Agent")
+		status := f.status
+		if len(f.statuses) > 0 {
+			status, f.statuses = f.statuses[0], f.statuses[1:]
+		}
+		rotated := f.rotated
+		f.mu.Unlock()
+		// A token issued before the rotation is dead.
+		if issued, _ := strconv.Atoi(strings.TrimPrefix(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "), "tok-")); rotated > 0 && issued <= rotated {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
 		if f.retryAfter != "" {
 			w.Header().Set("Retry-After", f.retryAfter)
 		}
-		if f.status != 0 && f.status != http.StatusOK {
-			w.WriteHeader(f.status)
+		if status != 0 && status != http.StatusOK {
+			w.WriteHeader(status)
 		}
 		body := f.body
 		if body == "" {
@@ -61,7 +95,9 @@ func (f *fakeAPI) start(t *testing.T) *Client {
 	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
-	return New("id", "secret", WithBaseURL(srv.URL+"/oauth/token", srv.URL+"/api"))
+	c := New("id", "secret", WithBaseURL(srv.URL+"/oauth/token", srv.URL+"/api"))
+	c.backoffBase = time.Millisecond // retries are tested for count, not for patience
+	return c
 }
 
 func itoa(n int) string {
