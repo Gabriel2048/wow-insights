@@ -1003,7 +1003,7 @@
         <span class="l-cancel">Cancelled</span>
         <span class="l-gap">Idle at or above the threshold</span>
         <span class="l-lust">Bloodlust / Heroism / Time Warp</span>
-        {{if .Phases}}<span class="l-phase">Phase boundary</span>{{end}}
+        {{if .HasPhases}}<span class="l-phase">Phase boundary</span>{{end}}
     </div>
 
     <details class="advanced">
@@ -1050,37 +1050,28 @@
         </div>
     {{end}}
 
-    <div class="tl-frame" id="tlFrame" style="--rcd-rows: {{if .RaidCDs}}{{.RaidCDRows}}{{else}}0{{end}}; --cd-rows: {{if .Cooldowns}}{{.CooldownRows}}{{else}}0{{end}}">
+    <div class="tl-frame" id="tlFrame" style="--rcd-rows: {{.RaidCDs.Rows}}; --cd-rows: {{.Cooldowns.Rows}}">
     <div class="tl-scroll">
       <div class="tl-inner" id="tlInner"
            data-duration-ms="{{.DurationMS}}"
            data-total-ms="{{.TotalMS}}"
            data-lead-ms="{{.LeadInMS}}">
-        {{if .RaidCDs}}
+        {{if .RaidCDs.Bars}}
             <div class="raidlane">
-                {{range .RaidCDs}}
-                    <div class="rcdblock" data-row="{{.Row}}"
-                         style="left: {{printf "%.3f" .StartPercent}}%; width: {{printf "%.3f" .WidthPercent}}%;
-                                top: calc({{.Row}} * var(--rcd-row) + 0.15rem)"
-                         title="{{.Label}} — {{.Timestamp}} for {{short .Duration}} on {{.Targets}} players"><span>{{.Name}}</span></div>
-                {{end}}
+                {{template "bars" .RaidCDs}}
             </div>
         {{end}}
 
         <div class="boss">
-            {{range .Phases}}
-                <div class="phase{{if .IsIntermission}} intermission{{end}}"
-                     style="left: {{printf "%.3f" .StartPercent}}%; width: {{printf "%.3f" .WidthPercent}}%"
-                     title="{{.Name}} — {{.Timestamp}} for {{short .Duration}}"><span>{{.ShortName}}</span></div>
-            {{end}}
-            {{range .BossCasts}}
+            {{template "bars" .Phases}}
+            {{range .Boss}}
                 {{/* No title attribute: the native tooltip would sit on top of
                      Wowhead's. The time is readable from the crosshair readout. */}}
                 <a class="bcast{{if .Cancelled}} interrupted{{end}}" style="left: {{printf "%.3f" .Percent}}%"
                    href="https://www.wowhead.com/spell={{.AbilityID}}{{with $.Fight.WowheadDifficulty}}?dd={{.}}{{end}}"
                    target="_blank" rel="noopener noreferrer"><span class="bname">{{.Label}}</span></a>
             {{end}}
-            {{range .BossCasts}}
+            {{range .Boss}}
                 {{if .WidthPercent}}
                     <div class="bbar" style="left: {{printf "%.3f" .Percent}}%; width: {{printf "%.3f" .WidthPercent}}%"></div>
                 {{end}}
@@ -1089,13 +1080,10 @@
 
         <div class="track">
         <div class="prepull" style="width: {{printf "%.3f" .PullPercent}}%"></div>
-        {{range .Phases}}
+        {{range .Phases.Bars}}
             <div class="phaseline" style="left: {{printf "%.3f" .StartPercent}}%"></div>
         {{end}}
-        {{range .Lusts}}
-            <div class="lust" style="left: {{printf "%.3f" .StartPercent}}%; width: {{printf "%.3f" .WidthPercent}}%"
-                 title="{{.Label}} — {{.Timestamp}} for {{short .Duration}}"></div>
-        {{end}}
+        {{template "bars" .Lusts}}
         {{range .Casts}}
             {{if .Gap}}
                 <div class="gap" data-ms="{{.GapMS}}"
@@ -1110,12 +1098,7 @@
                      {{with .ProcLabel}}title="{{.}}"{{end}}></div>
             {{end}}
         {{end}}
-        {{range .Cooldowns}}
-            <div class="cdblock" data-row="{{.Row}}"
-                 style="left: {{printf "%.3f" .StartPercent}}%; width: {{printf "%.3f" .WidthPercent}}%;
-                        top: calc({{.Row}} * var(--rcd-row) + 0.15rem)"
-                 title="{{.Name}} — {{.Timestamp}} for {{short .Duration}}"><span>{{.Name}}</span></div>
-        {{end}}
+        {{template "bars" .Cooldowns}}
         {{range .Casts}}
             {{/* A cooldown is already drawn as a block above; repeating it here
                  would print its name twice on the same moment. */}}
@@ -1173,9 +1156,9 @@
     </div>
     <div class="scale"><span>&minus;{{short .LeadIn}} (pre-pull)</span><span>{{duration .Duration}}</span></div>
 
-    {{if .Lusts}}
+    {{if .HasLusts}}
         <ul class="lusts">
-            {{range .Lusts}}
+            {{range .Timeline.Lusts}}
                 <li><strong>{{.Label}}</strong> at {{.Timestamp}}, up for {{short .Duration}} on {{.Targets}} players</li>
             {{end}}
         </ul>
@@ -1552,3 +1535,12 @@
 </script>
 </body>
 </html>
+
+{{/* One lane's bars. Every lane is the same thing on screen — a span with a
+     tooltip, a row to stack on when the lane stacks, a name when the lane is
+     labelled — so this is the only place a lane is drawn. */}}
+{{define "bars"}}{{range .Bars}}
+    <div class="{{$.Class}}{{with .Class}} {{.}}{{end}}"{{if $.Stacked}} data-row="{{.Row}}"{{end}}
+         style="left: {{printf "%.3f" .StartPercent}}%; width: {{printf "%.3f" .WidthPercent}}%;{{if $.Stacked}} top: calc({{.Row}} * var(--rcd-row) + 0.15rem){{end}}"
+         title="{{.Title}}">{{if $.Labelled}}<span>{{.Name}}</span>{{end}}</div>
+{{end}}{{end}}

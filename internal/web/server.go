@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"wowinsight/internal/view"
 	"wowinsight/internal/warcraftlogs"
 )
 
@@ -80,7 +81,9 @@ type fightPageData struct {
 	Fight      warcraftlogs.Fight
 	SelectedID int
 	Player     *warcraftlogs.PlayerStats
-	Timeline   *warcraftlogs.Timeline
+	// Timeline is the analysis laid out for this page. The handler chooses
+	// the axis; today that is the pull's own.
+	Timeline *view.Timeline
 	// Notices are the things that went wrong without stopping the page: the
 	// timeline could not be fetched, a player could not be resolved, part of
 	// the document did not arrive. An empty area with nothing said is the
@@ -171,7 +174,7 @@ func (s *Server) fight(w http.ResponseWriter, r *http.Request) {
 				s.logProblem(r, p, "fetch timeline", err, "code", code, "fight", fightID, "player", id)
 				data.Notices = append(data.Notices, "The cast timeline could not be loaded. "+p.message)
 			} else {
-				data.Timeline = timeline
+				data.Timeline = view.Layout(timeline, view.Options{})
 				if len(timeline.Incomplete) > 0 {
 					s.logger(r).Warn("timeline arrived incomplete", "missing", timeline.Incomplete)
 					data.Notices = append(data.Notices, "Part of the timeline was unavailable from Warcraft Logs: "+strings.Join(timeline.Incomplete, ", ")+".")

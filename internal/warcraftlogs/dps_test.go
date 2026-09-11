@@ -2,7 +2,6 @@ package warcraftlogs
 
 import (
 	"math"
-	"strings"
 	"testing"
 	"time"
 )
@@ -75,22 +74,6 @@ func TestBuildDPSAlignsSeriesStartingLate(t *testing.T) {
 	}
 }
 
-func TestPlotProducesScalableCoordinates(t *testing.T) {
-	points := []DPSPoint{
-		{Percent: 0, DPS: 0},
-		{Percent: 50, DPS: 100},
-		{Percent: 100, DPS: 50},
-	}
-	line, area := plot(points, 100)
-	if line != "0.000,100.000 50.000,0.000 100.000,50.000" {
-		t.Errorf("line = %q", line)
-	}
-	// The area must close to the baseline so it can be filled.
-	if !strings.HasPrefix(area, "M0.000,100 L") || !strings.HasSuffix(area, "L100.000,100 Z") {
-		t.Errorf("area = %q, want a closed path along the baseline", area)
-	}
-}
-
 func TestBuildDPSHandlesEmptyAndFlatInput(t *testing.T) {
 	fight := Fight{ID: 1, StartTime: 1000, EndTime: 11000}
 	if g := buildDPS(dpsGraphResponse{}, fight); g != nil {
@@ -102,7 +85,6 @@ func TestBuildDPSHandlesEmptyAndFlatInput(t *testing.T) {
 	if g == nil || g.Peak != 0 {
 		t.Fatalf("a flat zero graph should still build, got %+v", g)
 	}
-	if g.Line != "" || g.Area != "" {
-		t.Errorf("a zero peak cannot be plotted without dividing by zero: %q", g.Line)
-	}
+	// Whether a zero peak can be drawn is internal/view's problem; see its
+	// plot test.
 }

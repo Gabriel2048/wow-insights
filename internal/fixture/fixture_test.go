@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"wowinsight/internal/warcraftlogs"
 )
@@ -228,8 +229,11 @@ func TestReplayServesTheRecordingThroughTheRealClient(t *testing.T) {
 	if len(timeline.Casts) != 2 {
 		t.Errorf("len(Casts) = %d, want 2 (the second page of casts was not followed)", len(timeline.Casts))
 	}
-	if timeline.Total == 0 || timeline.Casts[1].Percent == 0 {
-		t.Errorf("Total=%v Casts[1].Percent=%v: the timeline was not laid out, so the replay is not going through the real client", timeline.Total, timeline.Casts[1].Percent)
+	// Built, not just decoded: the begincast/cast pair became one cast with
+	// its cast time, and the second cast carries the gap before it — which
+	// is what going through the real client produces and a stub would not.
+	if timeline.Casts[0].CastTime != 2*time.Second || timeline.Casts[1].Gap == 0 {
+		t.Errorf("Casts[0].CastTime=%v Casts[1].Gap=%v: the timeline was not built, so the replay is not going through the real client", timeline.Casts[0].CastTime, timeline.Casts[1].Gap)
 	}
 	if _, err := wcl.RateLimit(ctx); err != nil {
 		t.Errorf("RateLimit() returned error: %v (the health endpoint should work offline)", err)

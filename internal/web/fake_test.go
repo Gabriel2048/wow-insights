@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"wowinsight/internal/view"
 	"wowinsight/internal/warcraftlogs"
 )
 
@@ -64,84 +65,65 @@ func newTestServer(t *testing.T, wcl logsClient) *Server {
 // in place, and the suite runs with -shuffle=on, so a shared fixture would be
 // mutated by whichever test happened to run first.
 
-// fullTimeline returns a timeline with every lane populated, so that every
-// branch of fight.html executes.
-//
-// The position fields are set BY HAND. This is emphatically not a golden
-// render: the numbers are invented, not produced by layout(), which is
-// unexported and reachable only from Client.Timeline. Hand-setting them is what
-// makes {{if .CastWidthPercent}} and data-total-ms non-zero — a real log does
-// not reliably exercise those branches, since a player casting only instants
-// renders no cast bars at all. A positioned golden waits for #17.
+// fullTimeline returns an analysed timeline with every lane populated, so
+// that every branch of fight.html executes once it is laid out. The analysis
+// carries no positions; view.Layout computes them, which is why the
+// fixture need not invent any — the precast is what makes the lead-in and
+// the cast bars non-zero.
 func fullTimeline() *warcraftlogs.Timeline {
 	sec := func(n float64) time.Duration { return time.Duration(n * float64(time.Second)) }
 	return &warcraftlogs.Timeline{
-		Duration:    sec(300),
-		LeadIn:      sec(2),
-		Total:       sec(302),
-		PullPercent: 0.66,
+		Duration: sec(300),
 		Casts: []warcraftlogs.Cast{
 			{
 				Name: "Pyroblast", AbilityID: 11366,
 				Offset: sec(-1.5), End: sec(0.4), CastTime: sec(1.9),
 				Precast: true, Estimated: true, HadBegincast: true,
-				Percent: 0.17, CastWidthPercent: 0.63,
 			},
 			{
 				Name: "Fireball", AbilityID: 133,
 				Offset: sec(2), End: sec(4), CastTime: sec(2), HadBegincast: true,
 				Gap: sec(1.6), DuringLust: true,
-				Percent: 1.32, CastWidthPercent: 0.66,
-				GapStartPercent: 0.79, GapWidthPercent: 0.53,
 			},
 			{
 				Name: "Fire Blast", AbilityID: 108853,
-				Offset: sec(3), End: sec(3), DuringCast: true,
-				Percent: 1.66, Proc: "Hot Streak!",
+				Offset: sec(3), End: sec(3), DuringCast: true, Proc: "Hot Streak!",
 			},
 			{
 				Name: "Scorch", AbilityID: 2948,
 				Offset: sec(9), End: sec(9), HadBegincast: true, Cancelled: true,
-				Percent: 3.64,
 			},
 			{
 				Name: "Combustion", AbilityID: 190319,
-				Offset: sec(12), End: sec(12), Cooldown: true, Percent: 4.64,
+				Offset: sec(12), End: sec(12), Cooldown: true,
 			},
 			{
 				Name: "Pyroblast", AbilityID: 11366,
 				Offset: sec(20), End: sec(20), RepeatsPrevious: true,
-				ProcMissing: true, Percent: 7.28,
+				ProcMissing: true,
 			},
 		},
 		Lusts: []warcraftlogs.RaidWindow{
 			{AbilityID: 80353, Name: "Time Warp", Source: "Testmage",
-				Start: sec(2), End: sec(42), Targets: 20,
-				StartPercent: 1.32, WidthPercent: 13.2},
+				Start: sec(2), End: sec(42), Targets: 20},
 		},
 		Phases: []warcraftlogs.Phase{
-			{ID: 1, Name: "Stage One: The Gathering", Start: 0, End: sec(150),
-				StartPercent: 0.66, WidthPercent: 49.6},
-			{ID: 2, Name: "Intermission", IsIntermission: true, Start: sec(150), End: sec(300),
-				StartPercent: 50.3, WidthPercent: 49.6},
+			{ID: 1, Name: "Stage One: The Gathering", Start: 0, End: sec(150)},
+			{ID: 2, Name: "Intermission", IsIntermission: true, Start: sec(150), End: sec(300)},
 		},
 		BossCasts: []warcraftlogs.BossCast{
 			{AbilityID: 1214148, Name: "Dread Bolt", Source: "The Coiled One", Count: 5,
-				Offset: sec(30), End: sec(32), Percent: 10.6, WidthPercent: 0.66},
+				Offset: sec(30), End: sec(32)},
 		},
 		Cooldowns: []warcraftlogs.CooldownWindow{
-			{AbilityID: 190319, Name: "Combustion", Start: sec(12), End: sec(22),
-				StartPercent: 4.64, WidthPercent: 3.31, Row: 0},
+			{AbilityID: 190319, Name: "Combustion", Start: sec(12), End: sec(22)},
 		},
-		CooldownRows: 1,
 		RaidCDs: []warcraftlogs.RaidWindow{
 			{AbilityID: 97463, Name: "Rallying Cry", Source: "Testwarrior",
-				Start: sec(60), End: sec(70), Targets: 20,
-				StartPercent: 20.5, WidthPercent: 3.31, Row: 0},
+				Start: sec(60), End: sec(70), Targets: 20},
 		},
-		RaidCDRows: 1,
-		DPS:        graph(1_200_000, 800_000),
-		Taken:      graph(90_000, 40_000),
+		DPS:   graph(1_200_000, 800_000),
+		Taken: graph(90_000, 40_000),
 	}
 }
 
@@ -149,16 +131,15 @@ func graph(peak, mean float64) *warcraftlogs.DPSGraph {
 	return &warcraftlogs.DPSGraph{
 		Peak: peak, Mean: mean, Interval: 3 * time.Second,
 		Points: []warcraftlogs.DPSPoint{
-			{Offset: 0, DPS: mean, Percent: 0.66},
-			{Offset: 3 * time.Second, DPS: peak, Percent: 1.65},
+			{Offset: 0, DPS: mean},
+			{Offset: 3 * time.Second, DPS: peak},
 		},
-		Line: "0.660,33.333 1.650,0.000",
-		Area: "M0.660,100 L0.660,33.333 1.650,0.000 L1.650,100 Z",
 	}
 }
 
 // fullFightPage returns a fight page with a player selected and every lane
-// present — the shape the template is asked to render most often.
+// present — the shape the template is asked to render most often. The axis
+// is fixed at a 2s lead-in so the ruler's x-domain is a known number.
 func fullFightPage() fightPageData {
 	detail := fightDetail()
 	player := detail.Players[0]
@@ -167,8 +148,20 @@ func fullFightPage() fightPageData {
 		Fight:      detail.Fight,
 		SelectedID: player.ActorID,
 		Player:     &player,
-		Timeline:   fullTimeline(),
+		Timeline:   laidOut(fullTimeline()),
 	}
+}
+
+// pageWith is fullFightPage with a different analysis drawn on it.
+func pageWith(t *warcraftlogs.Timeline) fightPageData {
+	page := fullFightPage()
+	page.Timeline = laidOut(t)
+	return page
+}
+
+// laidOut draws an analysis the way the page fixture wants it drawn.
+func laidOut(t *warcraftlogs.Timeline) *view.Timeline {
+	return view.Layout(t, view.Options{LeadIn: 2 * time.Second})
 }
 
 func fightDetail() *warcraftlogs.FightDetail {

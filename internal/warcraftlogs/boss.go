@@ -29,9 +29,6 @@ type BossCast struct {
 	// the first question, and a marker that counted a kicked cast as a
 	// landed one answered it wrong.
 	Interrupted int
-
-	Percent      float64
-	WidthPercent float64
 }
 
 // CastTime is how long the boss spent casting it.

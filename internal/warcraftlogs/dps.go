@@ -1,7 +1,6 @@
 package warcraftlogs
 
 import (
-	"fmt"
 	"math"
 	"strconv"
 	"strings"
@@ -10,22 +9,17 @@ import (
 
 // DPSPoint is one bucket of the damage graph.
 type DPSPoint struct {
-	Offset  time.Duration
-	DPS     float64
-	Percent float64 // position along the fight, 0-100
+	Offset time.Duration
+	DPS    float64
 }
 
-// DPSGraph is a player's damage over the course of a fight, ready to draw.
+// DPSGraph is a player's damage over the course of a fight. Drawing it is
+// internal/view's job.
 type DPSGraph struct {
 	Points   []DPSPoint
 	Peak     float64
 	Mean     float64
 	Interval time.Duration
-
-	// Line is an SVG polyline in a 0-100 by 0-100 viewBox, and Area closes the
-	// same shape to the baseline for filling underneath it.
-	Line string
-	Area string
 }
 
 // dpsGraphResponse mirrors the untyped JSON the graph field returns. Warcraft
@@ -103,27 +97,7 @@ func buildDPS(response dpsGraphResponse, fight Fight) *DPSGraph {
 		graph.Points = append(graph.Points, point)
 	}
 	graph.Mean = sum / float64(len(graph.Points))
-	// Line and Area are drawn by layout(), once every point has a Percent.
 	return graph
-}
-
-// plot renders the curve into a 100x100 viewBox, which the browser stretches to
-// whatever width the zoom level gives it.
-func plot(points []DPSPoint, peak float64) (line, area string) {
-	if len(points) == 0 || peak <= 0 {
-		return "", ""
-	}
-	coords := make([]string, len(points))
-	for i, p := range points {
-		x := math.Min(100, math.Max(0, p.Percent))
-		y := 100 - 100*p.DPS/peak
-		coords[i] = fmt.Sprintf("%.3f,%.3f", x, y)
-	}
-	line = strings.Join(coords, " ")
-	area = fmt.Sprintf("M%.3f,100 L%s L%.3f,100 Z",
-		math.Min(100, math.Max(0, points[0].Percent)), line,
-		math.Min(100, math.Max(0, points[len(points)-1].Percent)))
-	return line, area
 }
 
 // HalfPeak is the midpoint of the vertical scale, matching the dashed gridline.

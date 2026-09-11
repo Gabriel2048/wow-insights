@@ -83,19 +83,19 @@ func TestFightPageRendersWithoutTheOptionalLanes(t *testing.T) {
 		t.Error("with no player selected the page must invite one to be picked")
 	}
 
-	noDPS := fullFightPage()
-	noDPS.Timeline.DPS = nil
-	noDPS.Timeline.Taken = nil
-	if page := render(t, "fight.html", noDPS); strings.Contains(page, "ZgotmplZ") {
+	noDPS := fullTimeline()
+	noDPS.DPS = nil
+	noDPS.Taken = nil
+	if page := render(t, "fight.html", pageWith(noDPS)); strings.Contains(page, "ZgotmplZ") {
 		t.Error("page with no damage graph contains ZgotmplZ")
 	}
 
-	bare := fullFightPage()
-	bare.Timeline.RaidCDs = nil
-	bare.Timeline.Cooldowns = nil
-	bare.Timeline.Lusts = nil
-	bare.Timeline.Phases = nil
-	page := render(t, "fight.html", bare)
+	bareTimeline := fullTimeline()
+	bareTimeline.RaidCDs = nil
+	bareTimeline.Cooldowns = nil
+	bareTimeline.Lusts = nil
+	bareTimeline.Phases = nil
+	page := render(t, "fight.html", pageWith(bareTimeline))
 	if !strings.Contains(page, "No Bloodlust, Heroism or Time Warp") {
 		t.Error("a pull with no lust must say so rather than render an empty lane")
 	}
@@ -186,10 +186,10 @@ func TestFightPageHasTheElementsTheScriptLooksUp(t *testing.T) {
 // The same derivation on a page with no damage graph, which is where the
 // contract is currently broken.
 func TestFightPageWithoutDPSIsMissingOnlyTheKnownIDs(t *testing.T) {
-	data := fullFightPage()
-	data.Timeline.DPS = nil
-	data.Timeline.Taken = nil
-	page := render(t, "fight.html", data)
+	noDPS := fullTimeline()
+	noDPS.DPS = nil
+	noDPS.Taken = nil
+	page := render(t, "fight.html", pageWith(noDPS))
 
 	for _, m := range regexp.MustCompile(`getElementById\('([A-Za-z0-9_-]+)'\)`).FindAllStringSubmatch(page, -1) {
 		if strings.Contains(page, `id="`+m[1]+`"`) {
@@ -254,7 +254,7 @@ func TestPlayerSuppliedTextIsEscaped(t *testing.T) {
 	page := render(t, "fight.html", fightPageData{
 		Detail: detail, Fight: detail.Fight,
 		SelectedID: player.ActorID, Player: &player,
-		Timeline: fullTimeline(),
+		Timeline: laidOut(fullTimeline()),
 	})
 	for _, unwanted := range []string{`<script>alert("title")</script>`, `<img src=x onerror=alert(1)>`} {
 		if strings.Contains(page, unwanted) {
