@@ -60,7 +60,7 @@ func (s *Server) Routes() *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", s.index)
 	mux.HandleFunc("GET /report/{code}/fight/{id}", s.fight)
-	mux.HandleFunc("GET /hello", hello)
+	mux.HandleFunc("GET /healthz", healthz)
 	mux.HandleFunc("GET /health/wcl", s.wclHealth)
 	return mux
 }
@@ -166,8 +166,11 @@ func (s *Server) fight(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func hello(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"message": "Hello, World!"})
+// healthz is the probe target: it answers without touching anything, so it
+// says "the process is up" and nothing more. /health/wcl is the one that
+// spends a point to say whether the credentials work.
+func healthz(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

@@ -19,8 +19,12 @@ Go 1.26 or newer, and a Warcraft Logs API client from
 
 ```
 cp .env.example .env      # then fill in the two values
-go run .                  # http://localhost:8080
+go run .                  # http://localhost:8080, or PORT=9999 go run .
 ```
+
+Without both credentials the binary exits at startup naming what is missing — it does
+not start and fail every request. Ctrl-C or SIGTERM drains in-flight requests for up to
+eight seconds, then exits 0.
 
 `GET /health/wcl` spends one API point to confirm the credentials work and reports the
 hourly points budget.
@@ -166,9 +170,11 @@ constrains any Content-Security-Policy work in #7.
 
 ## Credentials
 
-`.env` is gitignored and read from the process working directory. Keys are
-`WARCRAFTLOGS_CLIENT_ID` and `WARCRAFTLOGS_CLIENT_SECRET` (the `ClientId` /
-`ClientSecret` spellings Warcraft Logs' own client page uses are accepted too).
+`.env` is gitignored and read from the process working directory by `internal/config`,
+which never writes to the process environment — a real export wins over the file. The
+names are `WARCRAFTLOGS_CLIENT_ID` and `WARCRAFTLOGS_CLIENT_SECRET`, one per value; the
+`ClientId` / `ClientSecret` spellings from Warcraft Logs' client page are no longer
+accepted. `PORT` defaults to 8080.
 
 Never echo, log, commit or paste a value. Secret-scanning push protection is enabled, but
 it only recognises known credential formats — a backstop, not a permission.

@@ -21,7 +21,7 @@ flowchart LR
     api[("Warcraft Logs v2 GraphQL API<br/>/api/v2/client<br/>3,600 points per hour, shared by every user")]
     zam["wow.zamimg.com/js/tooltips.js<br/>unversioned, no SRI"]
 
-    user -->|"GET /?url=…<br/>GET /report/{code}/fight/{id}?player={actor}<br/>GET /health/wcl · GET /hello"| app
+    user -->|"GET /?url=…<br/>GET /report/{code}/fight/{id}?player={actor}<br/>GET /healthz · GET /health/wcl"| app
     app -->|"client-credentials token, cached until expiry"| oauth
     app -->|"one query per page section, every page view"| api
     user -.->|"loaded by every fight page"| zam
@@ -32,14 +32,16 @@ flowchart LR
   one.
 - The tooltips script is the only third-party code that executes, and it runs with full
   origin privileges in the browser. It constrains any Content-Security-Policy work (#7).
-- Credentials arrive from `.env` or the environment and are never sent anywhere but the
-  OAuth endpoint.
+- Credentials and `PORT` arrive from the environment, or from `.env` for local work, and
+  never enter the process environment or leave it for anywhere but the OAuth endpoint.
+- The process stops gracefully: SIGTERM cancels the root context, the listener closes,
+  in-flight requests get eight seconds to finish — inside Cloud Run's ten.
 
 ## 2. How the code is organised
 
 Seven packages: one that ships, two a developer runs, four they are built from. Solid
 arrows are imports and are verified. Not every import is drawn: each binary also builds
-the client with `warcraftlogs.New`, and `record` reads `.env` like `main` does — those edges
+the client with `warcraftlogs.New`, and all three read their configuration — those edges
 are declared in the diagram source and checked, but left off the picture, because the
 labels already say it and the lines would only cross what matters. Dotted arrows are
 relations that are not imports, which is what makes them worth drawing — including the
@@ -58,27 +60,28 @@ flowchart TB
         record["record<br/>the fixture recorder"]
     end
     templates[/"internal/web/templates/*.html<br/>embedded at compile time"/]
-    web["internal/web<br/>HTTP layer, routes, templates"]
-    env["internal/env<br/>.env loading"]
+    web["internal/web<br/>HTTP layer, routes, templates<br/>the http.Server and its shutdown"]
+    config["internal/config<br/>PORT and credentials, from the environment or .env"]
     fixture["internal/fixture<br/>replay and record transports"]
     warcraftlogs["internal/warcraftlogs<br/>API client + analysis + layout"]
     api[("Warcraft Logs API")]
     testdata[/"testdata/<br/>the committed recording"/]
 
-    main --> env
+    main --> config
     main --> web
     serve_recorded --> web
     serve_recorded -->|"installs the replay<br/>under the client"| fixture
     record -->|"records through"| fixture
     templates -.->|"go:embed"| web
     web --> warcraftlogs
-    %% Every binary also builds the client (warcraftlogs.New), and record
-    %% reads .env. Real, verified, and not drawn: the labels say it and the
-    %% lines would only cross what matters.
+    %% Every binary also builds the client (warcraftlogs.New) and reads its
+    %% configuration. Real, verified, and not drawn: the labels say it and
+    %% the lines would only cross what matters.
     %% main --> warcraftlogs
     %% serve_recorded --> warcraftlogs
     %% record --> warcraftlogs
-    %% record --> env
+    %% serve_recorded --> config
+    %% record --> config
     fixture -.->|"WithHTTPClient"| warcraftlogs
     fixture -.->|"serve-recorded reads"| testdata
     fixture -.->|"record writes"| testdata
@@ -179,7 +182,7 @@ no check-in — only the diagram edit, if any.
 `%% verified: package graph`, takes its solid `-->` edges, and compares them with the
 import graph `go/build` reports for every package in the module. A package or import
 edge missing from the diagram fails the gate; so does an edge the code no longer has.
-Node ids are the last path segment of the package (`env`, `fixture`) with hyphens as
+Node ids are the last path segment of the package (`config`, `fixture`) with hyphens as
 underscores (`serve_recorded`), and `main` for the root. An edge written in a `%%` comment is verified like a drawn one and not rendered —
 the escape hatch for a package whose edges would only add crossings, used by
 `cmd/record`. Dotted edges (`-.->`) are not checked, which is what they are for.

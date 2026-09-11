@@ -109,6 +109,19 @@ func TestFightRendersTheWholePageWithATimeline(t *testing.T) {
 	}
 }
 
+// The probe target answers with no I/O at all: the fake has nothing stubbed,
+// so any upstream call would surface as errNotStubbed. A probe that spent an
+// API point per check would drain the budget on its own.
+func TestHealthzTouchesNothing(t *testing.T) {
+	rec := get(t, fakeWCL{}, "/healthz")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	if !strings.Contains(rec.Body.String(), `"status":"ok"`) {
+		t.Errorf("body = %q, want a status", rec.Body.String())
+	}
+}
+
 // Missing credentials are a deployment fault, not an upstream one, and the
 // health endpoint is the thing a probe reads — so they are told apart.
 func TestHealthDistinguishesMissingCredentialsFromAnUpstreamFailure(t *testing.T) {
@@ -192,7 +205,7 @@ func TestEveryRouteIsReachable(t *testing.T) {
 	for _, target := range []string{
 		"/",
 		"/report/ExampleReport123/fight/12",
-		"/hello",
+		"/healthz",
 		"/health/wcl",
 	} {
 		req := httptest.NewRequest("GET", target, nil)
