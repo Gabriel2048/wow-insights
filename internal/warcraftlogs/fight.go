@@ -152,22 +152,6 @@ type fightDetailResponse struct {
 	} `json:"reportData"`
 }
 
-const fightQuery = `query ($code: String!, $id: Int!) {
-  reportData {
-    report(code: $code) {
-      code
-      title
-      fights(fightIDs: [$id]) {
-        id name kill difficulty startTime endTime bossPercentage friendlyPlayers
-      }
-      masterData { actors(type: "Player") { id name type subType server } }
-      damage: table(dataType: DamageDone, fightIDs: [$id])
-      healing: table(dataType: Healing, fightIDs: [$id])
-      deaths: table(dataType: Deaths, fightIDs: [$id])
-    }
-  }
-}`
-
 // FightDetail fetches one fight and the per-player damage, healing and deaths
 // for it.
 func (c *Client) FightDetail(ctx context.Context, code string, fightID int) (*FightDetail, error) {
@@ -184,7 +168,7 @@ func (c *Client) FightDetail(ctx context.Context, code string, fightID int) (*Fi
 // fightID, which is why they belong here rather than in the assembly.
 func (c *Client) fetchFightDetail(ctx context.Context, code string, fightID int) (*fightDetailReport, error) {
 	var data fightDetailResponse
-	err := c.Query(ctx, fightQuery, map[string]any{"code": code, "id": fightID}, &data)
+	err := c.Query(ctx, fightOp, map[string]any{"code": code, "id": fightID}, &data)
 	report := data.ReportData.Report
 	if report == nil {
 		return nil, notFound(err, code)

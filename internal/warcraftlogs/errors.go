@@ -23,10 +23,26 @@ var (
 	ErrFightNotFound = errors.New("warcraftlogs: fight not found")
 	// ErrRateLimited: the hourly points budget is spent.
 	ErrRateLimited = errors.New("warcraftlogs: rate limited")
+	// ErrBudgetExhausted: the client refused to spend, because the budget is
+	// nearly gone. Not the API's doing; the app's own guard.
+	ErrBudgetExhausted = errors.New("warcraftlogs: budget nearly exhausted")
 	// ErrUpstream: Warcraft Logs answered with something other than the
 	// data asked for, or did not answer.
 	ErrUpstream = errors.New("warcraftlogs: upstream failure")
 )
+
+// BudgetError is the guard refusing an expensive query, with what it knew.
+type BudgetError struct {
+	Spent   float64
+	Limit   int
+	ResetIn time.Duration
+}
+
+func (e *BudgetError) Error() string {
+	return fmt.Sprintf("warcraftlogs: %.0f of %d points spent this hour; resets in %s", e.Spent, e.Limit, e.ResetIn.Round(time.Second))
+}
+
+func (e *BudgetError) Unwrap() error { return ErrBudgetExhausted }
 
 // maxBodyKept bounds how much of an upstream body an APIError carries. It is
 // for a log line, and a log line does not want a megabyte of HTML.

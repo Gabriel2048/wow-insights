@@ -191,3 +191,31 @@ func TestEveryResponseCarriesARequestID(t *testing.T) {
 		}
 	}
 }
+
+// The access line says where the budget stands after the request's calls,
+// when the client knows. The fake does not, and the real one is asked by
+// type — so a client that offers Budget() is what this exercises.
+func TestAccessLineCarriesTheBudgetWhenKnown(t *testing.T) {
+	s, buf := loggedServer(t, budgetedFake{fakeWCL: fightPageClient()})
+	s.Handler().ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/report/ExampleReport123/fight/12?player=7", nil))
+	all := lines(t, buf)
+	if len(all) != 1 {
+		t.Fatalf("got %d lines", len(all))
+	}
+	if all[0]["points_spent"] != float64(118) || all[0]["points_limit"] != float64(3600) || all[0]["points_reset_in_s"] != float64(900) {
+		t.Errorf("access line = %v, want the budget snapshot on it", all[0])
+	}
+
+	// Without a budgeted client the fields are absent, not zero.
+	s, buf = loggedServer(t, fightPageClient())
+	s.Handler().ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/report/ExampleReport123/fight/12?player=7", nil))
+	if _, present := lines(t, buf)[0]["points_spent"]; present {
+		t.Error("a client with no budget put budget fields on the line")
+	}
+}
+
+type budgetedFake struct{ fakeWCL }
+
+func (budgetedFake) Budget() (warcraftlogs.RateLimit, bool) {
+	return warcraftlogs.RateLimit{LimitPerHour: 3600, PointsSpentThisHour: 118, PointsResetIn: 900}, true
+}

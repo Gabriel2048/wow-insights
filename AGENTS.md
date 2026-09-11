@@ -97,6 +97,10 @@ These are the calls tooling cannot make.
   comparators, `cmp.Or` over an if-chain. `go fix` catches some of this, not all of it.
 - **`context.Context` is the first parameter and must be honoured.** Anything doing I/O
   takes one and passes it down; never stash it in a struct.
+- **A GraphQL document is a named `const` in `operations.go`, never built by
+  concatenation.** Anything that varies is a declared variable — a filter is a nullable
+  `String` left out of the variables map when its set is empty, which omits the argument.
+  A test holds every document to this.
 
 ## What tests are for
 

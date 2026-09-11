@@ -192,20 +192,6 @@ func (r Report) BossFights() []Fight {
 	return fights
 }
 
-const reportQuery = `query ($code: String!) {
-  reportData {
-    report(code: $code) {
-      code
-      title
-      startTime
-      endTime
-      owner { name }
-      zone { name }
-      fights { id name kill difficulty startTime endTime }
-    }
-  }
-}`
-
 // reportResponse is the envelope the report query returns.
 type reportResponse struct {
 	ReportData struct {
@@ -221,7 +207,7 @@ type reportResponse struct {
 // one branch behind a second name.
 func (c *Client) Report(ctx context.Context, code string) (*Report, error) {
 	var data reportResponse
-	err := c.Query(ctx, reportQuery, map[string]any{"code": code}, &data)
+	err := c.Query(ctx, reportOp, map[string]any{"code": code}, &data)
 	if data.ReportData.Report == nil {
 		return nil, notFound(err, code)
 	}

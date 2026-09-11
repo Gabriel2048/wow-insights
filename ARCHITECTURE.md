@@ -135,7 +135,7 @@ sequenceDiagram
     S->>S: middleware: request id, headers, access line, recovery, 60s deadline
     S->>S: ParseReportCode, Atoi — 400 before any API call
     S->>C: FightDetail(code, id)
-    C->>T: fightQuery {code, id}
+    C->>T: Fight {code, id}
     alt shipped binary
         T->>W: POST /api/v2/client
     else serve-recorded
@@ -144,14 +144,16 @@ sequenceDiagram
     C->>C: buildFightDetail — roster, tables, deaths
     alt player resolves to an actor in this fight
         S->>C: Timeline(code, fight, actor)
-        C->>T: timelineQuery {code, id, source, start, end}
+        C->>T: MasterData {code} — report-scoped, once per report when #2 caches
+        T->>W: POST /api/v2/client
+        C->>T: Timeline {code, id, source, start, end, filters…}
         alt shipped binary
             T->>W: POST /api/v2/client
         else serve-recorded
             T->>F: read timeline-{id}-{source}-{start}.json
         end
         loop casts.nextPageTimestamp != null
-            C->>T: castPageQuery {…, start: cursor} — same wire
+            C->>T: CastPage {…, start: cursor} — same wire
         end
         C->>C: buildTimeline → layout()
     end

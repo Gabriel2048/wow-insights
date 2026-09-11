@@ -123,7 +123,7 @@ func (r *Replay) RoundTrip(req *http.Request) (*http.Response, error) {
 	if code, ok := body.Variables["code"].(string); ok && code != r.code {
 		return respond(req, `{"data":{"reportData":{"report":null}}}`), nil
 	}
-	k, err := key(body.Variables)
+	k, err := key(body.OperationName, body.Variables)
 	if err != nil {
 		return nil, err
 	}
