@@ -13,6 +13,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"time"
 
 	"wowinsight/internal/warcraftlogs"
 )
@@ -34,7 +35,6 @@ func ParseTemplates() (*template.Template, error) {
 // also the seam a caching decorator hangs on.
 type logsClient interface {
 	Report(ctx context.Context, code string) (*warcraftlogs.Report, error)
-	RateLimit(ctx context.Context) (warcraftlogs.RateLimit, error)
 	FightDetail(ctx context.Context, code string, fightID int) (*warcraftlogs.FightDetail, error)
 	Timeline(ctx context.Context, code string, fight warcraftlogs.Fight, sourceID int) (*warcraftlogs.Timeline, error)
 }
@@ -44,6 +44,9 @@ type Server struct {
 	wcl logsClient
 	tpl *template.Template
 	log *slog.Logger
+	// handlerDeadline is a field rather than the constant so a test can
+	// shorten it; nothing else sets it.
+	handlerDeadline time.Duration
 }
 
 // New wires a Server. wcl is whatever satisfies logsClient — in production
@@ -52,7 +55,7 @@ type Server struct {
 // shipped binary hands in JSON shaped for Cloud Logging, the dev binaries
 // hand in text.
 func New(wcl logsClient, tpl *template.Template, logger *slog.Logger) *Server {
-	return &Server{wcl: counted{wcl}, tpl: tpl, log: logger}
+	return &Server{wcl: counted{wcl}, tpl: tpl, log: logger, handlerDeadline: handlerDeadline}
 }
 
 // upstreamFailed logs a failed call to Warcraft Logs at the right severity.
@@ -60,11 +63,16 @@ func New(wcl logsClient, tpl *template.Template, logger *slog.Logger) *Server {
 // reports that as an error like any other — but it is not one, and logging
 // it as one would drown the failures that matter in the ones that are not.
 func (s *Server) upstreamFailed(r *http.Request, level slog.Level, msg string, err error, attrs ...any) {
-	if errors.Is(err, context.Canceled) {
+	switch {
+	case errors.Is(err, context.Canceled):
 		s.logger(r).Info("client went away during "+msg, attrs...)
-		return
+	case errors.Is(err, context.DeadlineExceeded):
+		// The handler deadline fired. That is this app's bound, not an
+		// upstream fault, and it is worth a warning rather than an error.
+		s.logger(r).Warn("deadline exceeded during "+msg, attrs...)
+	default:
+		s.logger(r).Log(r.Context(), level, msg, append(attrs, "err", err)...)
 	}
-	s.logger(r).Log(r.Context(), level, msg, append(attrs, "err", err)...)
 }
 
 // Routes returns the mux the server listens on. It returns the concrete type
@@ -75,7 +83,6 @@ func (s *Server) Routes() *http.ServeMux {
 	mux.HandleFunc("GET /{$}", s.index)
 	mux.HandleFunc("GET /report/{code}/fight/{id}", s.fight)
 	mux.HandleFunc("GET /healthz", s.healthz)
-	mux.HandleFunc("GET /health/wcl", s.wclHealth)
 	return mux
 }
 
@@ -118,22 +125,6 @@ func (s *Server) index(w http.ResponseWriter, r *http.Request) {
 		s.logger(r).Error("render index", "err", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 	}
-}
-
-// wclHealth confirms the Warcraft Logs credentials work by spending a single
-// point on the cheapest query the API offers.
-func (s *Server) wclHealth(w http.ResponseWriter, r *http.Request) {
-	limit, err := s.wcl.RateLimit(r.Context())
-	if err != nil {
-		status := http.StatusBadGateway
-		if errors.Is(err, warcraftlogs.ErrNoCredentials) {
-			status = http.StatusServiceUnavailable
-		}
-		s.upstreamFailed(r, slog.LevelError, "warcraft logs health", err)
-		s.writeJSON(w, r, status, map[string]string{"status": "error", "error": err.Error()})
-		return
-	}
-	s.writeJSON(w, r, http.StatusOK, map[string]any{"status": "ok", "rateLimit": limit})
 }
 
 // fight renders one encounter and, when a player is selected, that player's
@@ -182,8 +173,11 @@ func (s *Server) fight(w http.ResponseWriter, r *http.Request) {
 }
 
 // healthz is the probe target: it answers without touching anything, so it
-// says "the process is up" and nothing more. /health/wcl is the one that
-// spends a point to say whether the credentials work.
+// says "the process is up" and nothing more. There is deliberately no
+// endpoint that asks Warcraft Logs anything: as a readiness probe it would
+// take the app out of service during an upstream outage, when the right
+// behaviour is to stay up and say so, and as a monitor it is redundant with
+// the 502 rate in the access log.
 func (s *Server) healthz(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, r, http.StatusOK, map[string]string{"status": "ok"})
 }

@@ -26,8 +26,9 @@ Without both credentials the binary exits at startup naming what is missing — 
 not start and fail every request. Ctrl-C or SIGTERM drains in-flight requests for up to
 eight seconds, then exits 0.
 
-`GET /health/wcl` spends one API point to confirm the credentials work and reports the
-hourly points budget.
+`GET /healthz` is the only health endpoint and touches nothing. There is deliberately no
+endpoint that asks Warcraft Logs whether it is up: the app stays up and says so when it
+is not, and the 502 rate in the access log is the signal.
 
 **Without credentials**, which is the situation an agent is in:
 
