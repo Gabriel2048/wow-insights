@@ -25,13 +25,12 @@ func (s *Server) Handler() http.Handler {
 	var h http.Handler = mux
 	// Listed innermost first. The request id exists before anything logs;
 	// the deadline is inside recovery so a panic from a cancelled context is
-	// still caught; compression sits inside the access log so the bytes
-	// counted are the bytes on the wire; the headers go on everything,
-	// including a 500 from recovery.
+	// still caught; the headers go on everything, including a 500 from
+	// recovery. Compression, if it ever comes, goes between recovery and the
+	// access log so the bytes counted are the bytes on the wire — see #7.
 	for _, wrap := range []middleware{
 		s.deadline,
 		s.recoverPanic,
-		s.compress,
 		s.accessLog(mux),
 		securityHeaders,
 		s.requestID,

@@ -1,10 +1,7 @@
 package web
 
 import (
-	"bytes"
-	"compress/gzip"
 	"context"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -20,108 +17,6 @@ func fightPageClient() fakeWCL {
 		timeline: func(context.Context, string, warcraftlogs.Fight, int) (*warcraftlogs.Timeline, error) {
 			return fullTimeline(), nil
 		},
-	}
-}
-
-func getWith(t *testing.T, wcl logsClient, target string, headers map[string]string) *httptest.ResponseRecorder {
-	t.Helper()
-	req := httptest.NewRequest("GET", target, nil)
-	for k, v := range headers {
-		req.Header.Set(k, v)
-	}
-	rec := httptest.NewRecorder()
-	newTestServer(t, wcl).Handler().ServeHTTP(rec, req)
-	return rec
-}
-
-// A client that accepts gzip gets the page gzipped, smaller, with Vary set so
-// a cache keys on the request; a client that does not gets the same bytes it
-// always did. Both see the same content type, explicitly — with nosniff on
-// every response, a missing Content-Type would be fatal.
-func TestFightPageIsGzippedOnlyWhenAccepted(t *testing.T) {
-	const target = "/report/ExampleReport123/fight/12?player=7"
-	plain := getWith(t, fightPageClient(), target, nil)
-	zipped := getWith(t, fightPageClient(), target, map[string]string{"Accept-Encoding": "gzip"})
-
-	if plain.Header().Get("Content-Encoding") != "" {
-		t.Error("a client that did not ask for gzip got it")
-	}
-	if got := zipped.Header().Get("Content-Encoding"); got != "gzip" {
-		t.Fatalf("Content-Encoding = %q, want gzip", got)
-	}
-	for name, rec := range map[string]*httptest.ResponseRecorder{"plain": plain, "gzip": zipped} {
-		if got := rec.Header().Get("Vary"); got != "Accept-Encoding" {
-			t.Errorf("%s: Vary = %q, want Accept-Encoding", name, got)
-		}
-		if got := rec.Header().Get("Content-Type"); !strings.HasPrefix(got, "text/html") {
-			t.Errorf("%s: Content-Type = %q, want text/html", name, got)
-		}
-	}
-
-	zr, err := gzip.NewReader(bytes.NewReader(zipped.Body.Bytes()))
-	if err != nil {
-		t.Fatalf("the gzipped body does not open: %v", err)
-	}
-	inflated, err := io.ReadAll(zr)
-	if err != nil {
-		t.Fatalf("the gzipped body does not inflate: %v", err)
-	}
-	if !bytes.Equal(inflated, plain.Body.Bytes()) {
-		t.Error("the inflated page is not byte-identical to the uncompressed one")
-	}
-	if ratio := float64(plain.Body.Len()) / float64(zipped.Body.Len()); ratio < 3 {
-		t.Errorf("compression ratio %.1fx, want at least 3x for this markup", ratio)
-	}
-}
-
-// The header's grammar, not a substring: q=0 is a refusal.
-func TestAcceptsGzipReadsQualityValues(t *testing.T) {
-	for header, want := range map[string]bool{
-		"gzip":                  true,
-		"gzip, deflate, br":     true,
-		"deflate, gzip;q=0.5":   true,
-		"GZIP":                  true,
-		"gzip;q=0":              false,
-		"gzip;q=0.0":            false,
-		"gzip; q=0":             false,
-		"br, gzip;q=0, deflate": false,
-		"deflate":               false,
-		"":                      false,
-		"x-gzip":                false,
-	} {
-		if got := acceptsGzip(header); got != want {
-			t.Errorf("acceptsGzip(%q) = %v, want %v", header, got, want)
-		}
-	}
-}
-
-// JSON is compressed too; and a 404 from the mux, which sets text/plain, is
-// still a correct response through the compressing writer.
-func TestCompressionHandlesJSONAndErrors(t *testing.T) {
-	gz := map[string]string{"Accept-Encoding": "gzip"}
-	if rec := getWith(t, fakeWCL{}, "/healthz", gz); rec.Header().Get("Content-Encoding") != "gzip" {
-		t.Error("/healthz was not gzipped")
-	}
-	rec := getWith(t, fakeWCL{}, "/no/such/route", gz)
-	if rec.Code != http.StatusNotFound {
-		t.Errorf("status = %d, want 404", rec.Code)
-	}
-	zr, err := gzip.NewReader(rec.Body)
-	if err != nil {
-		t.Fatalf("404 body does not open as gzip: %v", err)
-	}
-	if body, _ := io.ReadAll(zr); !strings.Contains(string(body), "not found") {
-		t.Errorf("404 body = %q", body)
-	}
-}
-
-// A panic inside a compressed response is still a clean 500: recovery has to
-// see through the compressing writer to know nothing was written yet.
-func TestPanicInsideACompressedResponseIsStillA500(t *testing.T) {
-	wcl := fakeWCL{report: func(context.Context, string) (*warcraftlogs.Report, error) { panic("boom") }}
-	rec := getWith(t, wcl, "/?url=https://www.warcraftlogs.com/reports/ExampleReport123", map[string]string{"Accept-Encoding": "gzip"})
-	if rec.Code != http.StatusInternalServerError {
-		t.Errorf("status = %d, want 500", rec.Code)
 	}
 }
 

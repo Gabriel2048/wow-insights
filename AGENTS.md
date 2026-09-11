@@ -250,12 +250,6 @@ These are the shapes today's code has. New work should not deepen them.
 - **No persistence.** Nothing is stored between requests, so every page view re-queries
   Warcraft Logs against a single hourly points budget (measured: 3,600) shared by all
   users. #2 owns the cache; do not invent an ad-hoc one.
-- **Responses are gzipped, and no page carries a secret.** Those two facts have to stay
-  true together. Compressing a response that holds both a secret and text an attacker
-  chose (the index page echoes the submitted URL) leaks the secret through the compressed
-  length over TLS — BREACH. The day a session token, CSRF token or anything private
-  appears in a page, either that page stops being compressed or the token stops being in
-  the page; do not add one without deciding which.
 - **Presentation lives inside the domain.** Analysis types carry `Percent` and `Row`
   fields and pre-rendered SVG strings, all relative to a single pull, which is why they
   cannot yet be compared across pulls. #17 splits them.
