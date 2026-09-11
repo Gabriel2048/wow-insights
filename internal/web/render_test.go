@@ -398,7 +398,7 @@ func TestEachPageScopesItsStyles(t *testing.T) {
 		if !strings.HasSuffix(trimmed, "{") || strings.HasPrefix(trimmed, "@") || strings.HasPrefix(trimmed, ":root") {
 			continue
 		}
-		for _, sel := range strings.Split(strings.TrimSuffix(trimmed, "{"), ",") {
+		for sel := range strings.SplitSeq(strings.TrimSuffix(trimmed, "{"), ",") {
 			if !strings.HasPrefix(strings.TrimSpace(sel), "body.") {
 				t.Errorf("app.css line %d: %q is not scoped to a page", n+1, strings.TrimSpace(sel))
 			}

@@ -15,7 +15,9 @@ step "go vet (suspicious code the compiler still accepts)"
 go vet ./...
 
 step "go fix (no pending stdlib modernizations)"
-pending=$(go fix -diff ./...)
+# go fix exits non-zero when it has a diff, which set -e would turn into a
+# silent abort before the diff is printed.
+pending=$(go fix -diff ./... || true)
 if [ -n "$pending" ]; then
   echo "pending modernizations — run 'go fix ./...':"; echo "$pending"; exit 1
 fi
