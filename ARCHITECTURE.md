@@ -38,48 +38,51 @@ flowchart LR
 ## 2. How the code is organised
 
 Seven packages: one that ships, two a developer runs, four they are built from. Solid
-arrows are imports and are verified. Two of them — `cmd/dev/record` reading `.env`
-through `internal/env`, and the shipped binary's own `internal/env` — are declared in the
-diagram source and checked, but not drawn, because they only cross what matters. Dotted
-arrows are relations that are not imports, which is what makes them worth drawing —
-including the two wires under the client: in the shipped binary it talks to Warcraft
-Logs; under `serve-recorded` the replay transport sits beneath the same client and
-answers from `testdata/`.
+arrows are imports and are verified. Not every import is drawn: each binary also builds
+the client with `warcraftlogs.New`, and `record` reads `.env` like `main` does — those edges
+are declared in the diagram source and checked, but left off the picture, because the
+labels already say it and the lines would only cross what matters. Dotted arrows are
+relations that are not imports, which is what makes them worth drawing — including the
+two wires under the client: in the shipped binary it talks to Warcraft Logs; under
+`serve-recorded` the replay transport sits beneath the same client and answers from
+`testdata/`.
 
 ```mermaid
 flowchart TB
     %% verified: package graph
-    web["internal/web<br/>HTTP layer, routes, templates<br/>server.go · format.go"]
+    subgraph ships["ships"]
+        main["main<br/>credentials → client → web"]
+    end
+    subgraph dev["cmd/dev — nothing here ships"]
+        serve_recorded["serve-recorded<br/>recording → client → web"]
+        record["record<br/>the fixture recorder"]
+    end
     templates[/"internal/web/templates/*.html<br/>embedded at compile time"/]
-    main["main (the shipped binary)<br/>credentials → client → web"]
-    serve_recorded["cmd/dev/serve-recorded<br/>recording → client → web"]
-    record["cmd/dev/record<br/>the fixture recorder"]
+    web["internal/web<br/>HTTP layer, routes, templates"]
     env["internal/env<br/>.env loading"]
     fixture["internal/fixture<br/>replay and record transports"]
-    warcraftlogs["internal/warcraftlogs<br/>API client + analysis + layout<br/>client · report · fight · timeline · boss · dps"]
+    warcraftlogs["internal/warcraftlogs<br/>API client + analysis + layout"]
     api[("Warcraft Logs API")]
     testdata[/"testdata/<br/>the committed recording"/]
 
-    %% ~~~ is an invisible link: layout only, so the HTTP layer sits at the
-    %% top and the binaries that compose it hang below it.
-    web ~~~ main
-    web ~~~ serve_recorded
-    web ~~~ record
+    main --> env
     main --> web
-    main --> warcraftlogs
     serve_recorded --> web
-    serve_recorded -->|"replay installed<br/>under the client"| fixture
-    serve_recorded --> warcraftlogs
+    serve_recorded -->|"installs the replay<br/>under the client"| fixture
     record -->|"records through"| fixture
-    record --> warcraftlogs
-    web --> warcraftlogs
-    %% main --> env
-    %% record --> env
-
     templates -.->|"go:embed"| web
-    warcraftlogs -.->|"the real wire"| api
+    web --> warcraftlogs
+    %% Every binary also builds the client (warcraftlogs.New), and record
+    %% reads .env. Real, verified, and not drawn: the labels say it and the
+    %% lines would only cross what matters.
+    %% main --> warcraftlogs
+    %% serve_recorded --> warcraftlogs
+    %% record --> warcraftlogs
+    %% record --> env
     fixture -.->|"WithHTTPClient"| warcraftlogs
-    fixture -.->|"reads"| testdata
+    fixture -.->|"serve-recorded reads"| testdata
+    fixture -.->|"record writes"| testdata
+    warcraftlogs -.->|"the real wire"| api
 ```
 
 **The two seams**, which is where anything gets substituted:
