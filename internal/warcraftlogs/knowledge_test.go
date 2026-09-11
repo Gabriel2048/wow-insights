@@ -1,6 +1,7 @@
 package warcraftlogs
 
 import (
+	"strings"
 	"testing"
 
 	"wowinsight/internal/knowledge"
@@ -73,6 +74,10 @@ func TestUnknownSpecKeepsTheClassAgnosticLanes(t *testing.T) {
 		}
 	}
 
+	// An absent filter variable drops the filter, not the field — an events
+	// field with no filterExpression returns everything — so the two
+	// spec-shaped streams are also gated off by a Boolean the document
+	// @includes on. With the Fire tables both gates are open.
 	vars := timelineVars("ExampleReport123", fight, 21, nil, none)
 	for _, filter := range []string{"procs", "cooldowns"} {
 		if _, sent := vars[filter]; sent {
@@ -83,5 +88,17 @@ func TestUnknownSpecKeepsTheClassAgnosticLanes(t *testing.T) {
 		if _, sent := vars[filter]; !sent {
 			t.Errorf("the query dropped the class-agnostic %s filter", filter)
 		}
+	}
+	for _, gate := range []string{"withProcs", "withCooldowns"} {
+		if vars[gate] != false {
+			t.Errorf("%s = %v for a spec with no tables, want false", gate, vars[gate])
+		}
+		if !strings.Contains(timelineOp.document, "@include(if: $"+gate+")") {
+			t.Errorf("the timeline document does not gate a stream on $%s", gate)
+		}
+	}
+	withTables := timelineVars("ExampleReport123", fight, 21, nil, fire)
+	if withTables["withProcs"] != true || withTables["withCooldowns"] != true {
+		t.Errorf("gates = %v/%v with the Fire Mage tables, want both open", withTables["withProcs"], withTables["withCooldowns"])
 	}
 }

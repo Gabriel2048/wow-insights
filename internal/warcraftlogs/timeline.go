@@ -896,8 +896,12 @@ const (
 func timelineVars(code string, fight Fight, sourceID int, bosses []int, know knowledge.Knowledge) map[string]any {
 	vars := castVars(code, fight, sourceID, fight.StartTime)
 	filterVariable(vars, "lust", lustAbilityIDs)
+	// The two spec-shaped streams are gated as well as filtered: with no
+	// tables there is nothing to match, so the fields are skipped outright.
 	filterVariable(vars, "procs", know.ProcAuraIDs())
 	filterVariable(vars, "cooldowns", know.CooldownIDs())
+	vars["withProcs"] = len(know.ProcAuraIDs()) > 0
+	vars["withCooldowns"] = len(know.CooldownIDs()) > 0
 	filterVariable(vars, "raidCDs", raidCooldownIDs())
 	// The boss lane keeps only the encounter's own NPCs, so the query asks
 	// for only those: half of an enemy cast stream is adds.

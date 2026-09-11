@@ -43,7 +43,7 @@ flowchart LR
 
 ## 2. How the code is organised
 
-Eight packages: one that ships, two a developer runs, five they are built from. Solid
+One package ships, two a developer runs, and six they are built from. Solid
 arrows are imports and are verified. Not every import is drawn: each binary also builds
 the client with `warcraftlogs.New`, and all three read their configuration — those edges
 are declared in the diagram source and checked, but left off the picture, because the
@@ -133,11 +133,8 @@ the shipped binary, which has no offline mode. See
 **Inside `internal/warcraftlogs`**, one file per concern. `FightDetail` and `Timeline` are
 each split into a `fetchX` method on `*Client` that does I/O and a pure `buildX` from the
 decoded response; `Report` is deliberately not, being one query and a nil check. `timeline.go` is by a wide margin the largest file — cast pairing,
-aura and cooldown windows, phases and the layout pass — and its doc comments carry the
-reasoning behind each heuristic. Read them before changing a builder.
-
-**Known shape problems**, each owned by an issue: spec knowledge is package-level globals
-(#16). `AGENTS.md` says how to build around it in the meantime.
+aura and cooldown windows, phases — and its doc comments carry the reasoning behind each
+heuristic. Read them before changing a builder.
 
 ## 3. What happens on a fight page request
 
