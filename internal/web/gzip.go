@@ -44,7 +44,7 @@ func compressible(contentType string) bool {
 func (s *Server) compress(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Add("Vary", "Accept-Encoding")
-		if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+		if !acceptsGzip(r.Header.Get("Accept-Encoding")) {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -52,6 +52,26 @@ func (s *Server) compress(next http.Handler) http.Handler {
 		defer gw.finish()
 		next.ServeHTTP(gw, r)
 	})
+}
+
+// acceptsGzip reads an Accept-Encoding header the way its grammar says to:
+// a comma-separated list of codings, each with an optional quality, where
+// q=0 means "not acceptable". So "gzip" and "gzip;q=0.5" are yes and
+// "gzip;q=0" is a refusal — a plain substring test would read the refusal as
+// consent.
+func acceptsGzip(header string) bool {
+	for part := range strings.SplitSeq(header, ",") {
+		coding, params, _ := strings.Cut(strings.TrimSpace(part), ";")
+		if strings.TrimSpace(strings.ToLower(coding)) != "gzip" {
+			continue
+		}
+		q := strings.TrimSpace(strings.ToLower(params))
+		if q, ok := strings.CutPrefix(q, "q="); ok && strings.Trim(strings.TrimSpace(q), "0.") == "" {
+			return false // q=0, 0.0, 0.00
+		}
+		return true
+	}
+	return false
 }
 
 // gzipWriter decides at the first write whether to compress, and then either
