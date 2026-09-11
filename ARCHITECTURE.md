@@ -37,30 +37,32 @@ flowchart LR
 
 ## 2. How the code is organised
 
-Five packages. Solid arrows are imports and are verified; dotted arrows are relations
-that are not imports, which is what makes them worth drawing.
+Five packages. Solid arrows are imports and are verified; an arrow leaving a group means
+every package in the group has that import. Dotted arrows are relations that are not
+imports, which is what makes them worth drawing.
 
 ```mermaid
 flowchart TB
     %% verified: package graph
-    subgraph binaries
-        main["main<br/>HTTP layer, routes, templates<br/>server.go · main.go · format.go"]
-        record["cmd/record<br/>records one fight as a fixture<br/>run by a human, once"]
-    end
-    subgraph internal
-        warcraftlogs["internal/warcraftlogs<br/>API client + analysis + layout<br/>client · report · fight · timeline · boss · dps"]
-        fixture["internal/fixture<br/>record and replay transports, redaction"]
-        env["internal/env<br/>.env loading"]
-    end
     templates[/"templates/*.html<br/>embedded at compile time"/]
     testdata[/"testdata/*.json<br/>the committed recording"/]
 
-    main --> warcraftlogs
-    main --> fixture
-    main --> env
-    record --> warcraftlogs
-    record --> fixture
-    record --> env
+    subgraph binaries["binaries — both import every internal package"]
+        direction LR
+        main["main<br/>HTTP layer, routes, templates<br/>server.go · main.go · format.go"]
+        record["cmd/record<br/>records one fight as a fixture<br/>run by a human, once"]
+    end
+
+    subgraph internal
+        direction LR
+        env["internal/env<br/>.env loading"]
+        fixture["internal/fixture<br/>record and replay transports, redaction"]
+        warcraftlogs["internal/warcraftlogs<br/>API client + analysis + layout<br/>client · report · fight · timeline · boss · dps"]
+    end
+
+    binaries --> env
+    binaries --> fixture
+    binaries --> warcraftlogs
 
     templates -.->|"go:embed"| main
     testdata -.->|"read at runtime in -fixture mode"| fixture
@@ -143,7 +145,9 @@ no check-in — only the diagram edit, if any.
 import graph `go/build` reports for every package in the module. A package or import
 edge missing from the diagram fails the gate; so does an edge the code no longer has.
 Node ids are the last path segment of the package (`env`, `fixture`), and `main` for the
-root; dotted edges (`-.->`) are not checked, which is what they are for.
+root. An edge from or to a `subgraph` stands for one edge per package inside it, so the
+two binaries' identical imports are drawn once. Dotted edges (`-.->`) are not checked,
+which is what they are for.
 
 **The other two views are prose-maintained.** The pull request template asks whether this
 document was updated or the change was not structural; answer it honestly. There is no

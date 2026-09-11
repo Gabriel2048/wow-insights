@@ -19,7 +19,8 @@ import (
 //
 // The contract, stated in the document's last section: the flowchart marked
 // "%% verified: package graph", solid "-->" edges only, node ids being the
-// last path segment of the package and "main" for the module root.
+// last path segment of the package and "main" for the module root, and an
+// edge touching a subgraph standing for one edge per package inside it.
 const moduleName = "wowinsight"
 
 func TestArchitecturePackageGraphMatchesTheCode(t *testing.T) {
@@ -55,13 +56,42 @@ func drawnEdges(t *testing.T, doc string) []string {
 	}
 	block := doc[start : start+end]
 
+	// A group is a subgraph and the node ids declared inside it, so that an
+	// edge drawn from the group can be expanded to one per member.
+	groups := map[string][]string{}
+	var current string
+	for line := range strings.SplitSeq(block, "\n") {
+		line = strings.TrimSpace(line)
+		switch {
+		case strings.HasPrefix(line, "subgraph "):
+			current = strings.Fields(strings.TrimPrefix(line, "subgraph "))[0]
+			current, _, _ = strings.Cut(current, "[")
+		case line == "end":
+			current = ""
+		case current != "":
+			if m := regexp.MustCompile(`^(\w+)\s*[\[(]`).FindStringSubmatch(line); m != nil {
+				groups[current] = append(groups[current], m[1])
+			}
+		}
+	}
+	expand := func(id string) []string {
+		if members, ok := groups[id]; ok {
+			return members
+		}
+		return []string{id}
+	}
+
 	// A solid edge is "a --> b", optionally with a |label|. A dotted edge is
 	// "a -.-> b" and is deliberately not matched: those are the relations
 	// that are not imports.
 	solid := regexp.MustCompile(`(?m)^\s*(\w+)\s*-->(?:\|[^|]*\|)?\s*(\w+)\s*$`)
 	var edges []string
 	for _, m := range solid.FindAllStringSubmatch(block, -1) {
-		edges = append(edges, m[1]+" --> "+m[2])
+		for _, from := range expand(m[1]) {
+			for _, to := range expand(m[2]) {
+				edges = append(edges, from+" --> "+to)
+			}
+		}
 	}
 	if len(edges) == 0 {
 		t.Fatal("the verified flowchart has no solid edges, so this test would assert nothing")
