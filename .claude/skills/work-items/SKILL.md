@@ -41,13 +41,56 @@ git push -u origin HEAD
 gh pr create --title "..." --body "Closes #12
 
 <what changed, why, and what was decided>"
-$S/wi.sh comment 12 "PR: <url>"
 ```
 
 **Then stop.** Do not merge. See *Hard rules* below.
 
 After the owner merges, and only then: comment an implementation summary on the issue and
-`$S/wi.sh status 12 Done`. The merge itself closes the issue via `Closes #12`.
+`$S/wi.sh status 12 Done`. The merge itself closes the issue via `Closes #12`. If #12 was
+the last open child of a parent, `status` says so — tell the owner; closing the parent
+is theirs to do.
+
+## One work item, one pull request
+
+**Every work item produces exactly one branch and exactly one pull request, and that pull
+request closes it.** This is the rule everything else here assumes, and
+`docs/decisions/2026-09-11-one-work-item-one-pull-request.md` is where it is decided and
+argued. In practice:
+
+- **Too big for one reviewable pull request? Split the issue, not the pull request.**
+  Make the issue a parent by giving it sub-issues, and work the children. A parent has no
+  branch and no pull request of its own — `wi.sh branch` refuses one.
+- **A parent closes when its children do, and the owner closes it.** Finishing the last
+  child, say so on the parent and stop; whether the whole did what it set out to do is a
+  judgement, not a count.
+- **A follow-up is a new issue.** A review fix on an already-merged issue gets its own
+  issue, titled to name the one it follows — `Follow-up to #8: name every CI step for
+  what it checks` — with its own branch and pull request. Never reuse a closed issue's
+  number; `wi.sh branch` refuses a closed issue.
+- **Both parents and children live on the board.** `wi.sh list` shows a parent as
+  `parent 3/11` and a child as `child of #5`; `wi.sh children 5` lists them.
+
+The reason the tooling is this strict is worth knowing, because the failure is silent:
+the board runs an **Auto-close issue** workflow and `gh issue develop` creates a
+*connected* branch, so the issue closes the moment any linked pull request merges,
+whatever the body says — `Refs` included. Verified 2026-09-10 on #10. A second pull
+request on an issue is therefore work with no row on the board.
+
+## Writing a work item
+
+An issue is a work item when it is one mergeable change a solo maintainer can review in
+one sitting, and substantial enough that tracking it is not noise. Where those pull
+against each other, the first wins: it is the one the tooling enforces.
+
+**The sizing test: if you cannot state the acceptance criteria without the word "then",
+it is probably two issues.** "CI is required on main, *then* the agent contract is
+written" is two. Write the second as a child, or as its own item that depends on the
+first.
+
+An issue body carries: context (what is wrong or missing, with evidence), scope (the
+change, concretely), acceptance criteria (how a reader knows it landed), what is out of
+scope, and what it depends on. Sub-issues are added through the issue's own
+**Sub-issues** panel; the parent's body then needs no list of them.
 
 ## Hard rules
 
@@ -79,8 +122,8 @@ correctly and also moves the item to **In Progress**, because starting a branch 
 moment work begins and a second command is a second thing to forget. Use it. See
 `docs/decisions/2026-09-10-work-item-and-branch-conventions.md`.
 
-For a review follow-up on an already-closed issue, reuse that issue's number
-(`8-ci-step-names`) and write `Refs #8` rather than `Closes`.
+`wi.sh branch` also refuses what the rule above forbids — a parent, a closed issue, an
+issue that already has a branch or an open pull request — and says what to do instead.
 
 ## Reading the board
 
@@ -88,6 +131,7 @@ For a review follow-up on an already-closed issue, reuse that issue's number
 $S/wi.sh list                 # number, status, type, title
 $S/wi.sh list todo            # filter by status; substring match, case-insensitive
 $S/wi.sh show 12              # full detail plus body
+$S/wi.sh children 5           # a parent's sub-issues and their state
 $S/wi.sh fields               # field names and valid Status options
 ```
 
@@ -130,25 +174,6 @@ has caveats is worse than one that names them.
 
 Draft items on the board have no backing issue and cannot be commented on; the script says
 so. Tell the user it needs converting to an issue rather than silently creating one.
-
-## An issue with more than one pull request
-
-The project board runs an **Auto-close issue** workflow, and `gh issue develop` creates a
-*connected* branch. Together they close the issue the moment the first linked pull request
-merges — **regardless of whether the body says `Closes` or `Refs`.** Verified on 2026-09-10:
-#10 was planned as three pull requests, PR A said `Refs #10`, and the issue was closed and
-moved to Done at the same second the merge landed.
-
-So for an issue you are deliberately splitting across pull requests, expect to reopen it
-after each merge until the last:
-
-```
-gh issue reopen 10 --repo Gabriel2048/wow-insights
-$S/wi.sh status 10 "In Progress"
-```
-
-Say in each pull request body which one of how many it is, so a reader knows the issue is
-not finished when it closes itself.
 
 ## Linking a commit without closing
 
