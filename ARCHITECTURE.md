@@ -45,18 +45,17 @@ imports, which is what makes them worth drawing.
 flowchart TB
     %% verified: package graph
     templates[/"templates/*.html<br/>embedded at compile time"/]
-    testdata[/"testdata/*.json<br/>the committed recording"/]
 
-    subgraph binaries["binaries — both import every internal package"]
+    subgraph binaries["binaries — both import all three"]
         direction LR
         main["main<br/>HTTP layer, routes, templates<br/>server.go · main.go · format.go"]
-        record["cmd/record<br/>records one fight as a fixture<br/>run by a human, once"]
+        record["cmd/record<br/>the fixture recorder"]
     end
 
     subgraph internal
         direction LR
         env["internal/env<br/>.env loading"]
-        fixture["internal/fixture<br/>record and replay transports, redaction"]
+        fixture["internal/fixture<br/>replay and record transports"]
         warcraftlogs["internal/warcraftlogs<br/>API client + analysis + layout<br/>client · report · fight · timeline · boss · dps"]
     end
 
@@ -65,8 +64,7 @@ flowchart TB
     binaries --> warcraftlogs
 
     templates -.->|"go:embed"| main
-    testdata -.->|"read at runtime in -fixture mode"| fixture
-    fixture -.->|"http.RoundTripper, installed with WithHTTPClient"| warcraftlogs
+    fixture -.->|"http.RoundTripper, via WithHTTPClient"| warcraftlogs
 ```
 
 **The two seams**, which is where anything gets substituted:
@@ -78,7 +76,9 @@ flowchart TB
 
 The replay sits *under* the client rather than beside it on purpose: a fake client can
 return a `Timeline`, but not a laid-out one — `layout()` is unexported and runs only
-inside `(*Client).Timeline`. See `docs/decisions/2026-09-11-recorded-fixtures.md`.
+inside `(*Client).Timeline`. `-fixture` reads the committed recording in `testdata/`
+through that seam; `cmd/record` is how a human makes one, and is otherwise out of the
+way. See `docs/decisions/2026-09-11-recorded-fixtures.md`.
 
 **Inside `internal/warcraftlogs`**, one file per concern, and each fetch split from its
 build: `fetchX` is a method on `*Client` that does I/O; `buildX` is a pure function from
