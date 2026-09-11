@@ -82,13 +82,6 @@ jobs:
         # adds the whole-module figure beneath it.
         run: go tool cover -func=cover.out | tail -1
 
-      - name: Skipped tests (the known-wrong inventory)
-        # A t.Skip does not fail when it starts passing, and without -v a skip
-        # is invisible. AGENTS.md requires each message to name the issue that
-        # fixes it, so this is the list of behaviour known to be wrong.
-        run: |
-          go test ./... -run . -v 2>&1 | grep -E '^\s*--- SKIP|^\s+.*_test\.go:[0-9]+: known wrong' || echo "(none)"
-
       - name: govulncheck (known CVEs on paths this code calls)
         # Pinned for the same reason as the linter. Run directly rather than via
         # the action: the toolchain is already installed above, and `go run

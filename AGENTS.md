@@ -116,25 +116,15 @@ Prefer pinning an observable *property* — "phases tile the fight with no gaps"
 exceeds the elapsed span" — over a magic number: the property survives a legitimate change,
 the number does not.
 
-**Where a pinned behaviour turns out to be wrong.** Three cases, and only the first is the
-default:
+**Where a pinned behaviour turns out to be wrong.** Three cases:
 
-1. **Known wrong, not yet fixed — a temporary exception, due for removal.** Write the test
-   asserting the *intended* behaviour and skip it, naming the issue. Fixing the defect is
-   then a one-line deletion and the test turns green on its own:
-   ```go
-   t.Skip("known wrong: an instant Pyroblast in the opening 5s must be labelled instant, not precast. Fixed by #13.")
-   ```
-   `grep -rn 't.Skip'` is the complete inventory, and CI prints the skip list beside the
-   coverage line on every run. Go has no strict xfail — a skipped test does **not** fail
-   when it starts passing — so the message format is what keeps the inventory honest.
-
-   **This case exists only because #13 and #14 carry defects found before there was time
-   to fix them.** A skipped test is a broken test with a note attached, and broken tests
-   are not pushed here. When both of those issues have landed there should be no `t.Skip`
-   left in the repository, and **whichever of them merges last deletes this numbered item
-   and the CI step that prints the skip list.** If you are reading this and
-   `grep -rn 't.Skip'` finds nothing, that deletion is overdue.
+1. **Known wrong, not yet fixed.** There is no way to push that here. A defect you find
+   and cannot fix in the same change gets an issue, not a skipped test: a skipped test is
+   a broken test with a note attached, and Go has no strict xfail — a `t.Skip` does not
+   fail when it starts passing, so it would never tell anyone the note was stale. (A
+   temporary exception allowing exactly that existed for #13 and #14 and was removed
+   when they landed.) `t.Skip` is for a precondition the environment lacks — the
+   committed recording being absent — and for nothing else.
 2. **A refactor turned a test red and you believe the test is what is wrong.** Start from
    the opposite assumption: a refactor is not meant to change behaviour, so a red test
    means you broke something until you can say why it does not. Red proves something

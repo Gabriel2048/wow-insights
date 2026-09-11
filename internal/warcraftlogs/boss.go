@@ -15,7 +15,8 @@ const bossSubType = "Boss"
 // drawing each one would bury the mechanics worth reacting to.
 const bossBurstWindow = 3 * time.Second
 
-// BossCast is one boss ability, or a burst of the same ability, on the timeline.
+// BossCast is one boss ability, or a burst of the same ability from the same
+// NPC, on the timeline.
 type BossCast struct {
 	Offset    time.Duration
 	End       time.Duration
@@ -23,6 +24,11 @@ type BossCast struct {
 	Name      string
 	Source    string
 	Count     int
+	// Interrupted is how many of Count began and never landed — kicked, or
+	// cut off by a phase change. For a wipe post-mortem "did we kick it" is
+	// the first question, and a marker that counted a kicked cast as a
+	// landed one answered it wrong.
+	Interrupted int
 
 	Percent      float64
 	WidthPercent float64
@@ -31,9 +37,21 @@ type BossCast struct {
 // CastTime is how long the boss spent casting it.
 func (b BossCast) CastTime() time.Duration { return b.End - b.Offset }
 
-// Label names the ability, noting how many casts a burst covers.
+// Landed is how many casts in the burst actually resolved.
+func (b BossCast) Landed() int { return b.Count - b.Interrupted }
+
+// Cancelled reports whether nothing in the marker landed.
+func (b BossCast) Cancelled() bool { return b.Interrupted == b.Count }
+
+// Label names the ability, noting how many casts a burst covers and how many
+// of those were stopped.
 func (b BossCast) Label() string {
-	if b.Count > 1 {
+	switch {
+	case b.Count == 1 && b.Interrupted == 1:
+		return b.Name + " (interrupted)"
+	case b.Interrupted > 0:
+		return fmt.Sprintf("%s ×%d of %d", b.Name, b.Landed(), b.Count)
+	case b.Count > 1:
 		return fmt.Sprintf("%s ×%d", b.Name, b.Count)
 	}
 	return b.Name
@@ -53,9 +71,11 @@ func buildBossCasts(events []event, npcs map[int]Actor, names map[int]string, fi
 	}
 
 	type entry struct {
-		start, end time.Duration
-		ability    int
-		source     string
+		start, end  time.Duration
+		ability     int
+		sourceID    int
+		source      string
+		interrupted bool
 	}
 	var entries []entry
 	pending := map[[2]int]int{} // ability+source -> index of an unfinished cast
@@ -71,7 +91,12 @@ func buildBossCasts(events []event, npcs map[int]Actor, names map[int]string, fi
 		key := [2]int{e.AbilityGameID, e.SourceID}
 		switch e.Type {
 		case "begincast":
-			entries = append(entries, entry{at, at, e.AbilityGameID, npc.Name})
+			// A bar still pending when the same NPC begins the same spell
+			// again was stopped, not finished.
+			if i, open := pending[key]; open {
+				entries[i].interrupted = true
+			}
+			entries = append(entries, entry{start: at, end: at, ability: e.AbilityGameID, sourceID: e.SourceID, source: npc.Name})
 			pending[key] = len(entries) - 1
 		case "cast":
 			if i, open := pending[key]; open {
@@ -79,37 +104,53 @@ func buildBossCasts(events []event, npcs map[int]Actor, names map[int]string, fi
 				entries[i].end = at
 				continue
 			}
-			entries = append(entries, entry{at, at, e.AbilityGameID, npc.Name})
+			entries = append(entries, entry{start: at, end: at, ability: e.AbilityGameID, sourceID: e.SourceID, source: npc.Name})
 		}
+	}
+	// Whatever is still pending when the stream ends never landed either.
+	for _, i := range pending {
+		entries[i].interrupted = true
 	}
 
 	sort.SliceStable(entries, func(i, j int) bool { return entries[i].start < entries[j].start })
 
 	var casts []BossCast
-	latest := map[int]int{}           // ability -> index of its most recent marker
-	lastAt := map[int]time.Duration{} // ability -> when it last went off
+	// A burst is one NPC repeating one ability. Keyed on both, as the
+	// pairing above is: on a council encounter two NPCs casting the same
+	// spell are two markers, not one credited to whoever cast first.
+	type burst struct{ ability, source int }
+	latest := map[burst]int{}           // -> index of its most recent marker
+	lastAt := map[burst]time.Duration{} // -> when it last went off
 	for _, e := range entries {
+		k := burst{e.ability, e.sourceID}
 		// Chain off the previous cast, not the start of the group, so a long
 		// run of filler stays one marker instead of splitting every 3s.
-		i, seen := latest[e.ability]
-		if seen && e.start-lastAt[e.ability] <= bossBurstWindow {
+		i, seen := latest[k]
+		if seen && e.start-lastAt[k] <= bossBurstWindow {
 			casts[i].Count++
+			if e.interrupted {
+				casts[i].Interrupted++
+			}
 			if e.end > casts[i].End {
 				casts[i].End = e.end
 			}
-			lastAt[e.ability] = e.start
+			lastAt[k] = e.start
 			continue
 		}
 		name := names[e.ability]
 		if name == "" {
 			name = fmt.Sprintf("Spell %d", e.ability)
 		}
+		interrupted := 0
+		if e.interrupted {
+			interrupted = 1
+		}
 		casts = append(casts, BossCast{
 			Offset: e.start, End: e.end, AbilityID: e.ability,
-			Name: name, Source: e.source, Count: 1,
+			Name: name, Source: e.source, Count: 1, Interrupted: interrupted,
 		})
-		latest[e.ability] = len(casts) - 1
-		lastAt[e.ability] = e.start
+		latest[k] = len(casts) - 1
+		lastAt[k] = e.start
 	}
 	return casts
 }

@@ -284,6 +284,13 @@
             text-decoration: none;
         }
 
+        /* A cast the boss began and never finished: kicked, or cut off by a
+           phase change. Drawn hollow so it reads as "did not land". */
+        .boss .bcast.interrupted {
+            background: transparent;
+            border-left: 1px dashed #ff9d4d;
+        }
+
         /* A 1px marker is hard to hit; widen the hover target without
            widening the mark itself. */
         .boss .bcast::before {
@@ -1055,7 +1062,7 @@
             {{range .BossCasts}}
                 {{/* No title attribute: the native tooltip would sit on top of
                      Wowhead's. The time is readable from the crosshair readout. */}}
-                <a class="bcast" style="left: {{printf "%.3f" .Percent}}%"
+                <a class="bcast{{if .Cancelled}} interrupted{{end}}" style="left: {{printf "%.3f" .Percent}}%"
                    href="https://www.wowhead.com/spell={{.AbilityID}}{{with $.Fight.WowheadDifficulty}}?dd={{.}}{{end}}"
                    target="_blank" rel="noopener noreferrer"><span class="bname">{{.Label}}</span></a>
             {{end}}

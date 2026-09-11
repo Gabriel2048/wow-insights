@@ -67,7 +67,13 @@ They are not re-litigated here; they are tracked:
   the same spell is a hard cast landing as the next begins.
 - Boss markers cannot express an interrupted cast, and the burst merge is keyed on
   ability alone, so two NPCs casting the same spell collapse into one marker. Lust and
-  personal-cooldown windows never cap an unclosed buff. → **#14**
+  personal-cooldown windows never cap an unclosed buff. → **#14**, done 2026-09-11: a
+  marker counts what it landed and what was stopped, bursts are per caster, every buff
+  builder caps an unclosed interval and attributes a window to its own caster with its
+  own head count, and a buff put up before the pull — which the API reports only as its
+  `removebuff`, with no synthesised `applybuff` at the boundary — is opened at the
+  fight's start instead of dropped. The DPS grid was left anchored where the API puts it:
+  every series covers the whole fight, so the "curve starts late" premise does not occur.
 - The proc rules and the personal cooldown list are Fire Mage specific and reachable
   through no parameter. → **#16**
 
