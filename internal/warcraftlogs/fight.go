@@ -131,9 +131,9 @@ type tableData struct {
 // because buildFightDetail takes it; the structs nested inside it are not,
 // because nothing takes those.
 type fightDetailReport struct {
-	Code       string  `json:"code"`
-	Title      string  `json:"title"`
-	Fights     []Fight `json:"fights"`
+	Code       string      `json:"code"`
+	Title      string      `json:"title"`
+	Fights     []fightWire `json:"fights"`
 	MasterData struct {
 		Actors []Actor `json:"actors"`
 	} `json:"masterData"`
@@ -187,7 +187,7 @@ func (c *Client) fetchFightDetail(ctx context.Context, code string, fightID int)
 // fail, and must not be called with a report carrying no fights — fetch has
 // already guaranteed one.
 func buildFightDetail(report *fightDetailReport) *FightDetail {
-	fight := report.Fights[0]
+	fight := report.Fights[0].fight()
 
 	detail := &FightDetail{
 		ReportCode:  report.Code,

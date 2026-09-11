@@ -145,7 +145,7 @@ func fullFightPage() fightPageData {
 	player := detail.Players[0]
 	return fightPageData{
 		Detail:     detail,
-		Fight:      detail.Fight,
+		Fight:      view.Fight{Fight: detail.Fight},
 		SelectedID: player.ActorID,
 		Player:     &player,
 		Timeline:   laidOut(fullTimeline()),

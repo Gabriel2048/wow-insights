@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"wowinsight/internal/view"
 )
 
 // render executes one template and fails the test if it errors, returning the
@@ -252,7 +254,7 @@ func TestPlayerSuppliedTextIsEscaped(t *testing.T) {
 	player := detail.Players[0]
 
 	page := render(t, "fight.html", fightPageData{
-		Detail: detail, Fight: detail.Fight,
+		Detail: detail, Fight: view.Fight{Fight: detail.Fight},
 		SelectedID: player.ActorID, Player: &player,
 		Timeline: laidOut(fullTimeline()),
 	})

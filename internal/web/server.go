@@ -78,7 +78,7 @@ const maxURLParam = 512
 // picked from the dropdown.
 type fightPageData struct {
 	Detail     *warcraftlogs.FightDetail
-	Fight      warcraftlogs.Fight
+	Fight      view.Fight
 	SelectedID int
 	Player     *warcraftlogs.PlayerStats
 	// Timeline is the analysis laid out for this page. The handler chooses
@@ -146,7 +146,7 @@ func (s *Server) fight(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	data := fightPageData{Detail: detail, Fight: detail.Fight}
+	data := fightPageData{Detail: detail, Fight: view.Fight{Fight: detail.Fight}}
 	if raw := r.URL.Query().Get("player"); raw != "" {
 		id, err := strconv.Atoi(raw)
 		player, ok := detail.Player(id)
