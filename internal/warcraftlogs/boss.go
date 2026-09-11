@@ -46,7 +46,7 @@ func (b BossCast) Timestamp() string { return formatOffset(b.Offset) }
 // encounter's own NPCs are kept: adds and the environment cast constantly and
 // say little about the fight's structure.
 func buildBossCasts(events []event, npcs map[int]Actor, names map[int]string, fight Fight) []BossCast {
-	sort.SliceStable(events, func(i, j int) bool { return events[i].Timestamp < events[j].Timestamp })
+	events = sortedByTime(events)
 
 	relative := func(t float64) time.Duration {
 		return time.Duration(t-fight.StartTime) * time.Millisecond

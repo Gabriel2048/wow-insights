@@ -96,8 +96,7 @@ func buildDPS(response dpsGraphResponse, fight Fight) *DPSGraph {
 		graph.Points = append(graph.Points, point)
 	}
 	graph.Mean = sum / float64(len(graph.Points))
-
-	graph.Line, graph.Area = plot(graph.Points, graph.Peak)
+	// Line and Area are drawn by layout(), once every point has a Percent.
 	return graph
 }
 
