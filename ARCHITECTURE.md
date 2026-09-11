@@ -22,7 +22,7 @@ flowchart LR
     zam["wow.zamimg.com/js/tooltips.js<br/>unversioned, no SRI"]
 
     user -->|"GET /?url=…<br/>GET /report/{code}/fight/{id}?player={actor}<br/>GET /healthz"| app
-    app -->|"client-credentials token, cached until expiry"| oauth
+    app -->|"client-credentials token, cached until expiry,<br/>one fetch shared by concurrent callers"| oauth
     app -->|"one query per page section, every page view"| api
     user -.->|"loaded by every fight page"| zam
 ```
@@ -32,6 +32,9 @@ flowchart LR
   one.
 - The tooltips script is the only third-party code that executes, and it runs with full
   origin privileges in the browser. It constrains any Content-Security-Policy work (#7).
+- The wire retries a 429, a 5xx or a network failure three times with doubling backoff
+  and full jitter, never a 4xx or a GraphQL-level error; a 401 drops the cached token and
+  goes once more, so a rotated secret is a non-event. Every request says who is calling.
 - Credentials and `PORT` arrive from the environment, or from `.env` for local work, and
   never enter the process environment or leave it for anywhere but the OAuth endpoint.
 - The process stops gracefully: SIGTERM cancels the root context, the listener closes,
