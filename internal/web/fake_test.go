@@ -1,4 +1,4 @@
-package main
+package web
 
 import (
 	"context"
@@ -57,13 +57,13 @@ func (f fakeWCL) Timeline(ctx context.Context, code string, fight warcraftlogs.F
 
 // newTestServer wires a server with the real templates and a discarding logger,
 // so a test asserting on output is not competing with log noise.
-func newTestServer(t *testing.T, wcl logsClient) *server {
+func newTestServer(t *testing.T, wcl logsClient) *Server {
 	t.Helper()
-	tpl, err := parseTemplates()
+	tpl, err := ParseTemplates()
 	if err != nil {
-		t.Fatalf("parseTemplates() returned error: %v", err)
+		t.Fatalf("ParseTemplates() returned error: %v", err)
 	}
-	return newServer(wcl, tpl, log.New(discard{}, "", 0))
+	return New(wcl, tpl, log.New(discard{}, "", 0))
 }
 
 type discard struct{}

@@ -1,4 +1,4 @@
-package main
+package web
 
 import (
 	"context"
@@ -17,7 +17,7 @@ import (
 func get(t *testing.T, wcl logsClient, target string) *httptest.ResponseRecorder {
 	t.Helper()
 	rec := httptest.NewRecorder()
-	newTestServer(t, wcl).routes().ServeHTTP(rec, httptest.NewRequest("GET", target, nil))
+	newTestServer(t, wcl).Routes().ServeHTTP(rec, httptest.NewRequest("GET", target, nil))
 	return rec
 }
 
@@ -188,7 +188,7 @@ func TestIndexCurrentlyShowsTheUpstreamErrorVerbatim(t *testing.T) {
 // routes() is the only place patterns are declared. If one is renamed, this is
 // what notices before a link somewhere else stops resolving.
 func TestEveryRouteIsReachable(t *testing.T) {
-	mux := newTestServer(t, fakeWCL{}).routes()
+	mux := newTestServer(t, fakeWCL{}).Routes()
 	for _, target := range []string{
 		"/",
 		"/report/ExampleReport123/fight/12",

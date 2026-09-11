@@ -1,4 +1,4 @@
-package main
+package web
 
 import (
 	"net/http"
@@ -13,28 +13,33 @@ import (
 	"wowinsight/internal/warcraftlogs"
 )
 
-// The recording in testdata/ is made by a human with credentials, once, and
-// committed. Until it exists these tests have nothing to run against, and the
-// skip message is the instruction for making it exist.
-const recordCommand = "go run ./cmd/record -report <URL> -fight <id> -players <name,...>"
+// The recording in testdata/ at the repository root is made by a human with
+// credentials, once, and committed. It lives at the root rather than beside
+// this package because cmd/dev/serve-recorded reads it at runtime too. Until
+// it exists these tests have nothing to run against, and the skip message is
+// the instruction for making it exist.
+const (
+	recordingDir  = "../../testdata"
+	recordCommand = "go run ./cmd/dev/record -report <URL> -fight <id> -players <name,...>"
+)
 
 // openRecording returns the committed recording, or skips.
 func openRecording(t *testing.T) *fixture.Replay {
 	t.Helper()
-	if _, err := os.Stat(filepath.Join("testdata", "report.json")); err != nil {
+	if _, err := os.Stat(filepath.Join(recordingDir, "report.json")); err != nil {
 		t.Skipf("no recording in testdata/; record one with: %s", recordCommand)
 	}
-	replay, err := fixture.Open("testdata")
+	replay, err := fixture.Open(recordingDir)
 	if err != nil {
-		t.Fatalf("Open(testdata) returned error: %v", err)
+		t.Fatalf("Open(%s) returned error: %v", recordingDir, err)
 	}
 	return replay
 }
 
-// recordedServer is the fixture-mode server exactly as main builds it: the
-// real client over the replay transport, so every page comes from production
-// code with only the wire swapped.
-func recordedServer(t *testing.T, replay *fixture.Replay) *server {
+// recordedServer is the server exactly as cmd/dev/serve-recorded builds it:
+// the real client over the replay transport, so every page comes from
+// production code with only the wire swapped.
+func recordedServer(t *testing.T, replay *fixture.Replay) *Server {
 	t.Helper()
 	return newTestServer(t, warcraftlogs.New("fixture", "fixture", warcraftlogs.WithHTTPClient(replay.Client())))
 }
@@ -135,19 +140,5 @@ func TestFixtureRosterIsRedacted(t *testing.T) {
 	}
 	if report.Owner.Name != fixture.FakeOwner {
 		t.Errorf("owner = %q, want %q", report.Owner.Name, fixture.FakeOwner)
-	}
-}
-
-// A bad -fixture path must fail at startup, not on the first request.
-func TestRunRejectsAMissingFixtureDirectory(t *testing.T) {
-	err := run([]string{"-fixture", filepath.Join(t.TempDir(), "nope")}, discard{})
-	if err == nil || !strings.Contains(err.Error(), "cmd/record") {
-		t.Errorf("error = %v, want one pointing at the recorder", err)
-	}
-}
-
-func TestRunRejectsAnUnknownFlag(t *testing.T) {
-	if err := run([]string{"-nope"}, discard{}); err == nil {
-		t.Error("run() accepted a flag it does not define")
 	}
 }

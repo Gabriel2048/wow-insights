@@ -1,10 +1,10 @@
 // Command record captures one fight from a real Warcraft Logs report as a
-// redacted fixture directory, which `go run . -fixture <dir>` then serves with
+// redacted fixture directory, which `go run ./cmd/dev/serve-recorded` then serves with
 // no credentials at all.
 //
 // It is run by a human with a .env, once per fight worth keeping:
 //
-//	go run ./cmd/record -report <URL or code> -fight 12 -players <name>,<name>
+//	go run ./cmd/dev/record -report <URL or code> -fight 12 -players <name>,<name>
 //
 // It drives the real client through a recording transport, so what lands on
 // disk is exactly what the client asked for — the cast pagination included —
@@ -114,7 +114,7 @@ func run(args []string, stderr io.Writer) error {
 		}
 		fmt.Fprintf(stderr, "  %8d  %s\n", info.Size(), filepath.Base(name))
 	}
-	fmt.Fprintf(stderr, "\nnow: go run . -fixture %s\n", *out)
+	fmt.Fprintf(stderr, "\nnow: go run ./cmd/dev/serve-recorded -dir %s\n", *out)
 	return nil
 }
 

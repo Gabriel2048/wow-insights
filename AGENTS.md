@@ -28,11 +28,11 @@ hourly points budget.
 **Without credentials**, which is the situation an agent is in:
 
 ```
-go run . -fixture testdata   # serves the recorded report; the log lists the URLs
+go run ./cmd/dev/serve-recorded   # serves the recorded report; the log lists the URLs
 ```
 
 `testdata/` holds real API responses, recorded once by a human with
-`go run ./cmd/record` and redacted. Every page comes through the real client with only
+`go run ./cmd/dev/record` and redacted. Every page comes through the real client with only
 the network replaced, so the timeline you see is laid out by the same code that lays it
 out in production. Anything not in the recording is an error, never a live request. If
 `testdata/` is missing, `TestFixtureRendersAFightPage` skips and its message says what to
@@ -47,7 +47,7 @@ second is the repository owner's call, always. Your work ends at `gh pr create`.
 Warcraft Logs report codes in tests, fixtures, doc comments or user-facing strings. Use
 `ExampleReport123` and `Testmage`. The initial commit was rewritten on 2026-09-10 to
 remove them. `testdata/` is the one place real API responses live, and the recorder that
-writes it (`cmd/record`) redacts every name, server, owner and code before writing, and
+writes it (`cmd/dev/record`) redacts every name, server, owner and code before writing, and
 refuses to write if one survives. Never edit a recording by hand, and never commit one
 the recorder did not produce.
 
@@ -58,8 +58,8 @@ carry, is a legitimate thing to add. Propose it in the pull request, saying what
 replaces and why the standard library is not enough, and let the owner decide before it
 lands. Never add one silently inside a larger change.
 
-**Templates must live under `templates/`.** `server.go` embeds them with
-`//go:embed templates/*.html`, resolved at compile time. A template outside that
+**Templates must live under `internal/web/templates/`.** `internal/web/server.go` embeds
+them with `//go:embed templates/*.html`, resolved at compile time. A template outside that
 directory is simply not in the binary — the failure is a blank page at runtime, not a
 build error.
 
