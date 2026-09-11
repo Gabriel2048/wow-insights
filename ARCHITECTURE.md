@@ -39,7 +39,9 @@ flowchart LR
 
 Five packages. Solid arrows are imports and are verified; an arrow leaving a group means
 every package in the group has that import. Dotted arrows are relations that are not
-imports, which is what makes them worth drawing.
+imports, which is what makes them worth drawing — including the two wires the `-fixture`
+flag chooses between: without it the client talks to Warcraft Logs, with it the replay
+transport sits under the same client and answers from `testdata/`.
 
 ```mermaid
 flowchart TB
@@ -52,19 +54,20 @@ flowchart TB
         record["cmd/record<br/>the fixture recorder"]
     end
 
-    subgraph internal
-        direction LR
-        env["internal/env<br/>.env loading"]
-        fixture["internal/fixture<br/>replay and record transports"]
-        warcraftlogs["internal/warcraftlogs<br/>API client + analysis + layout<br/>client · report · fight · timeline · boss · dps"]
-    end
+    env["internal/env<br/>.env loading"]
+    fixture["internal/fixture<br/>replay and record transports"]
+    warcraftlogs["internal/warcraftlogs<br/>API client + analysis + layout<br/>client · report · fight · timeline · boss · dps"]
+    api[("Warcraft Logs API")]
+    testdata[/"testdata/<br/>the committed recording"/]
 
     binaries --> env
     binaries --> fixture
     binaries --> warcraftlogs
 
     templates -.->|"go:embed"| main
-    fixture -.->|"-fixture: replay installed via WithHTTPClient"| warcraftlogs
+    warcraftlogs -.->|"no -fixture: the real wire"| api
+    fixture -.->|"-fixture: replay installed<br/>under the client via WithHTTPClient"| warcraftlogs
+    fixture -.->|"-fixture: reads"| testdata
 ```
 
 **The two seams**, which is where anything gets substituted:
