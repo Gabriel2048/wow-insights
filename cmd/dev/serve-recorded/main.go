@@ -15,31 +15,40 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 
+	"wowinsight/internal/config"
 	"wowinsight/internal/fixture"
 	"wowinsight/internal/warcraftlogs"
 	"wowinsight/internal/web"
 )
 
 func main() {
-	if err := run(os.Args[1:], os.Stderr); err != nil {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if err := run(ctx, os.Args[1:], os.Stderr); err != nil {
 		log.Print(err)
 		os.Exit(1)
 	}
 }
 
-func run(args []string, stderr io.Writer) error {
+func run(ctx context.Context, args []string, stderr io.Writer) error {
 	fs := flag.NewFlagSet("serve-recorded", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	addr := fs.String("addr", ":8080", "address to listen on")
 	dir := fs.String("dir", "testdata", "directory written by cmd/dev/record")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
 		}
+		return err
+	}
+	// Only PORT is wanted; there are no credentials to validate because
+	// nothing here talks to Warcraft Logs.
+	cfg, err := config.Load(".env")
+	if err != nil {
 		return err
 	}
 
@@ -55,11 +64,9 @@ func run(args []string, stderr io.Writer) error {
 	// own token. They only need to be non-empty for the client to make the
 	// request at all.
 	wcl := warcraftlogs.New("recorded", "recorded", warcraftlogs.WithHTTPClient(replay.Client()))
-	announce(replay, wcl, *addr)
+	announce(replay, wcl, cfg.Addr())
 
-	s := web.New(wcl, tpl, log.Default())
-	log.Printf("listening on %s", *addr)
-	return http.ListenAndServe(*addr, s.Routes())
+	return web.New(wcl, tpl, log.Default()).Run(ctx, cfg.Addr())
 }
 
 // announce logs every page the recording can serve, so that what is being

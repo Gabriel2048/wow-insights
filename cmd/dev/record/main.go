@@ -22,7 +22,7 @@ import (
 	"strconv"
 	"strings"
 
-	"wowinsight/internal/env"
+	"wowinsight/internal/config"
 	"wowinsight/internal/fixture"
 	"wowinsight/internal/warcraftlogs"
 )
@@ -55,17 +55,17 @@ func run(args []string, stderr io.Writer) error {
 		return err
 	}
 
-	if err := env.Load(".env"); err != nil {
+	cfg, err := config.Load(".env")
+	if err != nil {
 		return err
 	}
-	id, secret := env.First("WARCRAFTLOGS_CLIENT_ID", "ClientId"), env.First("WARCRAFTLOGS_CLIENT_SECRET", "ClientSecret")
-	if id == "" || secret == "" {
-		return errors.New("record: no credentials in the environment or .env; recording needs the real API")
+	if err := cfg.Validate(); err != nil {
+		return fmt.Errorf("record: %w (recording needs the real API)", err)
 	}
 
 	ctx := context.Background()
 	recorder := fixture.NewRecorder()
-	wcl := warcraftlogs.New(id, secret, warcraftlogs.WithHTTPClient(recorder.Client()))
+	wcl := warcraftlogs.New(cfg.ClientID, cfg.ClientSecret, warcraftlogs.WithHTTPClient(recorder.Client()))
 
 	limit, err := wcl.RateLimit(ctx)
 	if err != nil {
