@@ -210,3 +210,19 @@ func TestBudgetGuardIsA503WithTheMinutes(t *testing.T) {
 		t.Errorf("body lacks the minutes: %q", rec.Body.String())
 	}
 }
+
+// A stream that had more events than one page holds is said on the page.
+func TestATruncatedStreamIsSaidOnThePage(t *testing.T) {
+	wcl := fakeWCL{
+		fightDetail: func(context.Context, string, int) (*warcraftlogs.FightDetail, error) { return fightDetail(), nil },
+		timeline: func(context.Context, string, warcraftlogs.Fight, int) (*warcraftlogs.Timeline, error) {
+			tl := fullTimeline()
+			tl.Truncated = []string{"bossCasts"}
+			return tl, nil
+		},
+	}
+	rec := get(t, wcl, "/report/ExampleReport123/fight/12?player=7")
+	if !strings.Contains(rec.Body.String(), "the following lanes end early: bossCasts.") {
+		t.Error("the page does not say the stream was cut")
+	}
+}

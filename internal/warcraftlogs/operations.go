@@ -48,7 +48,7 @@ var (
       masterData {
         abilities { gameID name }
         actors(type: "Player") { id name subType }
-        npcs: actors(type: "NPC") { id name subType }
+        npcs: actors(type: "NPC") { id name subType gameID }
       }
     }
   }
@@ -76,7 +76,7 @@ var (
 	// the GraphQL spec says an absent variable does), which is how a spec
 	// with no tracked procs avoids sending "ability.id in ()".
 	timelineOp = operation{"Timeline", `query Timeline($code: String!, $id: Int!, $source: Int!, $start: Float!, $end: Float!,
-                $lust: String, $procs: String, $cooldowns: String, $raidCDs: String) {
+                $lust: String, $procs: String, $cooldowns: String, $raidCDs: String, $bosses: String) {
   ` + budgetFragment + `
   reportData {
     report(code: $code) {
@@ -114,7 +114,8 @@ var (
       )
       bossCasts: events(
         dataType: Casts, fightIDs: [$id], hostilityType: Enemies,
-        startTime: $start, endTime: $end, limit: 10000
+        startTime: $start, endTime: $end, limit: 10000,
+        filterExpression: $bosses
       ) { data nextPageTimestamp }
       fights(fightIDs: [$id]) { encounterID phaseTransitions { id startTime } }
       phases { encounterID phases { id name isIntermission } }
@@ -147,6 +148,21 @@ func filterVariable(vars map[string]any, name string, ids []int) {
 	if expr, ok := abilityFilter(ids); ok {
 		vars[name] = expr
 	}
+}
+
+// sourceFilter builds an events filter expression for a set of NPCs by their
+// game ids — in the API's expression language source.id is the game's id for
+// the creature, not the report's actor id, which matches nothing — reporting
+// false for an empty set so the argument is omitted.
+func sourceFilter(ids []int) (string, bool) {
+	if len(ids) == 0 {
+		return "", false
+	}
+	text := make([]string, len(ids))
+	for i, id := range ids {
+		text[i] = strconv.Itoa(id)
+	}
+	return "source.id in (" + strings.Join(text, ",") + ")", true
 }
 
 // abilityFilter builds an events filter expression for a set of ability IDs,

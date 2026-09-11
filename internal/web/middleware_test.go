@@ -107,8 +107,7 @@ func TestRecoveryLetsErrAbortHandlerThrough(t *testing.T) {
 }
 
 // One line per request, keyed by the route pattern rather than the path — a
-// report code in the key would give every request its own metric — with what
-// it cost upstream.
+// report code in the key would give every request its own metric.
 func TestAccessLineCarriesThePatternAndTheCost(t *testing.T) {
 	s, buf := loggedServer(t, fakeWCL{
 		fightDetail: func(context.Context, string, int) (*warcraftlogs.FightDetail, error) { return fightDetail(), nil },
@@ -127,12 +126,11 @@ func TestAccessLineCarriesThePatternAndTheCost(t *testing.T) {
 	}
 	line := all[0]
 	for key, want := range map[string]any{
-		"msg":            "request",
-		"method":         "GET",
-		"pattern":        "GET /report/{code}/fight/{id}",
-		"status":         float64(200),
-		"upstream_calls": float64(2), // FightDetail and Timeline
-		"trace_id":       "105445aa7843bc8bf206b12000100000",
+		"msg":      "request",
+		"method":   "GET",
+		"pattern":  "GET /report/{code}/fight/{id}",
+		"status":   float64(200),
+		"trace_id": "105445aa7843bc8bf206b12000100000",
 	} {
 		if line[key] != want {
 			t.Errorf("%s = %v, want %v", key, line[key], want)
@@ -192,9 +190,9 @@ func TestEveryResponseCarriesARequestID(t *testing.T) {
 	}
 }
 
-// The access line says where the budget stands after the request's calls,
-// when the client knows. The fake does not, and the real one is asked by
-// type — so a client that offers Budget() is what this exercises.
+// The access line says where the budget stands, when the client knows. The
+// fake does not, and the real one is asked by type — so a client that offers
+// Budget() is what this exercises.
 func TestAccessLineCarriesTheBudgetWhenKnown(t *testing.T) {
 	s, buf := loggedServer(t, budgetedFake{fakeWCL: fightPageClient()})
 	s.Handler().ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/report/ExampleReport123/fight/12?player=7", nil))

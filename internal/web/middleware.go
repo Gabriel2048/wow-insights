@@ -76,17 +76,14 @@ func securityHeaders(next http.Handler) http.Handler {
 // ctxKey keys the things a request carries through its context.
 type ctxKey int
 
-const (
-	loggerKey ctxKey = iota
-	callsKey
-	budgetKey
-)
+const loggerKey ctxKey = iota
 
-// requestBudget is what the access line says about the hourly budget: the
-// last snapshot any upstream call in this request came back with.
-type requestBudget struct {
-	snapshot warcraftlogs.RateLimit
-	known    bool
+// budgeted is what the real client offers beyond logsClient: where the
+// hourly budget stood after its last call. Asked for by type, so the
+// interface the handlers consume stays three methods and the test fake need
+// not know about budgets.
+type budgeted interface {
+	Budget() (warcraftlogs.RateLimit, bool)
 }
 
 // requestID gives every request an id, returns it in a response header so a
@@ -168,18 +165,14 @@ func (s *Server) recoverPanic(next http.Handler) http.Handler {
 
 // accessLog writes one line per request once it is done: the route pattern
 // rather than the raw path (report codes would give every request its own
-// key), the status, how long it took, how much was written, and how many
-// upstream calls it cost. RED metrics fall out of those fields with no more
-// code than a log-based metric.
+// key), the status, how long it took, how much was written, and where the
+// hourly points budget stood afterwards. RED metrics fall out of those
+// fields with no more code than a log-based metric.
 func (s *Server) accessLog(mux *http.ServeMux) middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			start := time.Now()
 			rw := &responseWriter{ResponseWriter: w}
-			calls := new(int)
-			budget := new(requestBudget)
-			ctx := context.WithValue(r.Context(), callsKey, calls)
-			r = r.WithContext(context.WithValue(ctx, budgetKey, budget))
 
 			next.ServeHTTP(rw, r)
 
@@ -197,16 +190,17 @@ func (s *Server) accessLog(mux *http.ServeMux) middleware {
 				"status", rw.status(),
 				"duration_ms", time.Since(start).Milliseconds(),
 				"bytes", rw.bytes,
-				"upstream_calls", *calls,
 			}
-			if budget.known {
-				// A gauge, not attribution: under concurrency the snapshot
-				// credits other requests' spend to this one.
-				attrs = append(attrs,
-					"points_spent", budget.snapshot.PointsSpentThisHour,
-					"points_limit", budget.snapshot.LimitPerHour,
-					"points_reset_in_s", budget.snapshot.PointsResetIn,
-				)
+			// The budget as the client last saw it — a gauge, not this
+			// request's bill: other requests' spend is in the number too.
+			if b, ok := s.wcl.(budgeted); ok {
+				if snapshot, known := b.Budget(); known {
+					attrs = append(attrs,
+						"points_spent", snapshot.PointsSpentThisHour,
+						"points_limit", snapshot.LimitPerHour,
+						"points_reset_in_s", snapshot.PointsResetIn,
+					)
+				}
 			}
 			s.logger(r).Info("request", attrs...)
 		})
@@ -247,19 +241,4 @@ func (w *responseWriter) status() int {
 		return http.StatusOK
 	}
 	return w.code
-}
-
-// countCall records one upstream call against the request, if the request is
-// being counted.
-func countCall(ctx context.Context) {
-	if n, ok := ctx.Value(callsKey).(*int); ok {
-		*n++
-	}
-}
-
-// noteBudget records the budget snapshot the last upstream call returned.
-func noteBudget(ctx context.Context, snapshot warcraftlogs.RateLimit) {
-	if b, ok := ctx.Value(budgetKey).(*requestBudget); ok {
-		b.snapshot, b.known = snapshot, true
-	}
 }
