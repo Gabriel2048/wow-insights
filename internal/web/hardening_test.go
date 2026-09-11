@@ -77,17 +77,17 @@ func TestFightPageIsGzippedOnlyWhenAccepted(t *testing.T) {
 // The header's grammar, not a substring: q=0 is a refusal.
 func TestAcceptsGzipReadsQualityValues(t *testing.T) {
 	for header, want := range map[string]bool{
-		"gzip":                        true,
-		"gzip, deflate, br":           true,
-		"deflate, gzip;q=0.5":         true,
-		"GZIP":                        true,
-		"gzip;q=0":                    false,
-		"gzip;q=0.0":                  false,
-		"gzip; q=0":                   false,
-		"br, gzip;q=0, deflate":       false,
-		"deflate":                     false,
-		"":                            false,
-		"x-gzip":                      false,
+		"gzip":                  true,
+		"gzip, deflate, br":     true,
+		"deflate, gzip;q=0.5":   true,
+		"GZIP":                  true,
+		"gzip;q=0":              false,
+		"gzip;q=0.0":            false,
+		"gzip; q=0":             false,
+		"br, gzip;q=0, deflate": false,
+		"deflate":               false,
+		"":                      false,
+		"x-gzip":                false,
 	} {
 		if got := acceptsGzip(header); got != want {
 			t.Errorf("acceptsGzip(%q) = %v, want %v", header, got, want)
