@@ -176,9 +176,10 @@ it only recognises known credential formats — a backstop, not a permission.
 ## Where the code lives
 
 `ARCHITECTURE.md` is the map: what the system talks to, how the packages relate and where
-the two seams are, and what happens on a fight page request. **Read it before the code**,
-and treat a disagreement between the two as a bug in the document, fixed in the same pull
-request as whatever moved.
+the two seams are, and what happens on a fight page request. **Read it before the code.**
+If the two disagree, do not decide which is wrong: raise it with the owner, showing both,
+and wait — a drift can be the document rotting or the code taking a turn nobody agreed
+to, and only the owner knows which.
 
 **A structural change is argued to the owner before it is built** — a new package, a new
 edge between packages, a new external system or third-party script, a new entry point (a

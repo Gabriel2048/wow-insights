@@ -113,7 +113,7 @@ sequenceDiagram
     alt player resolves to an actor in this fight
         S->>C: Timeline(code, fight, actor)
         C->>T: timelineQuery {code, id, source, start, end}
-        T->>W: POST
+        T->>W: POST /api/v2/client
         loop casts.nextPageTimestamp != null
             C->>T: castPageQuery {…, start: cursor}
         end
@@ -131,8 +131,10 @@ sequenceDiagram
 
 ## Keeping this true
 
-**Read this first, then the code.** If the code and this document disagree, the code is
-right and this document is the bug — fix it in the same pull request.
+**Read this first, then the code.** If the code and this document disagree, do not
+decide which one is wrong: raise it with the owner, with both versions side by side, and
+wait. A drift can mean the document rotted, or that the code took a turn nobody agreed
+to — and only the owner knows which.
 
 **Structural changes are argued to the owner before they are built**, not presented as a
 finished pull request. Structural means: a new package; a new edge between packages; a
