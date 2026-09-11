@@ -80,7 +80,10 @@ These are the calls tooling cannot make.
 - **Errors are values.** Wrap with `%w`, compare with `errors.Is`, extract with
   `errors.As`. `errors.Is` walks a wrap chain, not a type tree, so keep the sentinel set
   flat rather than hierarchical. Never put text you would not show a user inside
-  `Error()` — that string is the payload; put the detail on a field.
+  `Error()` — that string is the payload; put the detail on a field. The client's
+  sentinels and `*APIError` are the pattern, `classify` in `internal/web` is the one
+  place an error becomes a status and a sentence, and a handler never builds a message
+  from `err.Error()`. See `docs/decisions/2026-09-11-error-taxonomy.md`.
 - **`log.Fatal` and `os.Exit` run no deferred function.** Shutdown, flushes and cleanup
   are all skipped. `main` should have exactly one exit point.
 - **Functional options, not a family of constructors.** There is no overloading and no

@@ -221,11 +221,12 @@ type reportResponse struct {
 // one branch behind a second name.
 func (c *Client) Report(ctx context.Context, code string) (*Report, error) {
 	var data reportResponse
-	if err := c.Query(ctx, reportQuery, map[string]any{"code": code}, &data); err != nil {
-		return nil, err
-	}
+	err := c.Query(ctx, reportQuery, map[string]any{"code": code}, &data)
 	if data.ReportData.Report == nil {
-		return nil, fmt.Errorf("warcraftlogs: report %q not found (it may be private)", code)
+		return nil, notFound(err, code)
+	}
+	if err != nil {
+		return nil, err
 	}
 	return data.ReportData.Report, nil
 }

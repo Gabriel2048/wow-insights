@@ -33,7 +33,7 @@ func TestTemplatesParse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseTemplates() returned error: %v", err)
 	}
-	for _, name := range []string{"index.html", "fight.html"} {
+	for _, name := range []string{"index.html", "fight.html", "error.html"} {
 		if tpl.Lookup(name) == nil {
 			t.Errorf("template %q was not parsed", name)
 		}

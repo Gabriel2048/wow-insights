@@ -415,6 +415,16 @@
             background: rgba(255, 90, 90, 0.28);
         }
 
+        /* Something that went wrong without stopping the page: said, not
+           left as an empty area that looks like data. */
+        .notice {
+            margin: 1rem 0;
+            padding: 0.6rem 0.8rem;
+            border-left: 3px solid #ffb03c;
+            background: rgba(255, 176, 60, 0.08);
+            color: #e8e8e8;
+        }
+
         .track .castbar {
             position: absolute;
             top: var(--baseline);
@@ -976,6 +986,10 @@
     </div>
 {{else}}
     <p class="hint">Pick a player above to see their numbers for this pull.</p>
+{{end}}
+
+{{range .Notices}}
+    <p class="notice">{{.}}</p>
 {{end}}
 
 {{with .Timeline}}

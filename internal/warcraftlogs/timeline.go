@@ -3,7 +3,9 @@ package warcraftlogs
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"slices"
 	"sort"
 	"strings"
@@ -575,6 +577,11 @@ type Section struct {
 // Timeline is one player's casts across a fight, with the raid lust windows
 // that overlap them.
 type Timeline struct {
+	// Incomplete names the parts of the document the API reported errors on,
+	// when it answered partially. Empty when everything arrived. The lanes
+	// built from a missing field are simply empty, and a page must say why.
+	Incomplete []string
+
 	Casts     []Cast
 	Lusts     []RaidWindow
 	Phases    []Phase
@@ -1005,6 +1012,10 @@ func classifyProcs(casts []Cast, windows []auraWindow) {
 // because buildTimeline takes it as a parameter; the structs nested inside it
 // are left anonymous, because nothing takes those.
 type timelineReport struct {
+	// incomplete names the fields the API reported errors on, when the
+	// document arrived partially. Not a JSON field; set by fetchTimeline.
+	incomplete []string
+
 	Casts      eventPage        `json:"casts"`
 	Lust       eventPage        `json:"lust"`
 	Procs      eventPage        `json:"procs"`
@@ -1092,13 +1103,27 @@ func (c *Client) fetchTimeline(ctx context.Context, code string, fight Fight, so
 		abilityFilter(cooldownIDs()), abilityFilter(raidCooldownIDs()))
 
 	var data timelineResponse
-	if err := c.Query(ctx, query, castVars(code, fight, sourceID, fight.StartTime), &data); err != nil {
+	err := c.Query(ctx, query, castVars(code, fight, sourceID, fight.StartTime), &data)
+	report := data.ReportData.Report
+	// The document asks for eleven independent fields, and GraphQL may
+	// answer with ten of them and an error on the eleventh. That is a
+	// timeline with a gap, not no timeline: the points were spent, the
+	// fields that arrived are built, and the ones that did not are named on
+	// the result so the page can say so. A response that carried errors is
+	// never worth caching — see docs/decisions/2026-09-11-error-taxonomy.md.
+	var incomplete []string
+	var apiErr *APIError
+	if errors.As(err, &apiErr) && apiErr.Status == http.StatusOK && report != nil && !errors.Is(err, ErrRateLimited) {
+		incomplete = apiErr.Fields()
+		err = nil
+	}
+	if report == nil {
+		return nil, nil, notFound(err, code)
+	}
+	if err != nil {
 		return nil, nil, err
 	}
-	report := data.ReportData.Report
-	if report == nil {
-		return nil, nil, fmt.Errorf("warcraftlogs: report %q not found", code)
-	}
+	report.incomplete = incomplete
 
 	casts := report.Casts.Data
 	// The events API pages; a long fight can exceed one page of casts.
@@ -1137,7 +1162,7 @@ func buildTimeline(report *timelineReport, casts []event, fight Fight) *Timeline
 		actors[a.ID] = a.Name
 	}
 
-	timeline := &Timeline{Duration: fight.Duration()}
+	timeline := &Timeline{Duration: fight.Duration(), Incomplete: report.incomplete}
 	timeline.Lusts = lustWindows(report.Lust.Data, fight, names, actors)
 	timeline.Casts = buildCasts(casts, fight, names, timeline.Lusts)
 	classifyProcs(timeline.Casts, auraWindows(report.Procs.Data, fight))

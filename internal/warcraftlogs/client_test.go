@@ -5,8 +5,10 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 // fakeAPI serves the two endpoints a Client talks to and counts what it was
@@ -14,11 +16,13 @@ import (
 // real service, which is why WithBaseURL takes both and why one server has to
 // answer both here.
 type fakeAPI struct {
-	tokens  int    // how many times the OAuth endpoint was hit
-	queries int    // how many times the GraphQL endpoint was hit
-	expires int    // seconds to report for the token; 3600 when zero
-	status  int    // status for the GraphQL endpoint; 200 when zero
-	body    string // body for the GraphQL endpoint
+	tokens      int    // how many times the OAuth endpoint was hit
+	queries     int    // how many times the GraphQL endpoint was hit
+	expires     int    // seconds to report for the token; 3600 when zero
+	status      int    // status for the GraphQL endpoint; 200 when zero
+	body        string // body for the GraphQL endpoint
+	retryAfter  string // Retry-After header for the GraphQL endpoint, when set
+	tokenStatus int    // status for the OAuth endpoint; 200 when zero
 }
 
 func (f *fakeAPI) start(t *testing.T) *Client {
@@ -26,6 +30,10 @@ func (f *fakeAPI) start(t *testing.T) *Client {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /oauth/token", func(w http.ResponseWriter, r *http.Request) {
 		f.tokens++
+		if f.tokenStatus != 0 && f.tokenStatus != http.StatusOK {
+			http.Error(w, "invalid_client", f.tokenStatus)
+			return
+		}
 		expires := f.expires
 		if expires == 0 {
 			expires = 3600
@@ -37,6 +45,9 @@ func (f *fakeAPI) start(t *testing.T) *Client {
 	})
 	mux.HandleFunc("POST /api", func(w http.ResponseWriter, r *http.Request) {
 		f.queries++
+		if f.retryAfter != "" {
+			w.Header().Set("Retry-After", f.retryAfter)
+		}
 		if f.status != 0 && f.status != http.StatusOK {
 			w.WriteHeader(f.status)
 		}
@@ -102,32 +113,109 @@ func TestTokenIsRefreshedWhenItExpiresInsideTheLeeway(t *testing.T) {
 }
 
 // GraphQL reports failure inside a 200, so a status check alone would treat a
-// failed query as a successful one and decode an empty result.
+// failed query as a successful one and decode an empty result. Every message
+// is worth surfacing — on the error's fields, for the log, and never in
+// Error(), which is one err.Error() away from a user's screen.
 func TestQueryReportsErrorsInsideA200(t *testing.T) {
-	api := &fakeAPI{body: `{"errors":[{"message":"You do not have permission"},{"message":"and another thing"}]}`}
+	api := &fakeAPI{body: `{"errors":[{"message":"You do not have permission","path":["reportData","report"]},{"message":"and another thing"}]}`}
 	c := api.start(t)
 
 	_, err := c.RateLimit(context.Background())
-	if err == nil {
-		t.Fatal("RateLimit() returned no error for a response carrying a GraphQL errors array")
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("RateLimit() returned %v for a response carrying a GraphQL errors array, want an *APIError", err)
+	}
+	if !errors.Is(err, ErrUpstream) {
+		t.Errorf("error does not unwrap to ErrUpstream")
 	}
 	for _, want := range []string{"You do not have permission", "and another thing"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("error = %q, want it to mention %q — every message is worth surfacing", err, want)
+		if !slices.Contains(apiErr.Messages, want) {
+			t.Errorf("Messages = %v, want %q among them", apiErr.Messages, want)
 		}
+		if strings.Contains(err.Error(), want) {
+			t.Errorf("Error() = %q carries upstream text; it must stay on the fields", err)
+		}
+	}
+	if apiErr.Paths[0] != "reportData.report" {
+		t.Errorf("Paths = %v, want the first error's path", apiErr.Paths)
 	}
 }
 
+// A non-200 carries the status and the body — the body on a field, capped,
+// never in Error().
 func TestQueryReportsANon200(t *testing.T) {
-	api := &fakeAPI{status: http.StatusServiceUnavailable, body: "upstream is down"}
+	api := &fakeAPI{status: http.StatusServiceUnavailable, body: "upstream is down " + strings.Repeat("x", 1000)}
 	c := api.start(t)
 
 	_, err := c.RateLimit(context.Background())
-	if err == nil {
-		t.Fatal("RateLimit() returned no error for a 503")
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) || !errors.Is(err, ErrUpstream) {
+		t.Fatalf("error = %v, want an *APIError unwrapping to ErrUpstream", err)
+	}
+	if apiErr.Status != 503 || !strings.HasPrefix(apiErr.Body, "upstream is down") {
+		t.Errorf("Status=%d Body=%q, want 503 and the body", apiErr.Status, apiErr.Body)
+	}
+	if len(apiErr.Body) > maxBodyKept+3 {
+		t.Errorf("Body is %d bytes; it is for a log line and must be capped", len(apiErr.Body))
+	}
+	if strings.Contains(err.Error(), "upstream is down") {
+		t.Errorf("Error() = %q carries the upstream body", err)
 	}
 	if !strings.Contains(err.Error(), "503") {
-		t.Errorf("error = %q, want it to carry the status", err)
+		t.Errorf("Error() = %q, want it to carry the status", err)
+	}
+}
+
+// The points budget spent is a 429, and what the API says about when to try
+// again is worth carrying to the page.
+func TestQueryReportsRateLimiting(t *testing.T) {
+	api := &fakeAPI{status: http.StatusTooManyRequests, body: "slow down", retryAfter: "120"}
+	c := api.start(t)
+
+	_, err := c.RateLimit(context.Background())
+	var apiErr *APIError
+	if !errors.Is(err, ErrRateLimited) || !errors.As(err, &apiErr) {
+		t.Fatalf("error = %v, want ErrRateLimited", err)
+	}
+	if apiErr.RetryAfter != 2*time.Minute {
+		t.Errorf("RetryAfter = %v, want 2m from the header", apiErr.RetryAfter)
+	}
+
+	// The same thing said inside a 200 by GraphQL.
+	api = &fakeAPI{body: `{"errors":[{"message":"This user has exceeded the rate limit"}]}`}
+	c = api.start(t)
+	if _, err := c.RateLimit(context.Background()); !errors.Is(err, ErrRateLimited) {
+		t.Errorf("error = %v for a GraphQL rate limit message, want ErrRateLimited", err)
+	}
+}
+
+// A partial document: data for what worked, errors for what did not. Both
+// come back, so a caller that paid for ten fields keeps them when the
+// eleventh fails.
+func TestQueryDecodesPartialDataBeforeReportingErrors(t *testing.T) {
+	api := &fakeAPI{body: `{"data":{"rateLimitData":{"limitPerHour":3600,"pointsSpentThisHour":1,"pointsResetIn":900}},
+		"errors":[{"message":"no phase data","path":["reportData","report","phases"]}]}`}
+	c := api.start(t)
+
+	limit, err := c.RateLimit(context.Background())
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("error = %v, want an *APIError alongside the data", err)
+	}
+	if limit.LimitPerHour != 3600 {
+		t.Errorf("the data was not decoded: %+v", limit)
+	}
+	if fields := apiErr.Fields(); len(fields) != 1 || fields[0] != "phases" {
+		t.Errorf("Fields() = %v, want [phases]", fields)
+	}
+}
+
+// Wrong credentials are a deployment fault and must not read as an outage.
+func TestRejectedCredentialsAreNotAnUpstreamFailure(t *testing.T) {
+	api := &fakeAPI{tokenStatus: http.StatusUnauthorized}
+	c := api.start(t)
+	if _, err := c.RateLimit(context.Background()); !errors.Is(err, ErrBadCredentials) || errors.Is(err, ErrUpstream) {
+		t.Errorf("error = %v, want ErrBadCredentials and not ErrUpstream", err)
 	}
 }
 
@@ -142,8 +230,8 @@ func TestReportNotFoundIsAnError(t *testing.T) {
 	if err == nil {
 		t.Fatal("Report() returned no error for a null report")
 	}
-	if !strings.Contains(err.Error(), "not found") {
-		t.Errorf("error = %q, want it to say the report was not found", err)
+	if !errors.Is(err, ErrReportNotFound) {
+		t.Errorf("error = %v, want ErrReportNotFound", err)
 	}
 }
 
@@ -196,5 +284,65 @@ func TestNewDefaultsToTheRealEndpoints(t *testing.T) {
 	c := New("id", "secret")
 	if c.tokenURL != defaultTokenURL || c.apiURL != defaultAPIURL {
 		t.Errorf("New() gave tokenURL=%q apiURL=%q, want the package defaults", c.tokenURL, c.apiURL)
+	}
+}
+
+// The timeline document asks for eleven fields. One failing — phases on an
+// encounter with no phase metadata — used to discard the other ten and blank
+// the whole timeline. Now the ten are built and the eleventh is named.
+func TestTimelineBuildsFromAPartialDocument(t *testing.T) {
+	api := &fakeAPI{body: `{"data":{"reportData":{"report":{
+		"casts":{"data":[{"timestamp":2000,"type":"begincast","sourceID":7,"targetID":-1,"abilityGameID":133},
+		                  {"timestamp":4000,"type":"cast","sourceID":7,"targetID":-1,"abilityGameID":133}],"nextPageTimestamp":null},
+		"lust":{"data":[]},"procs":{"data":[]},"cooldowns":{"data":[]},"raidCDs":{"data":[]},
+		"damage":{"data":{"series":[]}},"taken":{"data":{"series":[]}},"bossCasts":{"data":[]},
+		"masterData":{"abilities":[{"gameID":133,"name":"Fireball"}],"actors":[],"npcs":[]},
+		"fights":[{"encounterID":3000,"phaseTransitions":[]}],"phases":null}}},
+		"errors":[{"message":"no phase data for this encounter","path":["reportData","report","phases"]}]}`}
+	c := api.start(t)
+
+	tl, err := c.Timeline(context.Background(), "ExampleReport123", Fight{ID: 12, StartTime: 1000, EndTime: 301000}, 7)
+	if err != nil {
+		t.Fatalf("Timeline() returned %v for a partial document, want the ten fields that arrived", err)
+	}
+	if len(tl.Casts) != 1 || tl.Casts[0].Name != "Fireball" {
+		t.Errorf("Casts = %+v, want the one Fireball that was in the data", tl.Casts)
+	}
+	if len(tl.Incomplete) != 1 || tl.Incomplete[0] != "phases" {
+		t.Errorf("Incomplete = %v, want [phases]", tl.Incomplete)
+	}
+}
+
+// A rate limit reported inside a 200 is not a partial document to build from.
+func TestTimelineDoesNotBuildFromARateLimit(t *testing.T) {
+	api := &fakeAPI{body: `{"data":{"reportData":{"report":{"casts":{"data":[]}}}},"errors":[{"message":"rate limit exceeded"}]}`}
+	c := api.start(t)
+	if _, err := c.Timeline(context.Background(), "ExampleReport123", Fight{ID: 12, StartTime: 1000, EndTime: 301000}, 7); !errors.Is(err, ErrRateLimited) {
+		t.Errorf("error = %v, want ErrRateLimited", err)
+	}
+}
+
+// What a real request for a code that does not exist gets: a null report
+// beside a GraphQL error on it. That is not found, not an outage — and the
+// API's words stay in the chain for the log.
+func TestReportNotFoundAsTheAPIActuallySaysIt(t *testing.T) {
+	api := &fakeAPI{body: `{"data":{"reportData":{"report":null}},"errors":[{"message":"This report does not exist.","path":["reportData","report"]}]}`}
+	c := api.start(t)
+	_, err := c.Report(context.Background(), "AbCdEfGh12345678")
+	if !errors.Is(err, ErrReportNotFound) {
+		t.Fatalf("error = %v, want ErrReportNotFound", err)
+	}
+	if errors.Is(err, ErrUpstream) {
+		t.Error("a missing report unwraps to ErrUpstream too; it must not read as an outage")
+	}
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) || apiErr.Messages[0] != "This report does not exist." {
+		t.Errorf("the API's message is not in the chain: %v", err)
+	}
+	if _, err := c.FightDetail(context.Background(), "AbCdEfGh12345678", 1); !errors.Is(err, ErrReportNotFound) {
+		t.Errorf("FightDetail: error = %v, want ErrReportNotFound", err)
+	}
+	if _, err := c.Timeline(context.Background(), "AbCdEfGh12345678", Fight{ID: 1, EndTime: 1000}, 7); !errors.Is(err, ErrReportNotFound) {
+		t.Errorf("Timeline: error = %v, want ErrReportNotFound", err)
 	}
 }
