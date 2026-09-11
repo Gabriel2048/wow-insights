@@ -49,17 +49,22 @@ answers from `testdata/`.
 ```mermaid
 flowchart TB
     %% verified: package graph
+    web["internal/web<br/>HTTP layer, routes, templates<br/>server.go · format.go"]
     templates[/"internal/web/templates/*.html<br/>embedded at compile time"/]
     main["main (the shipped binary)<br/>credentials → client → web"]
     serve_recorded["cmd/dev/serve-recorded<br/>recording → client → web"]
     record["cmd/dev/record<br/>the fixture recorder"]
-    web["internal/web<br/>HTTP layer, routes, templates<br/>server.go · format.go"]
     env["internal/env<br/>.env loading"]
     fixture["internal/fixture<br/>replay and record transports"]
     warcraftlogs["internal/warcraftlogs<br/>API client + analysis + layout<br/>client · report · fight · timeline · boss · dps"]
     api[("Warcraft Logs API")]
     testdata[/"testdata/<br/>the committed recording"/]
 
+    %% ~~~ is an invisible link: layout only, so the HTTP layer sits at the
+    %% top and the binaries that compose it hang below it.
+    web ~~~ main
+    web ~~~ serve_recorded
+    web ~~~ record
     main --> web
     main --> warcraftlogs
     serve_recorded --> web
@@ -68,8 +73,6 @@ flowchart TB
     record -->|"records through"| fixture
     record --> warcraftlogs
     web --> warcraftlogs
-    %% Both env imports are real and checked, and not drawn: the lines add
-    %% nothing a reader needs and cross everything.
     %% main --> env
     %% record --> env
 
