@@ -1,6 +1,7 @@
 # Work item and branch conventions
 
-- **Status:** accepted
+- **Status:** accepted; the review follow-up consequence is superseded by
+  `2026-09-11-one-work-item-one-pull-request.md`, and its argument is left standing below
 - **Issue:** [#9](https://github.com/Gabriel2048/wow-insights/issues/9)
 - **Date:** 2026-09-10
 

@@ -240,6 +240,13 @@ The board is GitHub Project #4. The lifecycle and helper live in
 gh pr create                                        # body carries "Closes #12" — then stop
 ```
 
+**One work item, one branch, one pull request.** Work that does not fit one reviewable
+pull request is split into child issues, never into several pull requests; a parent has
+no pull request of its own, and a follow-up on a merged issue is a new issue. `wi.sh
+branch` enforces what it can. The rule and its reasons are in
+`docs/decisions/2026-09-11-one-work-item-one-pull-request.md`; the skill says how to
+work it.
+
 Branches are `{issue-number}-{slug}` and are always created through
 `gh issue develop --name`, which is what establishes GitHub's linked-branch relation.
 `git checkout -b` produces the same name with no link. See
