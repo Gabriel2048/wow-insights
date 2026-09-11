@@ -43,7 +43,9 @@ instead reads the roster from the typed, complete places — `masterData.actors`
 report's owner and code — assigns pseudonyms deterministically (sorted names, one per
 class: `Testmage`, `Testpriest`, `Testmage2`; servers become `Testrealm`), and replaces
 each real value wherever it occurs as a whole word, case-insensitively. Whole-word is
-what leaves `Ashen Call` alone when a priest is named Ash. GUIDs are zeroed by key. The
+what leaves `Ashen Call` alone when a priest is named Ash. GUIDs are zeroed by key, and
+pet names — chosen by their owners, and often a pun on the owner — are replaced by key
+too, because a pet called Echo cannot be replaced by value without taking the spell. The
 report title is replaced outright. The mapping is never written; before writing, the
 recorder scans its own output for every real value and refuses to write if one survives,
 saying what kind of value it was and never which.

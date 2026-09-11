@@ -18,6 +18,7 @@ const (
 	FakeOwner = "Testowner"
 	FakeTitle = "Recorded raid night"
 	FakeRealm = "Testrealm"
+	FakePet   = "Testpet"
 )
 
 // A rule replaces one real value with one fake one, everywhere.
@@ -159,12 +160,20 @@ func (r *redactor) apply(body []byte) ([]byte, error) {
 	return []byte(text), nil
 }
 
-// walk applies every rule to every string in the tree, and zeroes every guid.
-// A character GUID is not a name, but it is an identifier, and nothing in this
-// application reads one.
+// walk applies every rule to every string in the tree, and handles the two
+// things that are not names but are still someone's: a character GUID is an
+// identifier nothing here reads, so it is zeroed; a pet's name is chosen by
+// its owner, so it is replaced. Pets are the one place a key is trusted — a
+// pet called Echo or Bear cannot be replaced by value without taking the
+// spells of the same name with it.
 func (r *redactor) walk(v any) any {
 	switch v := v.(type) {
 	case map[string]any:
+		if v["type"] == "Pet" {
+			if _, has := v["name"]; has {
+				v["name"] = FakePet
+			}
+		}
 		for k, child := range v {
 			if k == "guid" {
 				v[k] = json.Number("0")

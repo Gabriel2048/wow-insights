@@ -57,7 +57,8 @@ func fakeAPI(t *testing.T) *httptest.Server {
 				"masterData":{"actors":[
 					{"id":7,"name":"Zorbulax","type":"Player","subType":"Mage","server":"` + realRealm + `"},
 					{"id":11,"name":"Ash","type":"Player","subType":"Priest","server":"` + realRealm + `"}]},
-				"damage":{"data":{"entries":[{"id":7,"name":"Zorbulax","guid":123456789,"type":"Mage","icon":"Mage-Fire","itemLevel":678,"total":240000000,"activeTime":250000}],"totalTime":300000}},
+				"damage":{"data":{"entries":[{"id":7,"name":"Zorbulax","guid":123456789,"type":"Mage","icon":"Mage-Fire","itemLevel":678,"total":240000000,"activeTime":250000,
+					"pets":[{"id":40,"name":"Echo","type":"Pet","total":1000}]}],"totalTime":300000}},
 				"healing":{"data":{"entries":[{"id":11,"name":"Ash-TwistingNether","guid":987654321,"type":"Priest","icon":"Priest-Holy","itemLevel":675,"total":90000000,"overheal":30000000}],"totalTime":300000}},
 				"deaths":{"data":{"entries":[{"id":11,"name":"Ash","guid":987654321,"deathWindow":"killed by Dread Bolt while Zorbulax was casting"}]}}}}}}`,
 			"timeline-12-7-1000": `{"data":{"reportData":{"report":{
@@ -68,7 +69,7 @@ func fakeAPI(t *testing.T) *httptest.Server {
 				"damage":{"data":{"series":[{"name":"Fireball","pointStart":1000,"pointInterval":3000,"data":[100,200]}]}},
 				"taken":{"data":{"series":[]}},
 				"bossCasts":{"data":[],"nextPageTimestamp":null},
-				"masterData":{"abilities":[{"gameID":133,"name":"Fireball"},{"gameID":1,"name":"Ashen Call"}],
+				"masterData":{"abilities":[{"gameID":133,"name":"Fireball"},{"gameID":1,"name":"Ashen Call"},{"gameID":2,"name":"Echo"}],
 				              "actors":[{"id":7,"name":"Zorbulax","subType":"Mage"},{"id":11,"name":"Ash","subType":"Priest"}],
 				              "npcs":[{"id":30,"name":"The Coiled One","subType":"Boss"}]},
 				"fights":[{"encounterID":3000,"phaseTransitions":[{"id":1,"startTime":1000}]}],
@@ -151,7 +152,7 @@ func TestRecordingIsRedactedEverywhere(t *testing.T) {
 			t.Errorf("%q survived redaction in the written files", real)
 		}
 	}
-	for _, kept := range []string{"Ashen Call", "Fireball", "The Coiled One", "The Coiled Altar", "The Venomous Abyss", "Stage One", "Mage-Fire"} {
+	for _, kept := range []string{"Ashen Call", "Fireball", `"name":"Echo"`, "The Coiled One", "The Coiled Altar", "The Venomous Abyss", "Stage One", "Mage-Fire"} {
 		if !strings.Contains(all.String(), kept) {
 			t.Errorf("%q is game data and should have been kept", kept)
 		}
@@ -161,6 +162,7 @@ func TestRecordingIsRedactedEverywhere(t *testing.T) {
 		`"name":"Testpriest-Testrealm"`, // the cross-realm form in a table entry
 		`"code":"ExampleReport123"`, `"name":"Testowner"`, `"title":"Recorded raid night"`,
 		`"guid":0`,
+		`"name":"Testpet","total":1000,"type":"Pet"`,      // a pet's name is its owner's choice
 		`killed by Dread Bolt while Testmage was casting`, // a name inside untyped text
 	} {
 		if !strings.Contains(all.String(), fake) {
