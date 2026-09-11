@@ -1,0 +1,53 @@
+{{/* The cast table, grouped by phase. Takes a view.Timeline. */}}
+{{define "casttable"}}<div class="table-legend">
+        <div class="sample">idle 1.8s <span class="hint">0:51 &rarr; 0:53, before Pyroblast</span></div>
+        <p>
+            Time with no cast. <strong>Includes your GCD</strong> (1.5s base, down to 0.75s with haste),
+            so only the excess was usable. Threshold under <strong>Advanced</strong>.
+        </p>
+    </div>
+
+    <div class="casts">
+        <table>
+            <thead>
+            <tr>
+                <th>Time</th>
+                <th>Ability</th>
+                <th class="num">Cast</th>
+                <th>Lust</th>
+            </tr>
+            </thead>
+            <tbody>
+            {{range .Sections}}
+                {{$phase := .Phase}}
+                {{if $phase.Name}}
+                    <tr class="phasehead">
+                        <td colspan="4">
+                            {{$phase.Name}}
+                            <span class="hint">&middot; {{$phase.Timestamp}} &middot; {{short $phase.Duration}}
+                                &middot; {{len .Casts}} casts</span>
+                        </td>
+                    </tr>
+                {{end}}
+                {{range .Casts}}
+                    {{if .Gap}}
+                        <tr class="idlerow" data-ms="{{.GapMS}}">
+                            <td colspan="4">idle {{short .Gap}}
+                                <span class="hint">{{.IdleFromLabel}} &rarr; {{.Timestamp}}, before {{.Name}}</span>
+                            </td>
+                        </tr>
+                    {{end}}
+                    <tr class="{{if .Cancelled}}cancelled {{end}}{{if .Precast}}precast {{end}}{{if .DuringLust}}lust{{end}}"
+                        title="{{if .Gap}}{{short .Gap}} idle before this cast{{else}}no idle time before this cast{{end}}">
+                        <td class="num">{{.Timestamp}}</td>
+                        <td>{{.Name}}</td>
+                        <td class="num">{{.CastLabel}}{{with .ProcLabel}}
+                            <span class="proctag">{{.}}</span>{{end}}</td>
+                        <td>{{if .DuringLust}}&#9889;{{end}}</td>
+                    </tr>
+                {{end}}
+            {{end}}
+            </tbody>
+        </table>
+    </div>
+{{end}}

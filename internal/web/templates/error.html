@@ -1,23 +1,8 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="utf-8">
-    <title>{{.Title}}</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <style>
-        body { font-family: system-ui, sans-serif; background: #1b1e24; color: #e8e8e8; margin: 0; padding: 2rem; }
-        main { max-width: 40rem; margin: 4rem auto; }
-        h1 { font-size: 1.25rem; margin: 0 0 1rem; }
-        p { line-height: 1.5; }
-        .status { color: #8a93a2; font-size: 0.85rem; }
-        a { color: #8fb0ff; }
-    </style>
-</head>
-<body>
+{{define "title"}}{{.Title}}{{end}}
+{{define "content"}}
 <main>
     <p class="status">{{.Status}}</p>
     <h1>{{.Message}}</h1>
     <p><a href="/">Back to the start</a></p>
 </main>
-</body>
-</html>
+{{end}}

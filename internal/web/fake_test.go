@@ -161,7 +161,7 @@ func pageWith(t *warcraftlogs.Timeline) fightPageData {
 
 // laidOut draws an analysis the way the page fixture wants it drawn.
 func laidOut(t *warcraftlogs.Timeline) *view.Timeline {
-	return view.Layout(t, view.Options{LeadIn: 2 * time.Second})
+	return view.Layout(t, view.Options{LeadIn: 2 * time.Second, WowheadDifficulty: 15})
 }
 
 func fightDetail() *warcraftlogs.FightDetail {

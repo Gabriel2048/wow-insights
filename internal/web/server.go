@@ -6,8 +6,6 @@ package web
 
 import (
 	"context"
-	"embed"
-	"html/template"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -17,17 +15,6 @@ import (
 	"wowinsight/internal/view"
 	"wowinsight/internal/warcraftlogs"
 )
-
-//go:embed templates/*.html
-var templateFS embed.FS
-
-// ParseTemplates parses the embedded template set. It returns an error rather
-// than panicking: the previous template.Must ran at package init, which go
-// build never executes and no test could reach, so a broken template passed the
-// whole gate and panicked on the first request after deploy.
-func ParseTemplates() (*template.Template, error) {
-	return template.New("").Funcs(templateFuncs()).ParseFS(templateFS, "templates/*.html")
-}
 
 // logsClient is the slice of the Warcraft Logs API the handlers actually use.
 // It is declared here, in the consumer, so that package needs no interface of
@@ -42,7 +29,7 @@ type logsClient interface {
 // Server holds the dependencies shared by the HTTP handlers.
 type Server struct {
 	wcl logsClient
-	tpl *template.Template
+	tpl *Templates
 	log *slog.Logger
 	// handlerDeadline is a field rather than the constant so a test can
 	// shorten it; nothing else sets it.
@@ -54,7 +41,7 @@ type Server struct {
 // replay transport, in tests a fake. The logger decides the format: the
 // shipped binary hands in JSON shaped for Cloud Logging, the dev binaries
 // hand in text.
-func New(wcl logsClient, tpl *template.Template, logger *slog.Logger) *Server {
+func New(wcl logsClient, tpl *Templates, logger *slog.Logger) *Server {
 	return &Server{wcl: wcl, tpl: tpl, log: logger, handlerDeadline: handlerDeadline}
 }
 
@@ -66,6 +53,7 @@ func (s *Server) Routes() *http.ServeMux {
 	mux.HandleFunc("GET /{$}", s.index)
 	mux.HandleFunc("GET /report/{code}/fight/{id}", s.fight)
 	mux.HandleFunc("GET /healthz", s.healthz)
+	mux.HandleFunc("GET /static/{hash}/{name}", s.tpl.assets.serve)
 	return mux
 }
 
@@ -174,7 +162,7 @@ func (s *Server) fight(w http.ResponseWriter, r *http.Request) {
 				s.logProblem(r, p, "fetch timeline", err, "code", code, "fight", fightID, "player", id)
 				data.Notices = append(data.Notices, "The cast timeline could not be loaded. "+p.message)
 			} else {
-				data.Timeline = view.Layout(timeline, view.Options{})
+				data.Timeline = view.Layout(timeline, view.Options{WowheadDifficulty: data.Fight.WowheadDifficulty()})
 				if len(timeline.Incomplete) > 0 {
 					s.logger(r).Warn("timeline arrived incomplete", "missing", timeline.Incomplete)
 					data.Notices = append(data.Notices, "Part of the timeline was unavailable from Warcraft Logs: "+strings.Join(timeline.Incomplete, ", ")+".")

@@ -2,6 +2,8 @@ package web
 
 import (
 	"bytes"
+	"io/fs"
+	"net/http"
 	"net/http/httptest"
 	"regexp"
 	"strings"
@@ -21,8 +23,8 @@ func render(t *testing.T, name string, data any) string {
 		t.Fatalf("ParseTemplates() returned error: %v", err)
 	}
 	var buf bytes.Buffer
-	if err := tpl.ExecuteTemplate(&buf, name, data); err != nil {
-		t.Fatalf("ExecuteTemplate(%q) returned error: %v", name, err)
+	if err := tpl.Execute(&buf, name, data); err != nil {
+		t.Fatalf("Execute(%q) returned error: %v", name, err)
 	}
 	return buf.String()
 }
@@ -36,8 +38,8 @@ func TestTemplatesParse(t *testing.T) {
 		t.Fatalf("ParseTemplates() returned error: %v", err)
 	}
 	for _, name := range []string{"index.html", "fight.html", "error.html"} {
-		if tpl.Lookup(name) == nil {
-			t.Errorf("template %q was not parsed", name)
+		if !tpl.Lookup(name) {
+			t.Errorf("page %q was not parsed", name)
 		}
 	}
 }
@@ -141,29 +143,48 @@ var optionalScriptLookups = map[string]string{
 	"dpsLane":   "guarded by seriesFrom",
 	"takenLane": "guarded by seriesFrom",
 
-	// NOT guarded, and therefore a bug. The script assigns
-	// readout.textContent directly. buildDPS returns nil for a player with no
-	// damage series — a healer, or anyone who died at the pull — so selecting
-	// one and hovering the timeline throws a TypeError once per animation
-	// frame. Tracked in #17; #10 makes behaviour observable, it does not
-	// change it. Deleting this entry is how the fix proves itself.
-	"dpsReadout": "UNGUARDED, bug tracked in #17",
+	// Guarded since #17: every write is behind `if (readout && …)`. Before,
+	// the script assigned readout.textContent directly, and a player with no
+	// damage series — a healer, or anyone who died at the pull — threw a
+	// TypeError once per animation frame when the timeline was hovered.
+	// TestReadoutIsGuarded holds the guard in place.
+	"dpsReadout": "guarded by an if on the element",
 }
 
-// The inline script and the markup it drives ship in the same rendered bytes,
-// so the contract between them can be derived rather than transcribed: pull the
-// ids the script resolves straight out of the page and assert the server emits
-// each one. A hardcoded list drifts silently; this cannot.
+// script is the fight page's script, read from the embedded static files —
+// the same bytes the page links to.
+func script(t *testing.T) string {
+	t.Helper()
+	data, err := fs.ReadFile(staticFS, "static/timeline.js")
+	if err != nil {
+		t.Fatalf("read timeline.js: %v", err)
+	}
+	return string(data)
+}
+
+// scriptLookups derives the ids the script resolves, so the contract between
+// the script and the markup is read from the script rather than transcribed.
+// A hardcoded list drifts silently; this cannot.
+func scriptLookups(t *testing.T) []string {
+	t.Helper()
+	var ids []string
+	for _, m := range regexp.MustCompile(`getElementById\('([A-Za-z0-9_-]+)'\)`).FindAllStringSubmatch(script(t), -1) {
+		ids = append(ids, m[1])
+	}
+	if len(ids) < 5 {
+		t.Fatalf("found %d getElementById calls in timeline.js, want at least 5 (the regex is probably wrong, not the script)", len(ids))
+	}
+	return ids
+}
+
+// The script and the markup it drives are served by the same binary from the
+// same commit, so the server must emit every element the script resolves.
 func TestFightPageHasTheElementsTheScriptLooksUp(t *testing.T) {
 	page := render(t, "fight.html", fullFightPage())
-
-	lookups := regexp.MustCompile(`getElementById\('([A-Za-z0-9_-]+)'\)`).FindAllStringSubmatch(page, -1)
-	if len(lookups) < 5 {
-		t.Fatalf("found %d getElementById calls in the rendered page, want at least 5 (the regex is probably wrong, not the page)", len(lookups))
-	}
-	for _, m := range lookups {
-		if !strings.Contains(page, `id="`+m[1]+`"`) {
-			t.Errorf("the script resolves #%s but the page emits no element with that id", m[1])
+	lookups := scriptLookups(t)
+	for _, id := range lookups {
+		if !strings.Contains(page, `id="`+id+`"`) {
+			t.Errorf("the script resolves #%s but the page emits no element with that id", id)
 		}
 	}
 
@@ -193,16 +214,16 @@ func TestFightPageWithoutDPSIsMissingOnlyTheKnownIDs(t *testing.T) {
 	noDPS.Taken = nil
 	page := render(t, "fight.html", pageWith(noDPS))
 
-	for _, m := range regexp.MustCompile(`getElementById\('([A-Za-z0-9_-]+)'\)`).FindAllStringSubmatch(page, -1) {
-		if strings.Contains(page, `id="`+m[1]+`"`) {
+	for _, id := range scriptLookups(t) {
+		if strings.Contains(page, `id="`+id+`"`) {
 			continue
 		}
-		if _, known := optionalScriptLookups[m[1]]; known {
+		if _, known := optionalScriptLookups[id]; known {
 			continue
 		}
 		t.Errorf("the script resolves #%s and a page with no damage graph does not emit it. "+
 			"Either guard the lookup, emit the element unconditionally, or add it to "+
-			"optionalScriptLookups saying which of those you chose and why", m[1])
+			"optionalScriptLookups saying which of those you chose and why", id)
 	}
 }
 
@@ -261,6 +282,82 @@ func TestPlayerSuppliedTextIsEscaped(t *testing.T) {
 	for _, unwanted := range []string{`<script>alert("title")</script>`, `<img src=x onerror=alert(1)>`} {
 		if strings.Contains(page, unwanted) {
 			t.Errorf("%q reached the page unescaped", unwanted)
+		}
+	}
+}
+
+// The readout is looked up on every page and emitted only on pages with a
+// damage graph, so every write to it must be guarded. This reads the script:
+// no line may assign to readout.textContent outside an `if (readout` guard.
+func TestReadoutIsGuarded(t *testing.T) {
+	src := script(t)
+	writes := regexp.MustCompile(`(?m)^.*readout\.textContent\s*=`).FindAllString(src, -1)
+	if len(writes) == 0 {
+		t.Fatal("the script never writes the readout; the regex is wrong or the feature is gone")
+	}
+	lines := strings.Split(src, "\n")
+	for i, line := range lines {
+		if !strings.Contains(line, "readout.textContent =") {
+			continue
+		}
+		// The guard is on the same line or the enclosing if, within a few
+		// lines above.
+		guarded := false
+		for j := max(0, i-3); j <= i; j++ {
+			if strings.Contains(lines[j], "if (readout") {
+				guarded = true
+			}
+		}
+		if !guarded {
+			t.Errorf("line %d writes the readout without checking it exists: %s", i+1, strings.TrimSpace(line))
+		}
+	}
+}
+
+// The page links to its stylesheet and script by content-hashed paths, and
+// those paths serve the files with a cache lifetime that a hash makes safe;
+// a stale hash is a 404, not a forever-cached wrong file.
+func TestStaticAssetsAreHashedAndCacheable(t *testing.T) {
+	page := render(t, "fight.html", fullFightPage())
+	links := regexp.MustCompile(`/static/([0-9a-f]{12})/(app\.css|timeline\.js)`).FindAllStringSubmatch(page, -1)
+	if len(links) != 2 {
+		t.Fatalf("the page links %d hashed assets, want the stylesheet and the script: %v", len(links), links)
+	}
+	if strings.Contains(page, "<script>") {
+		t.Error("the page still carries an inline script; the CSP #7 wants needs none")
+	}
+	if strings.Contains(page, "<style>") {
+		t.Error("the page still carries an inline stylesheet")
+	}
+	for _, m := range links {
+		rec := get(t, fakeWCL{}, m[0])
+		if rec.Code != http.StatusOK {
+			t.Errorf("%s: status = %d", m[0], rec.Code)
+		}
+		if cc := rec.Header().Get("Cache-Control"); !strings.Contains(cc, "immutable") {
+			t.Errorf("%s: Cache-Control = %q, want immutable", m[0], cc)
+		}
+		if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/") {
+			t.Errorf("%s: Content-Type = %q", m[0], ct)
+		}
+		stale := strings.Replace(m[0], m[1], "000000000000", 1)
+		if rec := get(t, fakeWCL{}, stale); rec.Code != http.StatusNotFound {
+			t.Errorf("%s: status = %d, want 404 for a stale hash", stale, rec.Code)
+		}
+	}
+}
+
+// The stylesheet's palette goes through tokens, and the page is declared
+// dark so native controls — the timeline's own scrollbar included — stop
+// rendering with light chrome.
+func TestStylesheetDeclaresItsTokensAndScheme(t *testing.T) {
+	css, err := fs.ReadFile(staticFS, "static/app.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{":root {", "color-scheme: dark", "--text:", "--cast:", "--boss:", "var(--muted)"} {
+		if !strings.Contains(string(css), want) {
+			t.Errorf("app.css lacks %q", want)
 		}
 	}
 }

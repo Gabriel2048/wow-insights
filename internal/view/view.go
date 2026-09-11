@@ -34,6 +34,10 @@ const leadInMargin = 750 * time.Millisecond
 type Options struct {
 	LeadIn time.Duration // drawn room before the pull
 	Total  time.Duration // the whole drawn span, lead-in included
+	// WowheadDifficulty is the id Wowhead's tooltips take for this fight's
+	// difficulty, so a boss marker can link to the right spell values; zero
+	// links to the spell without one.
+	WowheadDifficulty int
 }
 
 // Timeline is an analysed timeline with a position for everything on it.
@@ -99,6 +103,7 @@ type Marker struct {
 	warcraftlogs.BossCast
 	Percent      float64
 	WidthPercent float64
+	Href         string // the spell on Wowhead, at this fight's difficulty
 }
 
 // Graph is a damage curve with its SVG paths drawn against the axis.
@@ -180,7 +185,11 @@ func Layout(t *warcraftlogs.Timeline, o Options) *Timeline {
 	}
 
 	for _, b := range t.BossCasts {
-		v.Boss = append(v.Boss, Marker{BossCast: b, Percent: v.percent(b.Offset), WidthPercent: v.span(b.End - b.Offset)})
+		href := fmt.Sprintf("https://www.wowhead.com/spell=%d", b.AbilityID)
+		if o.WowheadDifficulty != 0 {
+			href += fmt.Sprintf("?dd=%d", o.WowheadDifficulty)
+		}
+		v.Boss = append(v.Boss, Marker{BossCast: b, Percent: v.percent(b.Offset), WidthPercent: v.span(b.End - b.Offset), Href: href})
 	}
 	v.DPS = v.graph(t.DPS)
 	v.Taken = v.graph(t.Taken)

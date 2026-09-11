@@ -110,7 +110,7 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, p problem) {
 // set. On failure the log gets the reason and the client gets one line.
 func (s *Server) render(w http.ResponseWriter, r *http.Request, status int, name string, data any) {
 	var buf bytes.Buffer
-	if err := s.tpl.ExecuteTemplate(&buf, name, data); err != nil {
+	if err := s.tpl.Execute(&buf, name, data); err != nil {
 		s.logger(r).Error("render "+name, "err", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return

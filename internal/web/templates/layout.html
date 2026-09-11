@@ -1,0 +1,18 @@
+{{/* The one document shell. A page defines "title" and "content"; "scripts"
+     is for the page that needs its own. Never ExecuteTemplate a file of
+     partials by its filename: a file holding only defines also registers an
+     almost-empty template under its own name, and it renders nothing. */}}
+{{define "layout"}}<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{block "title" .}}wowinsight{{end}}</title>
+    <link rel="stylesheet" href="{{asset "app.css"}}">
+</head>
+<body>
+{{template "content" .}}
+{{block "scripts" .}}{{end}}
+</body>
+</html>
+{{end}}
