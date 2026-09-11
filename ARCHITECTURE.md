@@ -108,12 +108,12 @@ sequenceDiagram
     S->>S: ParseReportCode, Atoi — 400 before any API call
     S->>C: FightDetail(code, id)
     C->>T: fightQuery {code, id}
-    T->>W: POST /api/v2/client (or read fight-{id}.json)
+    T->>W: POST /api/v2/client
     C->>C: buildFightDetail — roster, tables, deaths
     alt player resolves to an actor in this fight
         S->>C: Timeline(code, fight, actor)
         C->>T: timelineQuery {code, id, source, start, end}
-        T->>W: POST (or read timeline-{id}-{source}-{start}.json)
+        T->>W: POST
         loop casts.nextPageTimestamp != null
             C->>T: castPageQuery {…, start: cursor}
         end
