@@ -142,3 +142,41 @@ func TestFixtureRosterIsRedacted(t *testing.T) {
 		t.Errorf("owner = %q, want %q", report.Owner.Name, fixture.FakeOwner)
 	}
 }
+
+// The positioned golden render #10 deferred: the recorded kill, laid out
+// and rendered, with the positions of specific things pinned to three
+// decimals. Every number was checked by hand against the axis: the fight is
+// 431,472 ms, the precast bar starts 1,650 ms before the pull so the lead-in
+// is 2,400 ms with its margin, and the pull therefore sits at 2400/433872 =
+// 0.553%. A change to the axis — the lead-in rule, the total, the percent
+// formula — moves all of these at once, which is what the test is for; a
+// change to the analysis moves only what it changed, and the message says
+// which.
+func TestGoldenRenderOfTheRecordedKill(t *testing.T) {
+	replay := openRecording(t)
+	rec := get(t, recordedServer(t, replay).wcl, "/report/"+replay.Code()+"/fight/1?player=21")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	page := rec.Body.String()
+
+	// The axis.
+	for _, want := range []string{`data-total-ms="433872"`, `data-lead-ms="2400"`, `data-duration-ms="431472"`} {
+		if !strings.Contains(page, want) {
+			t.Errorf("the axis moved: want %s, page has %s", want, regexp.MustCompile(`data-(total|lead|duration)-ms="[0-9]+"`).FindAllString(page, -1))
+		}
+	}
+	// Positions on it, each as the page emits them.
+	for what, pattern := range map[string]string{
+		"the pull": `class="prepull" style="width: 0\.553%"`,
+		"the precast Pyroblast bar (1.818s, reconstructed)": `class="castbar estimated"\s+style="left: 0\.173%; width: 0\.419%"`,
+		"the precast's tick":                       `class="tick"\s+style="left: 0\.173%"`,
+		"the first phase (Stage One, 2m00s)":       `class="phase"\s+style="left: 0\.553%; width: 27\.764%;"`,
+		"the first boss marker":                    `class="bcast" style="left: 0\.558%"`,
+		"the DPS curve's first point, on the pull": `points="0\.553,87\.776`,
+	} {
+		if !regexp.MustCompile(pattern).MatchString(page) {
+			t.Errorf("%s is not where it was: /%s/ not found", what, pattern)
+		}
+	}
+}

@@ -25,6 +25,7 @@ flowchart LR
     app -->|"client-credentials token, cached until expiry,<br/>one fetch shared by concurrent callers"| oauth
     app -->|"one query per page section, every page view"| api
     user -.->|"loaded by every fight page"| zam
+    app -->|"GET /static/{hash}/…<br/>the stylesheet and the script, cached for a year"| user
 ```
 
 - The binary is the whole deployment. Nothing is stored between requests, so every page
@@ -62,7 +63,7 @@ flowchart TB
         serve_recorded["serve-recorded<br/>recording → client → web"]
         record["record<br/>the fixture recorder"]
     end
-    templates[/"internal/web/templates/*.html<br/>embedded at compile time"/]
+    templates[/"internal/web/templates/ and static/<br/>embedded at compile time"/]
     web["internal/web<br/>HTTP layer, routes, templates<br/>middleware, the http.Server and its shutdown"]
     view["internal/view<br/>the drawing model: positions, lanes, paths<br/>against an axis the page chooses"]
     config["internal/config<br/>PORT and credentials, from the environment or .env"]
@@ -123,8 +124,7 @@ aura and cooldown windows, phases and the layout pass — and its doc comments c
 reasoning behind each heuristic. Read them before changing a builder.
 
 **Known shape problems**, each owned by an issue: spec knowledge is package-level globals
-(#16); presentation fields (`Percent`, `Row`, SVG strings) live on the analysis types
-(#17). `AGENTS.md` says how to build around them in the meantime.
+(#16). `AGENTS.md` says how to build around it in the meantime.
 
 ## 3. What happens on a fight page request
 
