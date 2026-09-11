@@ -48,7 +48,11 @@ func buildDPS(response dpsGraphResponse, fight Fight) *DPSGraph {
 		return nil
 	}
 
-	// Every series shares a bucket width; the first one defines the grid.
+	// Every series shares a bucket width; the first one defines the grid,
+	// and a series on a different grid cannot be summed into it and is
+	// dropped. The API has never sent one — every series of a graph shares
+	// pointStart and pointInterval on every real report seen — so this is a
+	// guard against the assumption, not a path with traffic.
 	interval := series[0].PointInterval
 	base := series[0].PointStart
 	for _, s := range series {
@@ -63,6 +67,9 @@ func buildDPS(response dpsGraphResponse, fight Fight) *DPSGraph {
 	totals := map[int]float64{}
 	last := -1
 	for _, s := range series {
+		if s.PointInterval != interval {
+			continue
+		}
 		offset := int(math.Round((s.PointStart - base) / interval))
 		for i, v := range s.Data {
 			index := offset + i

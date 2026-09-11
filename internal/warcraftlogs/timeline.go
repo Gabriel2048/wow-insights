@@ -109,18 +109,13 @@ func raidCooldownWindows(events []event, fight Fight, actors map[int]string) []R
 	events = sortedByTime(events)
 
 	type key struct{ ability, target int }
-	// closed records whether a removebuff was actually seen. Players who die,
-	// or leave the log, can leave a buff open; extending those to the end of
-	// the fight would stretch an 8s cooldown across minutes.
-	type interval struct {
-		start, end float64
-		closed     bool
+	type open struct {
+		start  float64
+		source int
 	}
-
-	opened := map[key]float64{}
-	intervals := map[int][]interval{}
-	targets := map[int]map[int]bool{}
-	sources := map[int]int{}
+	opened := map[key]open{}
+	seen := map[key]bool{}
+	intervals := map[int][]buffInterval{}
 
 	for _, e := range events {
 		if _, tracked := raidCooldownAuras[e.AbilityGameID]; !tracked {
@@ -129,68 +124,40 @@ func raidCooldownWindows(events []event, fight Fight, actors map[int]string) []R
 		k := key{e.AbilityGameID, e.TargetID}
 		switch e.Type {
 		case "applybuff", "refreshbuff":
-			if _, open := opened[k]; !open {
-				opened[k] = e.Timestamp
-			}
-			if targets[e.AbilityGameID] == nil {
-				targets[e.AbilityGameID] = map[int]bool{}
-			}
-			targets[e.AbilityGameID][e.TargetID] = true
-			if _, ok := sources[e.AbilityGameID]; !ok && e.SourceID != 0 {
-				sources[e.AbilityGameID] = e.SourceID
+			if _, up := opened[k]; !up {
+				opened[k] = open{e.Timestamp, e.SourceID}
 			}
 		case "removebuff":
-			if start, open := opened[k]; open {
-				delete(opened, k)
-				intervals[e.AbilityGameID] = append(intervals[e.AbilityGameID], interval{start, e.Timestamp, true})
+			o, up := opened[k]
+			switch {
+			case up:
+			case !seen[k]:
+				// The buff went up before the pull, so its applybuff is
+				// outside the query. The API does not synthesise one at the
+				// boundary (checked against a real report), so the window is
+				// opened here at the fight's start instead of being dropped.
+				// Only a removebuff that is the first thing seen for this
+				// buff and player means that; a later one with nothing open
+				// is a duplicate.
+				o = open{fight.StartTime, e.SourceID}
+			default:
+				seen[k] = true
+				continue
 			}
+			delete(opened, k)
+			intervals[e.AbilityGameID] = append(intervals[e.AbilityGameID],
+				buffInterval{start: o.start, end: e.Timestamp, closed: true, source: o.source, targets: map[int]bool{e.TargetID: true}})
 		}
+		seen[k] = true
 	}
-	for k, start := range opened {
-		intervals[k.ability] = append(intervals[k.ability], interval{start, fight.EndTime, false})
+	for k, o := range opened {
+		intervals[k.ability] = append(intervals[k.ability],
+			buffInterval{start: o.start, end: fight.EndTime, source: o.source, targets: map[int]bool{k.target: true}})
 	}
 
 	var windows []RaidWindow
 	for _, abilityID := range sortedKeys(intervals) {
-		list := intervals[abilityID]
-		slices.SortStableFunc(list, func(a, b interval) int { return cmp.Compare(a.start, b.start) })
-
-		// An interval left open by a player who died or dropped out of the log
-		// is capped at how long the buff usually lasts. Running it to the end
-		// of the fight would stretch an 8s cooldown across minutes.
-		// The median of the intervals that did close is the best available
-		// estimate of how long this cooldown lasts.
-		var lengths []float64
-		for _, iv := range list {
-			if iv.closed {
-				lengths = append(lengths, iv.end-iv.start)
-			}
-		}
-		typical := float64(defaultRaidCooldownLength)
-		if len(lengths) > 0 {
-			sort.Float64s(lengths)
-			typical = lengths[len(lengths)/2]
-		}
-		for i := range list {
-			if !list[i].closed && list[i].start+typical < list[i].end {
-				list[i].end = list[i].start + typical
-			}
-		}
-
-		// Overlapping intervals are one use. Players wander in and out of a
-		// ground effect like Anti-Magic Zone, so a re-entry belongs to the
-		// placement it happened inside, not to a new one.
-		merged := []interval{list[0]}
-		for _, iv := range list[1:] {
-			last := &merged[len(merged)-1]
-			if iv.start <= last.end {
-				if iv.end > last.end {
-					last.end = iv.end
-				}
-				continue
-			}
-			merged = append(merged, iv)
-		}
+		merged := mergeBuffIntervals(intervals[abilityID], defaultRaidCooldownLength)
 		for _, iv := range merged {
 			if iv.end-iv.start < raidCooldownMinWindow {
 				continue // a flicker, not a use
@@ -198,15 +165,91 @@ func raidCooldownWindows(events []event, fight Fight, actors map[int]string) []R
 			windows = append(windows, RaidWindow{
 				AbilityID: abilityID,
 				Name:      raidCooldownAuras[abilityID],
-				Source:    actors[sources[abilityID]],
+				Source:    actors[iv.source],
 				Start:     time.Duration(iv.start-fight.StartTime) * time.Millisecond,
 				End:       time.Duration(iv.end-fight.StartTime) * time.Millisecond,
-				Targets:   len(targets[abilityID]),
+				Targets:   len(iv.targets),
 			})
 		}
 	}
 	sortRaidWindows(windows)
 	return windows
+}
+
+// buffInterval is one player's run of one buff, before merging.
+type buffInterval struct {
+	start, end float64
+	// closed records whether a removebuff was actually seen. Players who die,
+	// or leave the log, can leave a buff open; extending those to the end of
+	// the fight would stretch an 8s cooldown across minutes.
+	closed  bool
+	source  int          // who cast it
+	targets map[int]bool // who received it
+}
+
+// mergeBuffIntervals turns one ability's per-player intervals into uses. An
+// interval left open by a player who died or dropped out of the log is
+// capped at how long the buff usually lasts — the median of the intervals
+// that did close, or fallback when none did. Overlapping intervals from the
+// same caster are one use: players wander in and out of a ground effect like
+// Anti-Magic Zone, so a re-entry belongs to the placement it happened
+// inside. Overlapping intervals from different casters are two uses — the
+// raid used two cooldowns, and folding them would show one.
+func mergeBuffIntervals(list []buffInterval, fallback float64) []buffInterval {
+	if len(list) == 0 {
+		return nil
+	}
+	var lengths []float64
+	for _, iv := range list {
+		if iv.closed {
+			lengths = append(lengths, iv.end-iv.start)
+		}
+	}
+	typical := fallback
+	if len(lengths) > 0 {
+		slices.Sort(lengths)
+		typical = lengths[len(lengths)/2]
+	}
+	for i := range list {
+		if !list[i].closed && list[i].start+typical < list[i].end {
+			list[i].end = list[i].start + typical
+		}
+	}
+
+	slices.SortStableFunc(list, func(a, b buffInterval) int {
+		return cmp.Or(cmp.Compare(a.start, b.start), cmp.Compare(a.source, b.source))
+	})
+	var merged []buffInterval
+	for _, iv := range list {
+		// Find the latest open use by this caster to fold into.
+		folded := false
+		for j := len(merged) - 1; j >= 0; j-- {
+			last := &merged[j]
+			if last.source != iv.source {
+				continue
+			}
+			if iv.start <= last.end {
+				last.end = max(last.end, iv.end)
+				for t := range iv.targets {
+					last.targets[t] = true
+				}
+				folded = true
+			}
+			break
+		}
+		if !folded {
+			copied := iv
+			copied.targets = map[int]bool{}
+			for t := range iv.targets {
+				copied.targets[t] = true
+			}
+			merged = append(merged, copied)
+		}
+	}
+	slices.SortStableFunc(merged, func(a, b buffInterval) int {
+		return cmp.Or(cmp.Compare(a.start, b.start), cmp.Compare(a.source, b.source))
+	})
+	return merged
 }
 
 // sortRaidWindows orders windows by start, then ability, so two that start
@@ -233,6 +276,10 @@ func sortedKeys[V any](m map[int]V) []int {
 // effects that reuse the same spell ID; requiring a raid-wide application
 // keeps those out of the timeline.
 const raidLustMinTargets = 5
+
+// defaultLustLength caps an unclosed lust when no player's closed, which is
+// what a wipe under Bloodlust looks like. Every lust in the game lasts 40s.
+const defaultLustLength = 40000 // milliseconds
 
 // labelCollision is how close a repeat of the same spell has to be to the end
 // of the previous cast before their labels overlap on the timeline.
@@ -440,18 +487,9 @@ func cooldownWindows(events []event, fight Fight, names map[int]string) []Cooldo
 	relative := func(t float64) time.Duration {
 		return time.Duration(t-fight.StartTime) * time.Millisecond
 	}
-	open := map[int]time.Duration{}
-	var windows []CooldownWindow
-	add := func(abilityID int, start, end time.Duration) {
-		name := names[abilityID]
-		if name == "" {
-			name = fmt.Sprintf("Spell %d", abilityID)
-		}
-		windows = append(windows, CooldownWindow{
-			AbilityID: abilityID, Name: name, Start: start, End: end,
-		})
-	}
-
+	open := map[int]float64{}
+	seen := map[int]bool{}
+	intervals := map[int][]buffInterval{}
 	for _, e := range events {
 		if !personalCooldowns[e.AbilityGameID] {
 			continue
@@ -459,17 +497,42 @@ func cooldownWindows(events []event, fight Fight, names map[int]string) []Cooldo
 		switch e.Type {
 		case "applybuff", "refreshbuff":
 			if _, up := open[e.AbilityGameID]; !up {
-				open[e.AbilityGameID] = relative(e.Timestamp)
+				open[e.AbilityGameID] = e.Timestamp
 			}
 		case "removebuff":
-			if start, up := open[e.AbilityGameID]; up {
-				delete(open, e.AbilityGameID)
-				add(e.AbilityGameID, start, relative(e.Timestamp))
+			start, up := open[e.AbilityGameID]
+			switch {
+			case up:
+			case !seen[e.AbilityGameID]:
+				// Put up before the pull — a Blazing Barrier at the ready is
+				// the common case — so the applybuff is outside the query.
+				start = fight.StartTime
+			default:
+				seen[e.AbilityGameID] = true
+				continue
 			}
+			delete(open, e.AbilityGameID)
+			intervals[e.AbilityGameID] = append(intervals[e.AbilityGameID], buffInterval{start: start, end: e.Timestamp, closed: true})
 		}
+		seen[e.AbilityGameID] = true
 	}
-	for _, id := range sortedKeys(open) {
-		add(id, open[id], fight.Duration())
+	for id, start := range open {
+		intervals[id] = append(intervals[id], buffInterval{start: start, end: fight.EndTime})
+	}
+
+	var windows []CooldownWindow
+	for _, id := range sortedKeys(intervals) {
+		name := names[id]
+		if name == "" {
+			name = fmt.Sprintf("Spell %d", id)
+		}
+		// One player's own buffs never overlap themselves, so the merge only
+		// caps the unclosed ones.
+		for _, iv := range mergeBuffIntervals(intervals[id], defaultRaidCooldownLength) {
+			windows = append(windows, CooldownWindow{
+				AbilityID: id, Name: name, Start: relative(iv.start), End: relative(iv.end),
+			})
+		}
 	}
 	slices.SortStableFunc(windows, func(a, b CooldownWindow) int {
 		return cmp.Or(cmp.Compare(a.Start, b.Start), cmp.Compare(a.AbilityID, b.AbilityID))
@@ -841,6 +904,7 @@ func auraWindows(events []event, fight Fight) []auraWindow {
 		return time.Duration(t-fight.StartTime) * time.Millisecond
 	}
 	open := map[int]time.Duration{}
+	seen := map[int]bool{}
 	var windows []auraWindow
 	for _, e := range events {
 		name, tracked := procAuras[e.AbilityGameID]
@@ -853,11 +917,19 @@ func auraWindows(events []event, fight Fight) []auraWindow {
 				open[e.AbilityGameID] = relative(e.Timestamp)
 			}
 		case "removebuff":
-			if start, up := open[e.AbilityGameID]; up {
-				delete(open, e.AbilityGameID)
-				windows = append(windows, auraWindow{name, start, relative(e.Timestamp)})
+			start, up := open[e.AbilityGameID]
+			switch {
+			case up:
+			case !seen[e.AbilityGameID]:
+				start = 0 // up before the pull; the applybuff is outside the query
+			default:
+				seen[e.AbilityGameID] = true
+				continue
 			}
+			delete(open, e.AbilityGameID)
+			windows = append(windows, auraWindow{name, start, relative(e.Timestamp)})
 		}
+		seen[e.AbilityGameID] = true
 	}
 	for _, id := range sortedKeys(open) {
 		windows = append(windows, auraWindow{procAuras[id], open[id], fight.Duration()})
@@ -1308,82 +1380,78 @@ func medianCastTime(casts []Cast, abilityID int) time.Duration {
 	return seen[len(seen)/2]
 }
 
-// lustWindows turns buff apply/remove events into merged raid-wide windows.
-// Buffs that landed on only a handful of players are discarded: the same spell
-// IDs are sometimes reused for personal effects.
+// lustWindows finds the raid-wide haste buffs — Bloodlust, Heroism, Time Warp
+// and their kin — and turns each use into one window. Only an ability that
+// landed on at least raidLustMinTargets players counts: some of the ids also
+// exist as personal effects.
 func lustWindows(events []event, fight Fight, names, actors map[int]string) []RaidWindow {
 	events = sortedByTime(events)
 
 	type key struct{ ability, target int }
-	type interval struct{ start, end float64 }
-
-	opened := map[key]float64{}
-	intervals := map[int][]interval{}
+	type open struct {
+		start  float64
+		source int
+	}
+	opened := map[key]open{}
+	seen := map[key]bool{}
+	intervals := map[int][]buffInterval{}
 	targets := map[int]map[int]bool{}
-	sources := map[int]int{}
 
 	for _, e := range events {
 		k := key{e.AbilityGameID, e.TargetID}
+		if targets[e.AbilityGameID] == nil {
+			targets[e.AbilityGameID] = map[int]bool{}
+		}
+		targets[e.AbilityGameID][e.TargetID] = true
 		switch e.Type {
 		case "applybuff", "refreshbuff":
-			if _, open := opened[k]; !open {
-				opened[k] = e.Timestamp
-			}
-			if targets[e.AbilityGameID] == nil {
-				targets[e.AbilityGameID] = map[int]bool{}
-			}
-			targets[e.AbilityGameID][e.TargetID] = true
-			if _, ok := sources[e.AbilityGameID]; !ok && e.SourceID != 0 {
-				sources[e.AbilityGameID] = e.SourceID
+			if _, up := opened[k]; !up {
+				opened[k] = open{e.Timestamp, e.SourceID}
 			}
 		case "removebuff":
-			if start, open := opened[k]; open {
-				delete(opened, k)
-				intervals[e.AbilityGameID] = append(intervals[e.AbilityGameID], interval{start, e.Timestamp})
+			o, up := opened[k]
+			switch {
+			case up:
+			case !seen[k]:
+				o = open{fight.StartTime, e.SourceID} // up before the pull; see raidCooldownWindows
+			default:
+				seen[k] = true
+				continue
 			}
+			delete(opened, k)
+			intervals[e.AbilityGameID] = append(intervals[e.AbilityGameID],
+				buffInterval{start: o.start, end: e.Timestamp, closed: true, source: o.source, targets: map[int]bool{e.TargetID: true}})
 		}
+		seen[k] = true
 	}
-	// A buff still up when the fight ended never gets a removebuff.
-	for k, start := range opened {
-		intervals[k.ability] = append(intervals[k.ability], interval{start, fight.EndTime})
+	// A buff still up when the fight ended never gets a removebuff — and
+	// neither does one on a player who died under it, which on a wipe is
+	// most of the raid. Those are capped like any other unclosed buff.
+	for k, o := range opened {
+		intervals[k.ability] = append(intervals[k.ability],
+			buffInterval{start: o.start, end: fight.EndTime, source: o.source, targets: map[int]bool{k.target: true}})
 	}
 
 	var windows []RaidWindow
 	for _, abilityID := range sortedKeys(intervals) {
-		list := intervals[abilityID]
 		if len(targets[abilityID]) < raidLustMinTargets {
 			continue
 		}
-		slices.SortStableFunc(list, func(a, b interval) int { return cmp.Compare(a.start, b.start) })
-
-		// Everyone receives the buff at once, so overlapping per-player
-		// intervals collapse into one window per cast.
-		merged := []interval{list[0]}
-		for _, iv := range list[1:] {
-			last := &merged[len(merged)-1]
-			if iv.start <= last.end {
-				if iv.end > last.end {
-					last.end = iv.end
-				}
-				continue
-			}
-			merged = append(merged, iv)
-		}
-
 		name := names[abilityID]
 		if name == "" {
 			name = fmt.Sprintf("Spell %d", abilityID)
 		}
-		for _, iv := range merged {
-			w := RaidWindow{
+		// Everyone receives the buff at once, so overlapping per-player
+		// intervals collapse into one window per cast.
+		for _, iv := range mergeBuffIntervals(intervals[abilityID], defaultLustLength) {
+			windows = append(windows, RaidWindow{
 				AbilityID: abilityID,
 				Name:      name,
-				Source:    actors[sources[abilityID]],
+				Source:    actors[iv.source],
 				Start:     time.Duration(iv.start-fight.StartTime) * time.Millisecond,
 				End:       time.Duration(iv.end-fight.StartTime) * time.Millisecond,
-				Targets:   len(targets[abilityID]),
-			}
-			windows = append(windows, w)
+				Targets:   len(iv.targets),
+			})
 		}
 	}
 	sortRaidWindows(windows)
