@@ -581,6 +581,11 @@ type Timeline struct {
 	// when it answered partially. Empty when everything arrived. The lanes
 	// built from a missing field are simply empty, and a page must say why.
 	Incomplete []string
+	// Truncated names the event streams that had more than one page and
+	// were cut at it — every stream but casts is deliberately not paged, and
+	// casts stops at its caps. A lane built from a cut stream ends early,
+	// and a page must say so rather than show the boss falling silent.
+	Truncated []string
 
 	Casts     []Cast
 	Lusts     []RaidWindow
@@ -954,8 +959,10 @@ func classifyProcs(casts []Cast, windows []auraWindow) {
 // are left anonymous, because nothing takes those.
 type timelineReport struct {
 	// incomplete names the fields the API reported errors on, when the
-	// document arrived partially. Not a JSON field; set by fetchTimeline.
+	// document arrived partially; truncated names the streams that had more
+	// pages than were fetched. Not JSON fields; set by fetchTimeline.
 	incomplete []string
+	truncated  []string
 
 	Casts     eventPage        `json:"casts"`
 	Lust      eventPage        `json:"lust"`
@@ -991,6 +998,21 @@ type masterData struct {
 	Abilities []ability `json:"abilities"`
 	Actors    []Actor   `json:"actors"`
 	NPCs      []Actor   `json:"npcs"`
+}
+
+// bossIDs is the game ids of the encounter's own NPCs, in order, for the
+// boss cast filter. The environment is typed as a boss and carries game id
+// 0; buildBossCasts drops it by its negative actor id, so it is dropped here
+// too, or the filter would let its hundred casts back in.
+func (m masterData) bossIDs() []int {
+	var ids []int
+	for _, n := range m.NPCs {
+		if n.SubType == bossSubType && n.ID > 0 && n.GameID > 0 {
+			ids = append(ids, n.GameID)
+		}
+	}
+	slices.Sort(ids)
+	return ids
 }
 
 // masterDataResponse is the envelope the master data query returns.
@@ -1029,29 +1051,42 @@ type timelineResponse struct {
 }
 
 // castPageResponse is the envelope one further page of cast events returns.
-// Its Report is a value rather than a pointer: a null report decodes to the
-// zero value, the cursor comes back nil, and the paging loop stops. That is a
-// silent truncation where the same response on the first page is an error — an
-// asymmetry left exactly as it was, and owned by the error taxonomy issue.
+// Its Report is a pointer so that a null report on page two is an error
+// naming the page, not a zero value whose nil cursor ends the loop with the
+// rest of the casts silently dropped.
 type castPageResponse struct {
 	ReportData struct {
-		Report struct {
+		Report *struct {
 			Casts eventPage `json:"casts"`
 		} `json:"report"`
 	} `json:"reportData"`
 }
+
+// The bounds on following cast pages. No fight in a real report comes within
+// an order of magnitude of one page (the busiest stream on a 20-minute kill
+// held 653 events against a 10,000 cut), so these are guards against a
+// cursor that never advances or a stream that never ends, not capacity.
+const (
+	maxCastPages  = 10
+	maxCastEvents = 50000
+)
 
 // timelineVars is castVars plus the four filters, each present only when its
 // set is not empty. Each filter is its own named variable, so the document
 // says which lane gets which — a positional Sprintf, which this replaced,
 // mis-filled two lanes with each other's data if two arguments were swapped,
 // and said nothing.
-func timelineVars(code string, fight Fight, sourceID int) map[string]any {
+func timelineVars(code string, fight Fight, sourceID int, bosses []int) map[string]any {
 	vars := castVars(code, fight, sourceID, fight.StartTime)
 	filterVariable(vars, "lust", lustAbilityIDs)
 	filterVariable(vars, "procs", procAuraIDs())
 	filterVariable(vars, "cooldowns", cooldownIDs())
 	filterVariable(vars, "raidCDs", raidCooldownIDs())
+	// The boss lane keeps only the encounter's own NPCs, so the query asks
+	// for only those: half of an enemy cast stream is adds.
+	if expr, ok := sourceFilter(bosses); ok {
+		vars["bosses"] = expr
+	}
 	return vars
 }
 
@@ -1086,7 +1121,7 @@ func (c *Client) fetchTimeline(ctx context.Context, code string, fight Fight, so
 	}
 
 	var data timelineResponse
-	err = c.Query(ctx, timelineOp, timelineVars(code, fight, sourceID), &data)
+	err = c.Query(ctx, timelineOp, timelineVars(code, fight, sourceID, master.bossIDs()), &data)
 	report := data.ReportData.Report
 	// The document asks for eleven independent fields, and GraphQL may
 	// answer with ten of them and an error on the eleventh. That is a
@@ -1109,10 +1144,32 @@ func (c *Client) fetchTimeline(ctx context.Context, code string, fight Fight, so
 	report.incomplete = incomplete
 	report.MasterData = master
 
+	// Every stream but casts is one page by design; a cursor on one of them
+	// is a stream that was cut, and the page says so rather than hiding it.
+	for _, stream := range []struct {
+		name string
+		page eventPage
+	}{
+		{"lust", report.Lust}, {"procs", report.Procs}, {"cooldowns", report.Cooldowns},
+		{"raidCDs", report.RaidCDs}, {"bossCasts", report.BossCasts},
+	} {
+		if stream.page.NextPageTimestamp != nil {
+			report.truncated = append(report.truncated, stream.name)
+		}
+	}
+
 	casts := report.Casts.Data
-	// The events API pages; a long fight can exceed one page of casts.
-	for next := report.Casts.NextPageTimestamp; next != nil; {
-		page, err := c.fetchCastPage(ctx, code, fight, sourceID, *next)
+	// The events API pages; a long fight can exceed one page of casts. The
+	// loop is bounded three ways: a cursor that does not advance ends it, and
+	// so do the page and event caps, each leaving the stream marked as cut.
+	previous := fight.StartTime
+	for pages, next := 0, report.Casts.NextPageTimestamp; next != nil; pages++ {
+		if *next <= previous || pages >= maxCastPages || len(casts) >= maxCastEvents {
+			report.truncated = append(report.truncated, "casts")
+			break
+		}
+		previous = *next
+		page, err := c.fetchCastPage(ctx, code, fight, sourceID, *next, pages+2)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -1123,11 +1180,14 @@ func (c *Client) fetchTimeline(ctx context.Context, code string, fight Fight, so
 }
 
 // fetchCastPage fetches one further page of cast events, beginning at the
-// cursor the previous page returned.
-func (c *Client) fetchCastPage(ctx context.Context, code string, fight Fight, sourceID int, start float64) (eventPage, error) {
+// cursor the previous page returned. n is the page number, for the error.
+func (c *Client) fetchCastPage(ctx context.Context, code string, fight Fight, sourceID int, start float64, n int) (eventPage, error) {
 	var page castPageResponse
 	if err := c.Query(ctx, castPageOp, castVars(code, fight, sourceID, start), &page); err != nil {
 		return eventPage{}, err
+	}
+	if page.ReportData.Report == nil {
+		return eventPage{}, fmt.Errorf("%w: page %d of casts carried no report", ErrUpstream, n)
 	}
 	return page.ReportData.Report.Casts, nil
 }
@@ -1146,7 +1206,7 @@ func buildTimeline(report *timelineReport, casts []event, fight Fight) *Timeline
 		actors[a.ID] = a.Name
 	}
 
-	timeline := &Timeline{Duration: fight.Duration(), Incomplete: report.incomplete}
+	timeline := &Timeline{Duration: fight.Duration(), Incomplete: report.incomplete, Truncated: report.truncated}
 	timeline.Lusts = lustWindows(report.Lust.Data, fight, names, actors)
 	timeline.Casts = buildCasts(casts, fight, names, timeline.Lusts)
 	classifyProcs(timeline.Casts, auraWindows(report.Procs.Data, fight))

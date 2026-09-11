@@ -339,3 +339,19 @@ func TestGoldenRecordedKillLanes(t *testing.T) {
 		t.Errorf("Stampeding Roar credited to %d casters, want 3", n)
 	}
 }
+
+// The boss filter is by game id, and leaves the environment out: it is typed
+// as a boss with game id 0 and a negative actor id, and buildBossCasts drops
+// it — so the query must not let its casts back in.
+func TestBossFilterUsesGameIDsAndSkipsTheEnvironment(t *testing.T) {
+	m := masterData{NPCs: []Actor{
+		{ID: -1, Name: "Environment", SubType: "Boss", GameID: 0},
+		{ID: 97, Name: "Hex Lord Malacrass", SubType: "Boss", GameID: 259854},
+		{ID: 28, Name: "Zul'jan", SubType: "Boss", GameID: 257911},
+		{ID: 300, Name: "Venomous Add", SubType: "NPC", GameID: 111111},
+	}}
+	ids := m.bossIDs()
+	if len(ids) != 2 || ids[0] != 257911 || ids[1] != 259854 {
+		t.Errorf("bossIDs() = %v, want the two bosses' game ids in order", ids)
+	}
+}

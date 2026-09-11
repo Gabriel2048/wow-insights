@@ -54,7 +54,7 @@ type Server struct {
 // shipped binary hands in JSON shaped for Cloud Logging, the dev binaries
 // hand in text.
 func New(wcl logsClient, tpl *template.Template, logger *slog.Logger) *Server {
-	return &Server{wcl: counted{wcl}, tpl: tpl, log: logger, handlerDeadline: handlerDeadline}
+	return &Server{wcl: wcl, tpl: tpl, log: logger, handlerDeadline: handlerDeadline}
 }
 
 // Routes returns the mux the server listens on. It returns the concrete type
@@ -175,6 +175,10 @@ func (s *Server) fight(w http.ResponseWriter, r *http.Request) {
 				if len(timeline.Incomplete) > 0 {
 					s.logger(r).Warn("timeline arrived incomplete", "missing", timeline.Incomplete)
 					data.Notices = append(data.Notices, "Part of the timeline was unavailable from Warcraft Logs: "+strings.Join(timeline.Incomplete, ", ")+".")
+				}
+				if len(timeline.Truncated) > 0 {
+					s.logger(r).Warn("timeline stream cut short", "streams", timeline.Truncated)
+					data.Notices = append(data.Notices, "This pull had more events than one page holds; the following lanes end early: "+strings.Join(timeline.Truncated, ", ")+".")
 				}
 			}
 		}

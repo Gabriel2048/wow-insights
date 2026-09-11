@@ -152,7 +152,7 @@ sequenceDiagram
         else serve-recorded
             T->>F: read timeline-{id}-{source}-{start}.json
         end
-        loop casts.nextPageTimestamp != null
+        loop casts.nextPageTimestamp != null, bounded
             C->>T: CastPage {…, start: cursor} — same wire
         end
         C->>C: buildTimeline → layout()
@@ -165,7 +165,7 @@ sequenceDiagram
   A failure that stops the page is classified once into a status and a fixed sentence
   (`docs/decisions/2026-09-11-error-taxonomy.md`); upstream text never reaches a page.
 - Every request gets an id (`X-Request-Id` on the response) and one access line keyed by
-  the route pattern, with status, duration and the number of upstream calls. A panic is a
+  the route pattern, with status, duration and where the points budget stands. A panic is a
   500 and one ERROR line with that id; a client that went away is INFO, not an error.
 - Every request has a one-minute deadline, the first end-to-end bound; the client's own
   30s timeout is per call and the cast paging multiplies it. Every response carries

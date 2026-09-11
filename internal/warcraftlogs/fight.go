@@ -15,6 +15,7 @@ type Actor struct {
 	Type    string `json:"type"`    // "Player"
 	SubType string `json:"subType"` // class, e.g. "Priest"
 	Server  string `json:"server"`
+	GameID  int    `json:"gameID"` // for an NPC, the creature's id in the game; what a source filter matches on
 }
 
 // PlayerStats is a single player's contribution to one fight.
