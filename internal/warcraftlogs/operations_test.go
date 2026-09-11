@@ -43,7 +43,7 @@ func TestEachFilterFeedsItsOwnLane(t *testing.T) {
 			t.Errorf("the %s lane does not filter on $%s:\n%s", lane, lane, block[1])
 		}
 	}
-	vars := timelineVars("ExampleReport123", Fight{ID: 12, StartTime: 1000, EndTime: 301000}, 7, []int{257911, 259854})
+	vars := timelineVars("ExampleReport123", Fight{ID: 12, StartTime: 1000, EndTime: 301000}, 7, []int{257911, 259854}, fire)
 	for _, lane := range []string{"lust", "procs", "cooldowns", "raidCDs"} {
 		expr, _ := vars[lane].(string)
 		if !strings.HasPrefix(expr, "ability.id in (") {
@@ -60,7 +60,7 @@ func TestEachFilterFeedsItsOwnLane(t *testing.T) {
 	if block == nil || !strings.Contains(block[1], "filterExpression: $bosses") {
 		t.Error("the bossCasts lane does not filter on $bosses")
 	}
-	if _, present := timelineVars("x", Fight{}, 7, nil)["bosses"]; present {
+	if _, present := timelineVars("x", Fight{}, 7, nil, fire)["bosses"]; present {
 		t.Error("with no boss ids known the filter must be omitted, not sent empty")
 	}
 }

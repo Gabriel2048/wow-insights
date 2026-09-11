@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"wowinsight/internal/knowledge"
 	"wowinsight/internal/warcraftlogs"
 )
 
@@ -122,7 +123,7 @@ func TestWriteJSONFailsCleanly(t *testing.T) {
 func TestAFailedTimelineIsSaidOnThePage(t *testing.T) {
 	wcl := fakeWCL{
 		fightDetail: func(context.Context, string, int) (*warcraftlogs.FightDetail, error) { return fightDetail(), nil },
-		timeline: func(context.Context, string, warcraftlogs.Fight, int) (*warcraftlogs.Timeline, error) {
+		timeline: func(context.Context, string, warcraftlogs.Fight, int, knowledge.Knowledge) (*warcraftlogs.Timeline, error) {
 			return nil, &warcraftlogs.APIError{Status: 502, Body: upstreamSecret}
 		},
 	}
@@ -144,7 +145,7 @@ func TestAFailedTimelineIsSaidOnThePage(t *testing.T) {
 func TestAPartialTimelineNamesWhatIsMissing(t *testing.T) {
 	wcl := fakeWCL{
 		fightDetail: func(context.Context, string, int) (*warcraftlogs.FightDetail, error) { return fightDetail(), nil },
-		timeline: func(context.Context, string, warcraftlogs.Fight, int) (*warcraftlogs.Timeline, error) {
+		timeline: func(context.Context, string, warcraftlogs.Fight, int, knowledge.Knowledge) (*warcraftlogs.Timeline, error) {
 			tl := fullTimeline()
 			tl.Incomplete = []string{"phases", "bossCasts"}
 			return tl, nil
@@ -215,7 +216,7 @@ func TestBudgetGuardIsA503WithTheMinutes(t *testing.T) {
 func TestATruncatedStreamIsSaidOnThePage(t *testing.T) {
 	wcl := fakeWCL{
 		fightDetail: func(context.Context, string, int) (*warcraftlogs.FightDetail, error) { return fightDetail(), nil },
-		timeline: func(context.Context, string, warcraftlogs.Fight, int) (*warcraftlogs.Timeline, error) {
+		timeline: func(context.Context, string, warcraftlogs.Fight, int, knowledge.Knowledge) (*warcraftlogs.Timeline, error) {
 			tl := fullTimeline()
 			tl.Truncated = []string{"bossCasts"}
 			return tl, nil

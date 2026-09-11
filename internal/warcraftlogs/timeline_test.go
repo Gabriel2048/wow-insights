@@ -89,7 +89,7 @@ func TestBuildCastsGapsAndLustOverlap(t *testing.T) {
 		{Timestamp: 12000, AbilityGameID: 2, Type: "cast"}, // 11s, 6s gap, in lust
 		{Timestamp: 13000, AbilityGameID: 3, Type: "cast"}, // 12s, 1s gap, in lust
 	}
-	casts := buildCasts(events, fight, map[int]string{1: "A", 2: "B", 3: "C"}, lusts)
+	casts := buildCasts(events, fight, map[int]string{1: "A", 2: "B", 3: "C"}, lusts, fire)
 	if len(casts) != 3 {
 		t.Fatalf("got %d casts, want 3", len(casts))
 	}
@@ -115,7 +115,7 @@ func TestBuildCastsGapsAndLustOverlap(t *testing.T) {
 }
 
 func TestUnknownAbilityFallsBackToID(t *testing.T) {
-	casts := buildCasts([]event{{Timestamp: 2000, AbilityGameID: 999, Type: "cast"}}, fightAt(10), nil, nil)
+	casts := buildCasts([]event{{Timestamp: 2000, AbilityGameID: 999, Type: "cast"}}, fightAt(10), nil, nil, fire)
 	if casts[0].Name != "Spell 999" {
 		t.Errorf("Name = %q, want %q", casts[0].Name, "Spell 999")
 	}
@@ -263,7 +263,7 @@ func TestBuildCastsPairsBegincastWithCast(t *testing.T) {
 		11366: "Pyroblast", 108853: "Fire Blast", 2948: "Scorch",
 		212653: "Shimmer", 235313: "Blazing Barrier", 342245: "Alter Time",
 	}
-	casts := buildCasts(fireMageEvents(), fightAt(100), names, nil)
+	casts := buildCasts(fireMageEvents(), fightAt(100), names, nil, fire)
 
 	// 15 events collapse to 11 casts.
 	if len(casts) != 11 {
@@ -323,7 +323,7 @@ func TestBuildCastsPairsBegincastWithCast(t *testing.T) {
 
 func TestBuildCastsGapExcludesCastTimeAndOverlap(t *testing.T) {
 	names := map[int]string{11366: "Pyroblast", 108853: "Fire Blast", 342245: "Alter Time"}
-	casts := buildCasts(fireMageEvents(), fightAt(100), names, nil)
+	casts := buildCasts(fireMageEvents(), fightAt(100), names, nil, fire)
 
 	byStart := map[string]Cast{}
 	for _, c := range casts {
@@ -398,7 +398,7 @@ func TestPrecastDetection(t *testing.T) {
 		{Timestamp: 2486, Type: "begincast", AbilityGameID: pyroblast},
 		{Timestamp: 3986, Type: "cast", AbilityGameID: pyroblast},
 	}
-	casts := buildCasts(events, fightAt(100), names, nil)
+	casts := buildCasts(events, fightAt(100), names, nil, fire)
 	if len(casts) != 3 {
 		t.Fatalf("got %d casts, want 3", len(casts))
 	}
@@ -430,7 +430,7 @@ func TestPrecastOnlyNearThePull(t *testing.T) {
 		{Timestamp: 2000, Type: "cast", AbilityGameID: scorch},
 		{Timestamp: 61000, Type: "cast", AbilityGameID: scorch},
 	}
-	casts := buildCasts(events, fightAt(100), map[int]string{scorch: "Scorch"}, nil)
+	casts := buildCasts(events, fightAt(100), map[int]string{scorch: "Scorch"}, nil, fire)
 	if casts[1].Precast {
 		t.Errorf("an unpaired cast %v into the fight must not be a precast", casts[1].Offset)
 	}
@@ -440,7 +440,7 @@ func TestDuringCastMarksWovenCasts(t *testing.T) {
 	names := map[int]string{
 		11366: "Pyroblast", 108853: "Fire Blast", 212653: "Shimmer", 2948: "Scorch",
 	}
-	casts := buildCasts(fireMageEvents(), fightAt(100), names, nil)
+	casts := buildCasts(fireMageEvents(), fightAt(100), names, nil, fire)
 
 	woven := map[string]int{}
 	for _, c := range casts {
@@ -474,7 +474,7 @@ func TestDuringCastBoundariesAndNesting(t *testing.T) {
 		{Timestamp: 3000, Type: "cast", AbilityGameID: hard},      // the Fireball lands
 		{Timestamp: 3000, Type: "cast", AbilityGameID: instant},   // exactly at the end
 	}
-	casts := buildCasts(events, fightAt(100), names, nil)
+	casts := buildCasts(events, fightAt(100), names, nil, fire)
 
 	var woven, notWoven int
 	for _, c := range casts {
@@ -507,7 +507,7 @@ func TestRepeatsPreviousSkipsOnlyTheCollidingLabel(t *testing.T) {
 		{Timestamp: 55465, Type: "begincast", AbilityGameID: pyro},
 		{Timestamp: 55466, Type: "cast", AbilityGameID: pyro},
 	}
-	casts := buildCasts(events, Fight{ID: 1, StartTime: 1000, EndTime: 101000}, names, nil)
+	casts := buildCasts(events, Fight{ID: 1, StartTime: 1000, EndTime: 101000}, names, nil, fire)
 
 	var repeats []Cast
 	for _, c := range casts {
@@ -532,7 +532,7 @@ func TestRepeatsPreviousSkipsOnlyTheCollidingLabel(t *testing.T) {
 	// A different spell following the bar keeps its label.
 	events[3] = event{Timestamp: 55465, Type: "cast", AbilityGameID: pyro}
 	events = append(events[:4], event{Timestamp: 55600, Type: "cast", AbilityGameID: scorch})
-	for _, c := range buildCasts(events, Fight{ID: 1, StartTime: 1000, EndTime: 101000}, names, nil) {
+	for _, c := range buildCasts(events, Fight{ID: 1, StartTime: 1000, EndTime: 101000}, names, nil, fire) {
 		if c.Name == "Scorch" && c.RepeatsPrevious {
 			t.Errorf("a different spell must keep its label: %+v", c)
 		}
@@ -550,7 +550,7 @@ func TestClassifyProcsPrefersTheExplainingAura(t *testing.T) {
 		{AbilityID: pyroblastID, Name: "Pyroblast", Offset: 5 * time.Second, CastTime: 0},
 		{AbilityID: pyroblastID, Name: "Pyroblast", Offset: 10 * time.Second, CastTime: 1900 * time.Millisecond},
 	}
-	classifyProcs(casts, windows)
+	classifyProcs(casts, windows, fire)
 	if casts[0].Proc != "Hot Streak!" {
 		t.Errorf("instant Pyroblast Proc = %q, want Hot Streak!", casts[0].Proc)
 	}
@@ -571,7 +571,7 @@ func TestClassifyProcsFlagsUnjustifiedHardCast(t *testing.T) {
 		{AbilityID: pyroblastID, Name: "Pyroblast", Offset: 14 * time.Second, Precast: true},
 		{AbilityID: pyroblastID, Name: "Pyroblast", Offset: 16 * time.Second, Cancelled: true, CastTime: 0},
 	}
-	classifyProcs(casts, nil)
+	classifyProcs(casts, nil, fire)
 	if !casts[0].ProcMissing {
 		t.Errorf("a hard cast with no aura up must be flagged")
 	}
@@ -597,7 +597,7 @@ func TestAuraWindowsPairsAndClosesAtFightEnd(t *testing.T) {
 	}
 	// One closed Hot Streak, plus a Pyroclasm and a second Hot Streak that are
 	// both still up when the fight ends.
-	windows := auraWindows(events, fight)
+	windows := auraWindows(events, fight, fire)
 	if len(windows) != 3 {
 		t.Fatalf("got %d windows, want 3: %+v", len(windows), windows)
 	}
@@ -637,7 +637,7 @@ func TestClassifyProcsUnderHyperthermia(t *testing.T) {
 		{name: "Pyroclasm", start: 0, end: 30 * time.Second},
 	}
 	casts := []Cast{{AbilityID: pyroblastID, Name: "Pyroblast", Offset: 5 * time.Second}}
-	classifyProcs(casts, full)
+	classifyProcs(casts, full, fire)
 	if casts[0].Proc != "Hyperthermia + Hot Streak!" {
 		t.Errorf("Proc = %q, want %q", casts[0].Proc, "Hyperthermia + Hot Streak!")
 	}
@@ -648,14 +648,14 @@ func TestClassifyProcsUnderHyperthermia(t *testing.T) {
 		{name: "Pyroclasm", start: 0, end: 30 * time.Second},
 	}
 	casts = []Cast{{AbilityID: pyroblastID, Name: "Pyroblast", Offset: 5 * time.Second}}
-	classifyProcs(casts, onlyHyper)
+	classifyProcs(casts, onlyHyper, fire)
 	if casts[0].Proc != "Hyperthermia" {
 		t.Errorf("Proc = %q, want Hyperthermia (Pyroclasm never explains an instant)", casts[0].Proc)
 	}
 
 	// A hard cast is judged on Pyroclasm alone.
 	casts = []Cast{{AbilityID: pyroblastID, Name: "Pyroblast", Offset: 5 * time.Second, CastTime: 1900 * time.Millisecond}}
-	classifyProcs(casts, full)
+	classifyProcs(casts, full, fire)
 	if casts[0].Proc != "Pyroclasm" {
 		t.Errorf("hard cast Proc = %q, want Pyroclasm", casts[0].Proc)
 	}
@@ -674,7 +674,7 @@ func TestClassifyProcsPyroclasmExpiringMidCast(t *testing.T) {
 
 	// Up at the start with 1s left, gone before the 1.9s cast completes.
 	casts := newCast(10*time.Second, 1900*time.Millisecond)
-	classifyProcs(casts, []auraWindow{{name: "Pyroclasm", start: 5 * time.Second, end: 11 * time.Second}})
+	classifyProcs(casts, []auraWindow{{name: "Pyroclasm", start: 5 * time.Second, end: 11 * time.Second}}, fire)
 	if casts[0].Proc != "" {
 		t.Errorf("Proc = %q, want empty: the buff expired before impact", casts[0].Proc)
 	}
@@ -690,14 +690,14 @@ func TestClassifyProcsPyroclasmExpiringMidCast(t *testing.T) {
 
 	// Surviving to impact still counts, even if it ends right afterwards.
 	casts = newCast(10*time.Second, 1900*time.Millisecond)
-	classifyProcs(casts, []auraWindow{{name: "Pyroclasm", start: 5 * time.Second, end: 12 * time.Second}})
+	classifyProcs(casts, []auraWindow{{name: "Pyroclasm", start: 5 * time.Second, end: 12 * time.Second}}, fire)
 	if casts[0].Proc != "Pyroclasm" || casts[0].ProcExpired != "" {
 		t.Errorf("a buff lasting to impact should count: %+v", casts[0])
 	}
 
 	// Never up at all is still "no proc", not "expired".
 	casts = newCast(10*time.Second, 1900*time.Millisecond)
-	classifyProcs(casts, nil)
+	classifyProcs(casts, nil, fire)
 	if !casts[0].ProcMissing || casts[0].ProcExpired != "" {
 		t.Errorf("want ProcMissing with no expiry, got %+v", casts[0])
 	}
@@ -711,7 +711,7 @@ func TestClassifyProcsIgnoresAuraStartingAfterTheCast(t *testing.T) {
 		Offset: 10 * time.Second, End: 10 * time.Second}}
 	classifyProcs(casts, []auraWindow{
 		{name: "Hyperthermia", start: 10*time.Second + 87*time.Millisecond, end: 20 * time.Second},
-	})
+	}, fire)
 	if casts[0].Proc != "" {
 		t.Errorf("Proc = %q, want empty: the aura began after the cast", casts[0].Proc)
 	}
@@ -722,7 +722,7 @@ func TestClassifyProcsIgnoresAuraStartingAfterTheCast(t *testing.T) {
 		Offset: 10 * time.Second, End: 10 * time.Second}}
 	classifyProcs(casts, []auraWindow{
 		{name: "Hot Streak!", start: 8 * time.Second, end: 10*time.Second + 20*time.Millisecond},
-	})
+	}, fire)
 	if casts[0].Proc != "Hot Streak!" {
 		t.Errorf("Proc = %q, want Hot Streak!", casts[0].Proc)
 	}
@@ -744,7 +744,7 @@ func TestConsecutiveHardCastsKeepTheirLabels(t *testing.T) {
 		{Timestamp: 32362, Type: "begincast", AbilityGameID: pyroblast},
 		{Timestamp: 32363, Type: "cast", AbilityGameID: pyroblast},
 	}
-	casts := buildCasts(events, Fight{ID: 1, StartTime: 1000, EndTime: 101000}, names, nil)
+	casts := buildCasts(events, Fight{ID: 1, StartTime: 1000, EndTime: 101000}, names, nil, fire)
 
 	var fireballs []Cast
 	for _, c := range casts {
@@ -775,7 +775,7 @@ func TestInstantRepeatOnBarEndIsStillSuppressed(t *testing.T) {
 		{Timestamp: 55466, Type: "cast", AbilityGameID: pyroblast},
 	}
 	casts := buildCasts(events, Fight{ID: 1, StartTime: 1000, EndTime: 101000},
-		map[int]string{pyroblast: "Pyroblast"}, nil)
+		map[int]string{pyroblast: "Pyroblast"}, nil, fire)
 	if len(casts) != 2 {
 		t.Fatalf("got %d casts, want 2", len(casts))
 	}
@@ -818,7 +818,7 @@ func TestCooldownsAreMarked(t *testing.T) {
 		{Timestamp: 4000, Type: "cast", AbilityGameID: blazingBarrier},
 		{Timestamp: 5000, Type: "cast", AbilityGameID: iceCold},
 	}
-	casts := buildCasts(events, fightAt(100), names, nil)
+	casts := buildCasts(events, fightAt(100), names, nil, fire)
 	marked := map[string]bool{}
 	for _, c := range casts {
 		marked[c.Name] = c.Cooldown

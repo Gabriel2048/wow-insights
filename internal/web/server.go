@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"wowinsight/internal/knowledge"
 	"wowinsight/internal/view"
 	"wowinsight/internal/warcraftlogs"
 )
@@ -23,7 +24,7 @@ import (
 type logsClient interface {
 	Report(ctx context.Context, code string) (*warcraftlogs.Report, error)
 	FightDetail(ctx context.Context, code string, fightID int) (*warcraftlogs.FightDetail, error)
-	Timeline(ctx context.Context, code string, fight warcraftlogs.Fight, sourceID int) (*warcraftlogs.Timeline, error)
+	Timeline(ctx context.Context, code string, fight warcraftlogs.Fight, sourceID int, know knowledge.Knowledge) (*warcraftlogs.Timeline, error)
 }
 
 // Server holds the dependencies shared by the HTTP handlers.
@@ -149,7 +150,17 @@ func (s *Server) fight(w http.ResponseWriter, r *http.Request) {
 			data.SelectedID = id
 			data.Player = &player
 
-			timeline, err := s.wcl.Timeline(r.Context(), code, detail.Fight, id)
+			// An unauthored spec still gets its timeline — casts, pauses,
+			// phases, boss casts, lust and raid cooldowns are class-agnostic
+			// — with the zero tables, which ask the API for no procs or
+			// cooldowns. The page says so, or an empty cooldown lane would
+			// read as a flawless rotation.
+			know, known := knowledge.Lookup(player.SpecID())
+			if !known {
+				s.logger(r).Info("no knowledge for spec", "class", player.Class, "spec", player.Spec)
+				data.Notices = append(data.Notices, "No rotation knowledge for "+player.Title()+" yet: procs and personal cooldowns are not shown.")
+			}
+			timeline, err := s.wcl.Timeline(r.Context(), code, detail.Fight, id, know)
 			if err != nil {
 				// The stats above are still worth showing without it, and the
 				// page renders 200 — a warning, not an error, and a sentence

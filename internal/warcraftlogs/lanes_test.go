@@ -205,7 +205,7 @@ func TestPersonalCooldownWithAMissingRemoveIsCapped(t *testing.T) {
 	events := []event{
 		{Timestamp: 10000, Type: "applybuff", AbilityGameID: combustion, TargetID: 21},
 	}
-	windows := cooldownWindows(events, Fight{StartTime: 0, EndTime: 100000}, names)
+	windows := cooldownWindows(events, Fight{StartTime: 0, EndTime: 100000}, names, fire)
 	if len(windows) != 1 || windows[0].Duration() != 10*time.Second {
 		t.Errorf("got %+v, want one window capped at the 10s fallback", windows)
 	}
@@ -216,7 +216,7 @@ func TestPersonalCooldownWithAMissingRemoveIsCapped(t *testing.T) {
 		{Timestamp: 22000, Type: "removebuff", AbilityGameID: combustion, TargetID: 21},
 		{Timestamp: 60000, Type: "applybuff", AbilityGameID: combustion, TargetID: 21},
 	}
-	windows = cooldownWindows(learned, Fight{StartTime: 0, EndTime: 100000}, names)
+	windows = cooldownWindows(learned, Fight{StartTime: 0, EndTime: 100000}, names, fire)
 	if len(windows) != 2 || windows[1].Duration() != 12*time.Second {
 		t.Errorf("got %+v, want the second window capped at 12s like the first", windows)
 	}
@@ -242,14 +242,14 @@ func TestABuffUpBeforeThePullIsOpenedAtTheStart(t *testing.T) {
 	cd := cooldownWindows([]event{
 		{Timestamp: 9000, Type: "removebuff", AbilityGameID: barrier, TargetID: 21},
 		{Timestamp: 30000, Type: "removebuff", AbilityGameID: barrier, TargetID: 21}, // duplicate: ignored
-	}, fight, map[int]string{barrier: "Blazing Barrier"})
+	}, fight, map[int]string{barrier: "Blazing Barrier"}, fire)
 	if len(cd) != 1 || cd[0].Start != 0 || cd[0].End != 8*time.Second {
 		t.Errorf("cooldownWindows = %+v, want one window from the pull to 8s", cd)
 	}
 	// Proc aura.
 	auras := auraWindows([]event{
 		{Timestamp: 4000, Type: "removebuff", AbilityGameID: pyro, TargetID: 21},
-	}, fight)
+	}, fight, fire)
 	if len(auras) != 1 || auras[0].start != 0 || auras[0].end != 3*time.Second {
 		t.Errorf("auraWindows = %+v, want one window from the pull to 3s", auras)
 	}

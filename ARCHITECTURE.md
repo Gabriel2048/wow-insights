@@ -68,7 +68,8 @@ flowchart TB
     view["internal/view<br/>the drawing model: positions, lanes, paths<br/>against an axis the page chooses"]
     config["internal/config<br/>PORT and credentials, from the environment or .env"]
     fixture["internal/fixture<br/>replay and record transports"]
-    warcraftlogs["internal/warcraftlogs<br/>API client + analysis + layout"]
+    warcraftlogs["internal/warcraftlogs<br/>API client + analysis"]
+    knowledge["internal/knowledge<br/>per-spec tables: proc auras, cooldowns, cast rules<br/>one file per spec, imports nothing"]
     api[("Warcraft Logs API")]
     testdata[/"testdata/<br/>the committed recording"/]
 
@@ -78,15 +79,18 @@ flowchart TB
     serve_recorded -->|"installs the replay<br/>under the client"| fixture
     record -->|"records through"| fixture
     templates -.->|"go:embed"| web
+    web -->|"Lookup(spec)"| knowledge
     web --> warcraftlogs
     web --> view
     view --> warcraftlogs
+    warcraftlogs -->|"analyses with"| knowledge
     %% Every binary also builds the client (warcraftlogs.New) and reads its
     %% configuration. Real, verified, and not drawn: the labels say it and
     %% the lines would only cross what matters.
     %% main --> warcraftlogs
     %% serve_recorded --> warcraftlogs
     %% record --> warcraftlogs
+    %% record --> knowledge
     %% serve_recorded --> config
     %% record --> config
     fixture -.->|"WithHTTPClient"| warcraftlogs
@@ -101,6 +105,15 @@ the pull and nothing else; `internal/view` draws them against an axis the page c
 on one shared axis is what #3 needs. The analysis does not import the view, so "no
 position, percentage or path in the domain" is a fact the compiler checks. Every lane on
 the page is one `Lane` of `Bar`s packed by one function and drawn by one template block.
+
+**Spec knowledge is data the analysis is handed, not globals it reads.** `internal/knowledge`
+holds one `Knowledge` value per authored specialisation — which auras explain a cast, which
+abilities are the player's own cooldowns, which spells are judged — and imports nothing
+else in the module. The handler looks the player's spec up and passes the value into
+`Timeline`; the zero value is a spec nobody has authored, and analyses safely: the
+class-agnostic lanes (casts, pauses, phases, boss casts, lust, raid cooldowns) still render,
+the spec-shaped ones stay empty, the query asks for no procs or cooldowns, and the page
+says so. Adding a spec is one file and one row in the table.
 
 **The two seams**, which is where anything gets substituted:
 
@@ -154,10 +167,11 @@ sequenceDiagram
     end
     C->>C: buildFightDetail — roster, tables, deaths
     alt player resolves to an actor in this fight
-        S->>C: Timeline(code, fight, actor)
+        S->>S: knowledge.Lookup(player.SpecID()) — zero tables for an unauthored spec
+        S->>C: Timeline(code, fight, actor, knowledge)
         C->>T: MasterData {code} — report-scoped, once per report when #2 caches
         T->>W: POST /api/v2/client
-        C->>T: Timeline {code, id, source, start, end, filters…}
+        C->>T: Timeline {code, id, source, start, end, filters…} — proc and cooldown filters only when the spec has tables
         alt shipped binary
             T->>W: POST /api/v2/client
         else serve-recorded

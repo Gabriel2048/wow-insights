@@ -251,11 +251,12 @@ These are the shapes today's code has. New work should not deepen them.
 
 - **Fire Mage is the reference spec, not the only one.** Build against it — it is what
   the owner plays and what the app is tested on — but never in a way that makes another
-  spec expensive. `procAuras`, `personalCooldowns`, `pyroblastID` and the proc orderings
-  in `timeline.go` are package-level globals reachable through no parameter, which is why
-  any other spec renders empty proc and cooldown lanes today. Do not add to that pile:
-  anything spec-dependent must arrive as a parameter. #16 turns the existing globals into
-  data.
+  spec expensive. Everything spec-shaped lives in `internal/knowledge`, one file per spec
+  and one row in its table, and reaches the analysis as a `knowledge.Knowledge` parameter;
+  the zero value is a spec nobody has authored and must stay safe to analyse with. Never
+  put a spell id, aura name or spec name in `internal/warcraftlogs`, `internal/view` or a
+  template; `lustAbilityIDs` and `raidCooldownAuras` stay in the analysis because they
+  are class-agnostic. Adding a spec must not touch `timeline.go`.
 - **No persistence.** Nothing is stored between requests, so every page view re-queries
   Warcraft Logs against a single hourly points budget (measured: 3,600) shared by all
   users. #2 owns the cache; do not invent an ad-hoc one.
