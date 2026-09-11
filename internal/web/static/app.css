@@ -229,6 +229,11 @@ body.fight .tl-scroll {
 body.fight .tl-inner {
     position: relative;
     width: 100%;
+    /* A label on the last block of a lane can stick out past the end of
+       the fight. Clip it rather than let it widen the scroll container:
+       otherwise Fit grows a scrollbar, and the first zoom that keeps its
+       centre scrolls the whole timeline a few pixels to the left. */
+    overflow-x: clip;
 }
 
 body.fight .tl-frame {
