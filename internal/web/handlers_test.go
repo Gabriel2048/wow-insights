@@ -33,12 +33,19 @@ func TestFightRejectsAnInvalidReportCode(t *testing.T) {
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want %d (a malformed code must not cost an API call)", rec.Code, http.StatusBadRequest)
 	}
+	// The same error page as every other failure, not net/http's plain text.
+	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
+		t.Errorf("Content-Type = %q, want the error page", ct)
+	}
 }
 
 func TestFightRejectsANonNumericFightID(t *testing.T) {
 	rec := get(t, fakeWCL{}, "/report/ExampleReport123/fight/notanumber")
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusBadRequest)
+	}
+	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
+		t.Errorf("Content-Type = %q, want the error page", ct)
 	}
 }
 
