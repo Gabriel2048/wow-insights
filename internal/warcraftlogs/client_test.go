@@ -337,7 +337,7 @@ func TestTimelineBuildsFromAPartialDocument(t *testing.T) {
 		"errors":[{"message":"no phase data for this encounter","path":["reportData","report","phases"]}]}`}
 	c := api.start(t)
 
-	tl, err := c.Timeline(context.Background(), "ExampleReport123", Fight{ID: 12, StartTime: 1000, EndTime: 301000}, 7)
+	tl, err := c.Timeline(context.Background(), "ExampleReport123", Fight{ID: 12, StartTime: 1000, EndTime: 301000}, 7, fire)
 	if err != nil {
 		t.Fatalf("Timeline() returned %v for a partial document, want the ten fields that arrived", err)
 	}
@@ -353,7 +353,7 @@ func TestTimelineBuildsFromAPartialDocument(t *testing.T) {
 func TestTimelineDoesNotBuildFromARateLimit(t *testing.T) {
 	api := &fakeAPI{body: `{"data":{"reportData":{"report":{"casts":{"data":[]}}}},"errors":[{"message":"rate limit exceeded"}]}`}
 	c := api.start(t)
-	if _, err := c.Timeline(context.Background(), "ExampleReport123", Fight{ID: 12, StartTime: 1000, EndTime: 301000}, 7); !errors.Is(err, ErrRateLimited) {
+	if _, err := c.Timeline(context.Background(), "ExampleReport123", Fight{ID: 12, StartTime: 1000, EndTime: 301000}, 7, fire); !errors.Is(err, ErrRateLimited) {
 		t.Errorf("error = %v, want ErrRateLimited", err)
 	}
 }
@@ -378,7 +378,7 @@ func TestReportNotFoundAsTheAPIActuallySaysIt(t *testing.T) {
 	if _, err := c.FightDetail(context.Background(), "AbCdEfGh12345678", 1); !errors.Is(err, ErrReportNotFound) {
 		t.Errorf("FightDetail: error = %v, want ErrReportNotFound", err)
 	}
-	if _, err := c.Timeline(context.Background(), "AbCdEfGh12345678", Fight{ID: 1, EndTime: 1000}, 7); !errors.Is(err, ErrReportNotFound) {
+	if _, err := c.Timeline(context.Background(), "AbCdEfGh12345678", Fight{ID: 1, EndTime: 1000}, 7, fire); !errors.Is(err, ErrReportNotFound) {
 		t.Errorf("Timeline: error = %v, want ErrReportNotFound", err)
 	}
 }

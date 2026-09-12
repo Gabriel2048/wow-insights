@@ -51,7 +51,7 @@ func TestAbandonedBarIsNotCompletedByAMuchLaterCast(t *testing.T) {
 		ev(30000, "cast", fireBlastID_),
 		ev(70000, "cast", scorchID_), // 60s later: not the same bar
 	}
-	casts := buildCasts(events, fightAt(100), fireNames, nil)
+	casts := buildCasts(events, fightAt(100), fireNames, nil, fire)
 	scorches := byName(casts, "Scorch")
 	if len(scorches) != 3 {
 		t.Fatalf("got %d Scorch rows, want 3 (a cast, an abandoned bar, and a separate instant)", len(scorches))
@@ -88,7 +88,7 @@ func TestSameMillisecondOrderIsMeaningful(t *testing.T) {
 		ev(1263, "begincast", fireballID_),
 		ev(2526, "cast", fireballID_),
 	}
-	casts := buildCasts(chain, fightAt(100), fireNames, nil)
+	casts := buildCasts(chain, fightAt(100), fireNames, nil, fire)
 	if len(casts) != 2 || casts[0].Cancelled || casts[1].Cancelled {
 		t.Fatalf("chain-cast: got %+v, want two completed hard casts", casts)
 	}
@@ -101,7 +101,7 @@ func TestSameMillisecondOrderIsMeaningful(t *testing.T) {
 		ev(0, "begincast", pyroblastID_),
 		ev(0, "cast", pyroblastID_),
 	}
-	casts = buildCasts(instant, fightAt(100), fireNames, nil)
+	casts = buildCasts(instant, fightAt(100), fireNames, nil, fire)
 	if len(casts) != 1 || !casts[0].resolvedInstantly() || casts[0].Cancelled {
 		t.Errorf("instant: got %+v, want one instantly-resolved cast", casts)
 	}
@@ -139,7 +139,7 @@ func TestCancelledBarEndsAtTheNextEventOrTheTypicalTime(t *testing.T) {
 		ev(20000, "begincast", fireballID_), // abandoned; a Fire Blast 400ms later
 		ev(20400, "cast", fireBlastID_),
 	}
-	casts := buildCasts(events, fightAt(100), fireNames, nil)
+	casts := buildCasts(events, fightAt(100), fireNames, nil, fire)
 	fireballs := byName(casts, "Fireball")
 	if len(fireballs) != 3 || !fireballs[1].Cancelled || !fireballs[2].Cancelled {
 		t.Fatalf("got %+v, want one completed and two abandoned Fireballs", fireballs)
@@ -175,12 +175,12 @@ func TestCancelledBarOfAnUnseenSpellUsesAFallback(t *testing.T) {
 		ev(1300, "cast", fireballID_),
 		ev(5000, "begincast", scorchID_), // never completed anywhere in the fight
 	}
-	casts := buildCasts(events, fightAt(100), fireNames, nil)
+	casts := buildCasts(events, fightAt(100), fireNames, nil, fire)
 	if s := byName(casts, "Scorch")[0]; s.Wasted != 1300*time.Millisecond {
 		t.Errorf("Wasted = %v, want 1.3s (the median across the player's other bars)", s.Wasted)
 	}
 	alone := []event{ev(5000, "begincast", scorchID_)}
-	casts = buildCasts(alone, fightAt(100), fireNames, nil)
+	casts = buildCasts(alone, fightAt(100), fireNames, nil, fire)
 	if s := casts[0]; s.Wasted != unknownCastBar {
 		t.Errorf("Wasted = %v, want the fallback %v", s.Wasted, unknownCastBar)
 	}
@@ -201,9 +201,9 @@ func TestInstantPyroblastInTheOpeningIsNotAPrecast(t *testing.T) {
 		ev(4000, "begincast", pyroblastID_),
 		ev(5800, "cast", pyroblastID_), // a hard cast, so Pyroblast has a median
 	}
-	casts := buildCasts(events, fightAt(100), fireNames, nil)
+	casts := buildCasts(events, fightAt(100), fireNames, nil, fire)
 	windows := []auraWindow{{name: "Hot Streak!", start: 2000 * time.Millisecond, end: 2500 * time.Millisecond}}
-	classifyProcs(casts, windows)
+	classifyProcs(casts, windows, fire)
 
 	pyros := byName(casts, "Pyroblast")
 	if len(pyros) != 3 {
@@ -232,7 +232,7 @@ func TestPrecastIsOnlyTheFirstBareCastInsideTheWindow(t *testing.T) {
 		ev(4000, "begincast", pyroblastID_),
 		ev(5800, "cast", pyroblastID_),
 	}
-	casts := buildCasts(late, fightAt(100), fireNames, nil)
+	casts := buildCasts(late, fightAt(100), fireNames, nil, fire)
 	if p := byName(casts, "Pyroblast")[0]; p.Precast {
 		t.Errorf("a bare cast at 2s is outside the %v window, got %+v", precastWindow, p)
 	}
@@ -243,7 +243,7 @@ func TestPrecastIsOnlyTheFirstBareCastInsideTheWindow(t *testing.T) {
 		ev(4000, "begincast", pyroblastID_),
 		ev(5800, "cast", pyroblastID_),
 	}
-	casts = buildCasts(afterAnInstant, fightAt(100), fireNames, nil)
+	casts = buildCasts(afterAnInstant, fightAt(100), fireNames, nil, fire)
 	if p := byName(casts, "Pyroblast")[0]; !p.Precast {
 		t.Errorf("the first bare castable cast at 400ms is the precast even after an instant, got %+v", p)
 	}
@@ -260,8 +260,8 @@ func TestPrecastIsJudgedButNeverAMistake(t *testing.T) {
 		ev(3000, "begincast", pyroblastID_),
 		ev(4800, "cast", pyroblastID_),
 	}
-	casts := buildCasts(events, fightAt(100), fireNames, nil)
-	classifyProcs(casts, nil)
+	casts := buildCasts(events, fightAt(100), fireNames, nil, fire)
+	classifyProcs(casts, nil, fire)
 	if p := casts[0]; !p.Precast || p.ProcMissing || p.ProcLabel() != "" {
 		t.Errorf("precast verdict = %q missing=%v, want no verdict and no mistake", p.ProcLabel(), p.ProcMissing)
 	}
@@ -289,9 +289,9 @@ func TestBuildersLeaveTheCallersSliceAlone(t *testing.T) {
 			t.Errorf("%s reordered the caller's slice", name)
 		}
 	}
-	check("buildCasts", func(e []event) { buildCasts(e, fight, fireNames, nil) })
-	check("auraWindows", func(e []event) { auraWindows(e, fight) })
-	check("cooldownWindows", func(e []event) { cooldownWindows(e, fight, fireNames) })
+	check("buildCasts", func(e []event) { buildCasts(e, fight, fireNames, nil, fire) })
+	check("auraWindows", func(e []event) { auraWindows(e, fight, fire) })
+	check("cooldownWindows", func(e []event) { cooldownWindows(e, fight, fireNames, fire) })
 	check("lustWindows", func(e []event) { lustWindows(e, fight, fireNames, nil) })
 	check("raidCooldownWindows", func(e []event) { raidCooldownWindows(e, fight, nil) })
 	check("buildBossCasts", func(e []event) { buildBossCasts(e, nil, fireNames, fight) })
@@ -348,7 +348,7 @@ func FuzzBuildCasts(f *testing.F) {
 			events = append(events, ev(at, typ, abilities[r.IntN(len(abilities))]))
 		}
 		fight := Fight{StartTime: 1000, EndTime: 1000 + at + 1000}
-		casts := buildCasts(events, fight, fireNames, nil)
+		casts := buildCasts(events, fight, fireNames, nil, fire)
 
 		var gaps time.Duration
 		for _, c := range casts {
@@ -386,7 +386,7 @@ func FuzzBuildCasts(f *testing.F) {
 func TestGoldenRecordedKill(t *testing.T) {
 	rep, fight := recordedKill(t)
 	events := rep.Casts.Data
-	casts := buildCasts(events, fight, rep.names(), nil)
+	casts := buildCasts(events, fight, rep.names(), nil, fire)
 
 	kinds := map[string]int{}
 	var wasted time.Duration

@@ -24,6 +24,7 @@ import (
 
 	"wowinsight/internal/config"
 	"wowinsight/internal/fixture"
+	"wowinsight/internal/knowledge"
 	"wowinsight/internal/warcraftlogs"
 )
 
@@ -96,10 +97,17 @@ func run(args []string, stderr io.Writer) error {
 		if err != nil {
 			return err
 		}
-		if _, err := wcl.Timeline(ctx, code, detail.Fight, player.ActorID); err != nil {
+		// The same lookup the page makes, so the recording holds exactly the
+		// streams the page will ask for.
+		know, known := knowledge.Lookup(player.SpecID())
+		if _, err := wcl.Timeline(ctx, code, detail.Fight, player.ActorID, know); err != nil {
 			return fmt.Errorf("timeline for %s: %w", player.Name, err)
 		}
-		fmt.Fprintf(stderr, "recorded the timeline of actor %d (%s)\n", player.ActorID, player.Title())
+		note := ""
+		if !known {
+			note = " — no knowledge for this spec, so no procs or cooldowns were asked for"
+		}
+		fmt.Fprintf(stderr, "recorded the timeline of actor %d (%s)%s\n", player.ActorID, player.Title(), note)
 	}
 
 	if err := recorder.Write(*out); err != nil {

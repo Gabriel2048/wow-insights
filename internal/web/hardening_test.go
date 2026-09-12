@@ -8,13 +8,14 @@ import (
 	"testing"
 	"time"
 
+	"wowinsight/internal/knowledge"
 	"wowinsight/internal/warcraftlogs"
 )
 
 func fightPageClient() fakeWCL {
 	return fakeWCL{
 		fightDetail: func(context.Context, string, int) (*warcraftlogs.FightDetail, error) { return fightDetail(), nil },
-		timeline: func(context.Context, string, warcraftlogs.Fight, int) (*warcraftlogs.Timeline, error) {
+		timeline: func(context.Context, string, warcraftlogs.Fight, int, knowledge.Knowledge) (*warcraftlogs.Timeline, error) {
 			return fullTimeline(), nil
 		},
 	}

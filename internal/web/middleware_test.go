@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"wowinsight/internal/knowledge"
 	"wowinsight/internal/warcraftlogs"
 )
 
@@ -111,7 +112,7 @@ func TestRecoveryLetsErrAbortHandlerThrough(t *testing.T) {
 func TestAccessLineCarriesThePatternAndTheCost(t *testing.T) {
 	s, buf := loggedServer(t, fakeWCL{
 		fightDetail: func(context.Context, string, int) (*warcraftlogs.FightDetail, error) { return fightDetail(), nil },
-		timeline: func(context.Context, string, warcraftlogs.Fight, int) (*warcraftlogs.Timeline, error) {
+		timeline: func(context.Context, string, warcraftlogs.Fight, int, knowledge.Knowledge) (*warcraftlogs.Timeline, error) {
 			return fullTimeline(), nil
 		},
 	})
@@ -165,7 +166,7 @@ func TestSeverityTellsAClientGoingAwayFromAFailure(t *testing.T) {
 
 	s, buf = loggedServer(t, fakeWCL{
 		fightDetail: func(context.Context, string, int) (*warcraftlogs.FightDetail, error) { return fightDetail(), nil },
-		timeline: func(context.Context, string, warcraftlogs.Fight, int) (*warcraftlogs.Timeline, error) {
+		timeline: func(context.Context, string, warcraftlogs.Fight, int, knowledge.Knowledge) (*warcraftlogs.Timeline, error) {
 			return nil, errors.New("upstream exploded")
 		},
 	})

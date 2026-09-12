@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"wowinsight/internal/knowledge"
 	"wowinsight/internal/view"
 	"wowinsight/internal/warcraftlogs"
 )
@@ -18,7 +19,7 @@ import (
 type fakeWCL struct {
 	report      func(ctx context.Context, code string) (*warcraftlogs.Report, error)
 	fightDetail func(ctx context.Context, code string, fightID int) (*warcraftlogs.FightDetail, error)
-	timeline    func(ctx context.Context, code string, fight warcraftlogs.Fight, sourceID int) (*warcraftlogs.Timeline, error)
+	timeline    func(ctx context.Context, code string, fight warcraftlogs.Fight, sourceID int, know knowledge.Knowledge) (*warcraftlogs.Timeline, error)
 }
 
 // errNotStubbed is what an unset method returns. A handler reaching for
@@ -42,11 +43,11 @@ func (f fakeWCL) FightDetail(ctx context.Context, code string, fightID int) (*wa
 	return f.fightDetail(ctx, code, fightID)
 }
 
-func (f fakeWCL) Timeline(ctx context.Context, code string, fight warcraftlogs.Fight, sourceID int) (*warcraftlogs.Timeline, error) {
+func (f fakeWCL) Timeline(ctx context.Context, code string, fight warcraftlogs.Fight, sourceID int, know knowledge.Knowledge) (*warcraftlogs.Timeline, error) {
 	if f.timeline == nil {
 		return nil, errNotStubbed
 	}
-	return f.timeline(ctx, code, fight, sourceID)
+	return f.timeline(ctx, code, fight, sourceID, know)
 }
 
 // newTestServer wires a server with the real templates and a discarding logger,

@@ -180,3 +180,25 @@ func TestGoldenRenderOfTheRecordedKill(t *testing.T) {
 		}
 	}
 }
+
+// The recording holds a Holy Paladin (actor 11) next to the Fire Mage, so the
+// unauthored-spec path is exercised end to end over production code: the
+// replay answers the query with no proc or cooldown filter, the page renders
+// the class-agnostic lanes, and it says why the rest is missing.
+func TestFixtureRendersAnUnauthoredSpecWithANotice(t *testing.T) {
+	replay := openRecording(t)
+	page := get(t, recordedServer(t, replay).wcl, "/report/"+replay.Code()+"/fight/1?player=11").Body.String()
+	for _, want := range []string{
+		"No rotation knowledge for Holy Paladin yet",
+		"Cast timeline",
+		`class="phase`,    // the phases still render
+		`class="rcdblock`, // and the raid cooldowns
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("the Holy Paladin's page lacks %q", want)
+		}
+	}
+	if strings.Contains(page, `class="cdblock`) {
+		t.Error("the Holy Paladin's page draws personal cooldown blocks")
+	}
+}

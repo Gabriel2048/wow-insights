@@ -10,6 +10,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"wowinsight/internal/knowledge"
 )
 
 // lustAbilityIDs are the raid-wide haste effects: Bloodlust, Heroism, Time
@@ -29,30 +31,11 @@ var lustAbilityIDs = []int{
 	309658, // Drums of Deathly Ferocity
 }
 
-// procAuras are the auras that explain how a spell was cast. The set is Fire
-// mage specific for now: Pyroblast is instant under Hot Streak or Hyperthermia,
-// and a hard cast is only worth doing under Pyroclasm.
-var procAuras = map[int]string{
-	48108:   "Hot Streak!",
-	269651:  "Pyroclasm",
-	1242220: "Hyperthermia",
-	383874:  "Hyperthermia",
-}
-
-// personalCooldowns are the player's own cooldowns worth picking out of the
-// rotation. Fire mage for now; 235314 and 1265927 are the absorb effects that
-// share the Blazing Barrier name, kept so a log that reports the cast under a
-// different id still matches.
-var personalCooldowns = map[int]bool{
-	190319:  true, // Combustion
-	235313:  true, // Blazing Barrier
-	235314:  true,
-	1265927: true,
-	414658:  true, // Ice Cold
-}
-
-// pyroblastID is the spell whose cast quality we can judge from those auras.
-const pyroblastID = 11366
+// What is spec-shaped — which auras explain a cast, which abilities are the
+// player's own cooldowns, which spells are judged — is not declared here. It
+// arrives as a knowledge.Knowledge with the request, and the zero value is a
+// spec nobody has authored: those lanes stay empty and the query asks for
+// nothing extra. The tables below are class-agnostic and stay here.
 
 // procSlack absorbs the tie between a cast and the aura it consumes: the
 // removebuff lands on, or just after, the millisecond of the cast that spent
@@ -463,7 +446,7 @@ func (c CooldownWindow) Timestamp() string { return formatOffset(c.Start) }
 
 // cooldownWindows pairs apply and remove events into the spans a cooldown was
 // up for. One still running when the fight ends is closed at the end.
-func cooldownWindows(events []event, fight Fight, names map[int]string) []CooldownWindow {
+func cooldownWindows(events []event, fight Fight, names map[int]string, know knowledge.Knowledge) []CooldownWindow {
 	events = sortedByTime(events)
 
 	relative := func(t float64) time.Duration {
@@ -473,7 +456,7 @@ func cooldownWindows(events []event, fight Fight, names map[int]string) []Cooldo
 	seen := map[int]bool{}
 	intervals := map[int][]buffInterval{}
 	for _, e := range events {
-		if !personalCooldowns[e.AbilityGameID] {
+		if !know.IsCooldown(e.AbilityGameID) {
 			continue
 		}
 		switch e.Type {
@@ -598,10 +581,11 @@ type Subject struct {
 	ReportCode string
 	FightID    int
 	ActorID    int
-	// Spec is the player's specialisation, when the caller knows it. The
-	// analysis is spec-shaped (#16), so two timelines of the same actor
-	// under different spec tables are different subjects.
-	Spec string
+	// Spec is the specialisation whose tables the analysis used — zero for a
+	// spec nobody has authored, even though the player has one. The analysis
+	// is spec-shaped, so two timelines of the same actor under different
+	// tables are different subjects.
+	Spec knowledge.SpecID
 }
 
 // Sections groups the casts by phase. When the encounter has no phase data,
@@ -683,26 +667,6 @@ type ability struct {
 	Name   string `json:"name"`
 }
 
-// procAuraIDs is the sorted key set of procAuras, so the query is stable.
-func procAuraIDs() []int {
-	ids := make([]int, 0, len(procAuras))
-	for id := range procAuras {
-		ids = append(ids, id)
-	}
-	sort.Ints(ids)
-	return ids
-}
-
-// cooldownIDs is the sorted key set of personalCooldowns, so the query is stable.
-func cooldownIDs() []int {
-	ids := make([]int, 0, len(personalCooldowns))
-	for id := range personalCooldowns {
-		ids = append(ids, id)
-	}
-	sort.Ints(ids)
-	return ids
-}
-
 // auraWindow is a period during which one aura was up.
 type auraWindow struct {
 	name       string
@@ -711,7 +675,7 @@ type auraWindow struct {
 
 // auraWindows turns buff events into per-aura intervals, relative to the
 // fight. Stack events are ignored: only whether the aura was up matters.
-func auraWindows(events []event, fight Fight) []auraWindow {
+func auraWindows(events []event, fight Fight, know knowledge.Knowledge) []auraWindow {
 	events = sortedByTime(events)
 
 	relative := func(t float64) time.Duration {
@@ -721,7 +685,7 @@ func auraWindows(events []event, fight Fight) []auraWindow {
 	seen := map[int]bool{}
 	var windows []auraWindow
 	for _, e := range events {
-		name, tracked := procAuras[e.AbilityGameID]
+		name, tracked := know.ProcAura(e.AbilityGameID)
 		if !tracked {
 			continue
 		}
@@ -746,29 +710,21 @@ func auraWindows(events []event, fight Fight) []auraWindow {
 		seen[e.AbilityGameID] = true
 	}
 	for _, id := range sortedKeys(open) {
-		windows = append(windows, auraWindow{procAuras[id], open[id], fight.Duration()})
+		name, _ := know.ProcAura(id)
+		windows = append(windows, auraWindow{name, open[id], fight.Duration()})
 	}
 	return windows
 }
 
-// Several auras can be up at once, and which ones matter depends on the cast.
-//
-// An instant Pyroblast is spent from Hot Streak, and Hyperthermia also makes it
-// instant while ramping its damage; when both are up Hot Streak is still
-// consumed, so both are worth naming. A hard cast is only justified by
-// Pyroclasm, which is checked at the start of the cast but consumed when it
-// lands. Pyroclasm survives a Pyroblast cast under Hyperthermia.
-var (
-	instantProcOrder  = []string{"Hyperthermia", "Hot Streak!"}
-	hardCastProcOrder = []string{"Pyroclasm"}
-)
-
-// classifyProcs records which aura explains each Pyroblast, and flags the hard
-// casts that had none. Only Pyroblast is judged: for any other spell an aura
-// being up says nothing about why it was cast.
-func classifyProcs(casts []Cast, windows []auraWindow) {
+// classifyProcs records which aura explains each cast of a spell the spec has
+// a rule for, and flags the hard casts that had none. Only those spells are
+// judged: for any other, an aura being up says nothing about why it was cast.
+// Several auras can be up at once; the rule says which matter for an instant
+// cast and which for a hard cast, and in what order they are reported.
+func classifyProcs(casts []Cast, windows []auraWindow, know knowledge.Knowledge) {
 	for i := range casts {
-		if casts[i].AbilityID != pyroblastID || casts[i].Cancelled {
+		rule, judged := know.Rule(casts[i].AbilityID)
+		if !judged || casts[i].Cancelled {
 			continue
 		}
 		activeAt := func(at time.Duration) map[string]bool {
@@ -781,9 +737,9 @@ func classifyProcs(casts []Cast, windows []auraWindow) {
 			return active
 		}
 
-		order := hardCastProcOrder
+		order := rule.HardCast
 		if casts[i].resolvedInstantly() {
-			order = instantProcOrder
+			order = rule.Instant
 		}
 
 		// The damage bonus lands with the spell, so a hard cast is judged on
@@ -937,11 +893,15 @@ const (
 // says which lane gets which — a positional Sprintf, which this replaced,
 // mis-filled two lanes with each other's data if two arguments were swapped,
 // and said nothing.
-func timelineVars(code string, fight Fight, sourceID int, bosses []int) map[string]any {
+func timelineVars(code string, fight Fight, sourceID int, bosses []int, know knowledge.Knowledge) map[string]any {
 	vars := castVars(code, fight, sourceID, fight.StartTime)
 	filterVariable(vars, "lust", lustAbilityIDs)
-	filterVariable(vars, "procs", procAuraIDs())
-	filterVariable(vars, "cooldowns", cooldownIDs())
+	// The two spec-shaped streams are gated as well as filtered: with no
+	// tables there is nothing to match, so the fields are skipped outright.
+	filterVariable(vars, "procs", know.ProcAuraIDs())
+	filterVariable(vars, "cooldowns", know.CooldownIDs())
+	vars["withProcs"] = len(know.ProcAuraIDs()) > 0
+	vars["withCooldowns"] = len(know.CooldownIDs()) > 0
 	filterVariable(vars, "raidCDs", raidCooldownIDs())
 	// The boss lane keeps only the encounter's own NPCs, so the query asks
 	// for only those: half of an enemy cast stream is adds.
@@ -963,28 +923,31 @@ func castVars(code string, fight Fight, sourceID int, start float64) map[string]
 }
 
 // Timeline fetches the cast timeline for one player in one fight, along with
-// the raid lust windows that ran during it.
-func (c *Client) Timeline(ctx context.Context, code string, fight Fight, sourceID int) (*Timeline, error) {
-	report, casts, err := c.fetchTimeline(ctx, code, fight, sourceID)
+// the raid lust windows that ran during it. know is the player's spec tables;
+// the zero value analyses an unauthored spec, which still yields the casts,
+// pauses, phases, boss casts, lust and raid cooldowns, and asks the API for
+// no procs or cooldowns at all.
+func (c *Client) Timeline(ctx context.Context, code string, fight Fight, sourceID int, know knowledge.Knowledge) (*Timeline, error) {
+	report, casts, err := c.fetchTimeline(ctx, code, fight, sourceID, know)
 	if err != nil {
 		return nil, err
 	}
-	timeline := buildTimeline(report, casts, fight)
-	timeline.Subject = Subject{ReportCode: code, FightID: fight.ID, ActorID: sourceID}
+	timeline := buildTimeline(report, casts, fight, know)
+	timeline.Subject = Subject{ReportCode: code, FightID: fight.ID, ActorID: sourceID, Spec: know.Spec}
 	return timeline, nil
 }
 
 // fetchTimeline runs the timeline query and follows the cast pagination. The
 // casts come back separately from the report because the report's own Casts
 // field holds only the first page, whereas the slice is every page.
-func (c *Client) fetchTimeline(ctx context.Context, code string, fight Fight, sourceID int) (*timelineReport, []event, error) {
+func (c *Client) fetchTimeline(ctx context.Context, code string, fight Fight, sourceID int, know knowledge.Knowledge) (*timelineReport, []event, error) {
 	master, err := c.fetchMasterData(ctx, code)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	var data timelineResponse
-	err = c.Query(ctx, timelineOp, timelineVars(code, fight, sourceID, master.bossIDs()), &data)
+	err = c.Query(ctx, timelineOp, timelineVars(code, fight, sourceID, master.bossIDs(), know), &data)
 	report := data.ReportData.Report
 	// The document asks for eleven independent fields, and GraphQL may
 	// answer with ten of them and an error on the eleventh. That is a
@@ -1058,7 +1021,7 @@ func (c *Client) fetchCastPage(ctx context.Context, code string, fight Fight, so
 // buildTimeline assembles a decoded response into a Timeline. It cannot fail:
 // nothing after decoding can. What comes out carries times, never positions;
 // internal/view draws it against whatever axis the page chooses.
-func buildTimeline(report *timelineReport, casts []event, fight Fight) *Timeline {
+func buildTimeline(report *timelineReport, casts []event, fight Fight, know knowledge.Knowledge) *Timeline {
 	names := make(map[int]string, len(report.MasterData.Abilities))
 	for _, a := range report.MasterData.Abilities {
 		names[a.GameID] = a.Name
@@ -1070,8 +1033,8 @@ func buildTimeline(report *timelineReport, casts []event, fight Fight) *Timeline
 
 	timeline := &Timeline{Duration: fight.Duration(), Incomplete: report.incomplete, Truncated: report.truncated}
 	timeline.Lusts = lustWindows(report.Lust.Data, fight, names, actors)
-	timeline.Casts = buildCasts(casts, fight, names, timeline.Lusts)
-	classifyProcs(timeline.Casts, auraWindows(report.Procs.Data, fight))
+	timeline.Casts = buildCasts(casts, fight, names, timeline.Lusts, know)
+	classifyProcs(timeline.Casts, auraWindows(report.Procs.Data, fight, know), know)
 	timeline.DPS = buildDPS(report.Damage, fight)
 	timeline.Taken = buildDPS(report.Taken, fight)
 
@@ -1080,7 +1043,7 @@ func buildTimeline(report *timelineReport, casts []event, fight Fight) *Timeline
 		npcs[npc.ID] = npc
 	}
 	timeline.BossCasts = buildBossCasts(report.BossCasts.Data, npcs, names, fight)
-	timeline.Cooldowns = cooldownWindows(report.Cooldowns.Data, fight, names)
+	timeline.Cooldowns = cooldownWindows(report.Cooldowns.Data, fight, names, know)
 	timeline.RaidCDs = raidCooldownWindows(report.RaidCDs.Data, fight, actors)
 
 	if len(report.Fights) > 0 {
@@ -1107,7 +1070,7 @@ func buildTimeline(report *timelineReport, casts []event, fight Fight) *Timeline
 // emits a begincast and a cast for anything with a cast bar, so the two are
 // paired into a single Cast carrying its cast time; a begincast that never
 // completes is kept as a cancelled cast.
-func buildCasts(events []event, fight Fight, names map[int]string, lusts []RaidWindow) []Cast {
+func buildCasts(events []event, fight Fight, names map[int]string, lusts []RaidWindow, know knowledge.Knowledge) []Cast {
 	events = sortedByTime(events)
 
 	name := func(abilityID int) string {
@@ -1183,7 +1146,7 @@ func buildCasts(events []event, fight Fight, names map[int]string, lusts []RaidW
 	}
 
 	for i := range casts {
-		casts[i].Cooldown = personalCooldowns[casts[i].AbilityID]
+		casts[i].Cooldown = know.IsCooldown(casts[i].AbilityID)
 	}
 
 	// The precast: the first cast of a castable spell with no bar in the log,

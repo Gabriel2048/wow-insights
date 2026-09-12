@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"wowinsight/internal/knowledge"
 	"wowinsight/internal/warcraftlogs"
 )
 
@@ -27,6 +28,10 @@ const (
 // fakeAPI answers the client's queries the way the real service would, with
 // real-looking names in every place they occur. The timeline's casts span two
 // pages, so that the recording has to follow the cursor.
+// fire is the Fire Mage tables: the recorded player is one, and the replay
+// must ask for the same streams the recording holds.
+var fire, _ = knowledge.Lookup(knowledge.SpecID{Class: "Mage", Spec: "Fire"})
+
 func fakeAPI(t *testing.T) *httptest.Server {
 	t.Helper()
 	mux := http.NewServeMux()
@@ -114,7 +119,7 @@ func record(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("FightDetail() returned error: %v", err)
 	}
-	if _, err := wcl.Timeline(ctx, realCode, detail.Fight, 7); err != nil {
+	if _, err := wcl.Timeline(ctx, realCode, detail.Fight, 7, fire); err != nil {
 		t.Fatalf("Timeline() returned error: %v", err)
 	}
 	dir := t.TempDir()
@@ -220,7 +225,7 @@ func TestReplayServesTheRecordingThroughTheRealClient(t *testing.T) {
 	if p, ok := detail.Player(7); !ok || p.Name != "Testmage" || p.Server != FakeRealm || p.Spec != "Fire" {
 		t.Errorf("player 7 = %+v, want Testmage of Testrealm, Fire", p)
 	}
-	timeline, err := wcl.Timeline(ctx, FakeCode, detail.Fight, 7)
+	timeline, err := wcl.Timeline(ctx, FakeCode, detail.Fight, 7, fire)
 	if err != nil {
 		t.Fatalf("Timeline() returned error: %v", err)
 	}

@@ -71,12 +71,16 @@ var (
   }
 }`}
 
-	// The four filters are nullable String variables. A variable that is not
+	// The filters are nullable String variables. A variable that is not
 	// provided leaves its argument out of the query altogether (that is what
-	// the GraphQL spec says an absent variable does), which is how a spec
-	// with no tracked procs avoids sending "ability.id in ()".
+	// the GraphQL spec says an absent variable does) — which drops the
+	// filter, not the field: an events field with no filterExpression
+	// returns everything. So the two spec-shaped streams are also gated by
+	// a Boolean, and a spec with no tables skips them rather than fetching
+	// the player's whole buff stream to discard it.
 	timelineOp = operation{"Timeline", `query Timeline($code: String!, $id: Int!, $source: Int!, $start: Float!, $end: Float!,
-                $lust: String, $procs: String, $cooldowns: String, $raidCDs: String, $bosses: String) {
+                $lust: String, $procs: String, $cooldowns: String, $raidCDs: String, $bosses: String,
+                $withProcs: Boolean!, $withCooldowns: Boolean!) {
   ` + budgetFragment + `
   reportData {
     report(code: $code) {
@@ -93,12 +97,12 @@ var (
         dataType: Buffs, fightIDs: [$id], targetID: $source,
         startTime: $start, endTime: $end, limit: 10000,
         filterExpression: $procs
-      ) { data nextPageTimestamp }
+      ) @include(if: $withProcs) { data nextPageTimestamp }
       cooldowns: events(
         dataType: Buffs, fightIDs: [$id], targetID: $source,
         startTime: $start, endTime: $end, limit: 10000,
         filterExpression: $cooldowns
-      ) { data nextPageTimestamp }
+      ) @include(if: $withCooldowns) { data nextPageTimestamp }
       raidCDs: events(
         dataType: Buffs, fightIDs: [$id],
         startTime: $start, endTime: $end, limit: 10000,

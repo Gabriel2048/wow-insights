@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"wowinsight/internal/knowledge"
 	"wowinsight/internal/warcraftlogs"
 )
 
@@ -74,7 +75,7 @@ func TestFightStillRendersTheStatsWhenTheTimelineFails(t *testing.T) {
 		fightDetail: func(context.Context, string, int) (*warcraftlogs.FightDetail, error) {
 			return fightDetail(), nil
 		},
-		timeline: func(context.Context, string, warcraftlogs.Fight, int) (*warcraftlogs.Timeline, error) {
+		timeline: func(context.Context, string, warcraftlogs.Fight, int, knowledge.Knowledge) (*warcraftlogs.Timeline, error) {
 			return nil, errors.New("upstream exploded")
 		},
 	}
@@ -99,7 +100,7 @@ func TestFightRendersTheWholePageWithATimeline(t *testing.T) {
 		fightDetail: func(context.Context, string, int) (*warcraftlogs.FightDetail, error) {
 			return fightDetail(), nil
 		},
-		timeline: func(context.Context, string, warcraftlogs.Fight, int) (*warcraftlogs.Timeline, error) {
+		timeline: func(context.Context, string, warcraftlogs.Fight, int, knowledge.Knowledge) (*warcraftlogs.Timeline, error) {
 			return fullTimeline(), nil
 		},
 	}
@@ -201,5 +202,45 @@ func TestEveryRouteIsReachable(t *testing.T) {
 		if _, pattern := mux.Handler(req); pattern == "" {
 			t.Errorf("no route matches %s", target)
 		}
+	}
+}
+
+// A player whose spec nobody has authored still gets a timeline, analysed
+// with the zero tables, and the page says so — an empty cooldown lane would
+// otherwise read as a flawless rotation. The Fire Mage gets the real tables
+// and no such notice.
+func TestUnknownSpecGetsTheZeroTablesAndANotice(t *testing.T) {
+	var passed knowledge.Knowledge
+	wcl := fakeWCL{
+		fightDetail: func(context.Context, string, int) (*warcraftlogs.FightDetail, error) {
+			return fightDetail(), nil
+		},
+		timeline: func(_ context.Context, _ string, _ warcraftlogs.Fight, _ int, know knowledge.Knowledge) (*warcraftlogs.Timeline, error) {
+			passed = know
+			return fullTimeline(), nil
+		},
+	}
+	const notice = "No rotation knowledge for Holy Priest yet"
+
+	rec := get(t, wcl, "/report/ExampleReport123/fight/12?player=11")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	if passed.Spec != (knowledge.SpecID{}) || passed.ProcAuraIDs() != nil || passed.CooldownIDs() != nil {
+		t.Errorf("the Holy Priest was analysed with %+v, want the zero tables", passed)
+	}
+	if !strings.Contains(rec.Body.String(), notice) {
+		t.Errorf("the page does not say %q", notice)
+	}
+	if !strings.Contains(rec.Body.String(), "Cast timeline") {
+		t.Error("the timeline did not render for the unauthored spec")
+	}
+
+	rec = get(t, wcl, "/report/ExampleReport123/fight/12?player=7")
+	if want := (knowledge.SpecID{Class: "Mage", Spec: "Fire"}); passed.Spec != want {
+		t.Errorf("the Fire Mage was analysed with %+v, want %+v", passed.Spec, want)
+	}
+	if strings.Contains(rec.Body.String(), "No rotation knowledge") {
+		t.Error("the Fire Mage page carries the no-knowledge notice")
 	}
 }

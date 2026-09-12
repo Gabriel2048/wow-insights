@@ -81,7 +81,7 @@ func TestCastPagesAreFollowedInOrder(t *testing.T) {
 		9000: castsPage(10000, nil),
 	}}
 	c := api.start(t)
-	tl, err := c.Timeline(context.Background(), "ExampleReport123", pagedFight, 7)
+	tl, err := c.Timeline(context.Background(), "ExampleReport123", pagedFight, 7, fire)
 	if err != nil {
 		t.Fatalf("Timeline() returned %v", err)
 	}
@@ -104,7 +104,7 @@ func TestANonAdvancingCursorTerminates(t *testing.T) {
 		5000: castsPage(6000, 5000.0), // points at itself
 	}}
 	c := api.start(t)
-	tl, err := c.Timeline(context.Background(), "ExampleReport123", pagedFight, 7)
+	tl, err := c.Timeline(context.Background(), "ExampleReport123", pagedFight, 7, fire)
 	if err != nil {
 		t.Fatalf("Timeline() returned %v", err)
 	}
@@ -124,7 +124,7 @@ func TestANullReportOnALaterPageIsAnError(t *testing.T) {
 		5000: "null-report",
 	}}
 	c := api.start(t)
-	_, err := c.Timeline(context.Background(), "ExampleReport123", pagedFight, 7)
+	_, err := c.Timeline(context.Background(), "ExampleReport123", pagedFight, 7, fire)
 	if !errors.Is(err, ErrUpstream) || !strings.Contains(err.Error(), "page 2") {
 		t.Errorf("error = %v, want an upstream error naming page 2", err)
 	}
@@ -138,7 +138,7 @@ func TestACursorOnAnUnpagedStreamIsSurfaced(t *testing.T) {
 		bossCasts: `{"data":[],"nextPageTimestamp":7000}`,
 	}
 	c := api.start(t)
-	tl, err := c.Timeline(context.Background(), "ExampleReport123", pagedFight, 7)
+	tl, err := c.Timeline(context.Background(), "ExampleReport123", pagedFight, 7, fire)
 	if err != nil {
 		t.Fatalf("Timeline() returned %v", err)
 	}

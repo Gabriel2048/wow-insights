@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"wowinsight/internal/knowledge"
 )
 
 // Actor is a participant in a report, as listed in the report's master data.
@@ -34,6 +36,11 @@ type PlayerStats struct {
 	ActiveTime    time.Duration // time spent casting
 	FightDuration time.Duration
 }
+
+// SpecID names the player's specialisation for a knowledge lookup. Spec is
+// empty when the tables carried no icon for the player, and no lookup matches
+// that — which is the right answer.
+func (p PlayerStats) SpecID() knowledge.SpecID { return knowledge.SpecID{Class: p.Class, Spec: p.Spec} }
 
 // Spec and class read as "Blood Death Knight" rather than "Blood DeathKnight".
 func (p PlayerStats) ClassName() string { return spaceCamel(p.Class) }
@@ -225,9 +232,7 @@ func buildFightDetail(report *fightDetailReport) *FightDetail {
 			p.Class = e.Type
 		}
 		if p.Spec == "" {
-			if _, spec, found := strings.Cut(e.Icon, "-"); found {
-				p.Spec = spec
-			}
+			p.Spec = specFromIcon(e.Icon)
 		}
 		if p.ItemLevel == 0 {
 			p.ItemLevel = e.ItemLevel
@@ -256,8 +261,26 @@ func buildFightDetail(report *fightDetailReport) *FightDetail {
 	for _, p := range byID {
 		detail.Players = append(detail.Players, *p)
 	}
+	// A total order: the players come out of a map, so a tie on the name
+	// alone would let two players of one name swap places between requests.
 	sort.Slice(detail.Players, func(i, j int) bool {
-		return strings.ToLower(detail.Players[i].Name) < strings.ToLower(detail.Players[j].Name)
+		a, b := detail.Players[i], detail.Players[j]
+		if la, lb := strings.ToLower(a.Name), strings.ToLower(b.Name); la != lb {
+			return la < lb
+		}
+		if a.Name != b.Name {
+			return a.Name < b.Name
+		}
+		return a.ActorID < b.ActorID
 	})
 	return detail
+}
+
+// specFromIcon reads the spec out of a table icon, which is "Class-Spec" for a
+// player with one. An icon with no spec half, or with nothing after the
+// hyphen, yields "", and anything after a second hyphen is not the spec.
+func specFromIcon(icon string) string {
+	_, spec, _ := strings.Cut(icon, "-")
+	spec, _, _ = strings.Cut(spec, "-")
+	return spec
 }

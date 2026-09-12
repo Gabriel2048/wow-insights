@@ -74,8 +74,9 @@ They are not re-litigated here; they are tracked:
   `removebuff`, with no synthesised `applybuff` at the boundary — is opened at the
   fight's start instead of dropped. The DPS grid was left anchored where the API puts it:
   every series covers the whole fight, so the "curve starts late" premise does not occur.
-- The proc rules and the personal cooldown list are Fire Mage specific and reachable
-  through no parameter. → **#16**
+- The proc rules and the personal cooldown list were Fire Mage specific and reachable
+  through no parameter. → **#16** moved them to `internal/knowledge`, one file per spec,
+  handed to the analysis as a value.
 
 ## Where the details live
 
