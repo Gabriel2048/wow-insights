@@ -14,8 +14,8 @@ func TestEveryAuthoredSpecIsConsistent(t *testing.T) {
 	}
 	for _, k := range specs {
 		t.Run(k.Spec.Spec+" "+k.Spec.Class, func(t *testing.T) {
-			if k.Spec.Class == "" || k.Spec.Spec == "" {
-				t.Fatalf("Spec = %+v, want both halves", k.Spec)
+			if !Catalogued(k.Spec) {
+				t.Fatalf("Spec = %+v is not a specialisation as Warcraft Logs spells one; nothing would ever look it up", k.Spec)
 			}
 			names := map[string]bool{}
 			for id, name := range k.ProcAuras {
@@ -49,6 +49,22 @@ func TestEveryAuthoredSpecIsConsistent(t *testing.T) {
 				t.Errorf("Lookup(%+v) = %+v, %v", k.Spec, got.Spec, ok)
 			}
 		})
+	}
+}
+
+func TestTheCatalogueHasEverySpecialisation(t *testing.T) {
+	if len(catalogue) != 39 {
+		t.Errorf("%d specialisations catalogued, want 39", len(catalogue))
+	}
+	for _, id := range []SpecID{{"Hunter", "BeastMastery"}, {"DeathKnight", "Blood"}, {"Mage", "Fire"}} {
+		if !Catalogued(id) {
+			t.Errorf("%+v is not catalogued", id)
+		}
+	}
+	for _, id := range []SpecID{{"Hunter", "Beast Mastery"}, {"Death Knight", "Blood"}, {"mage", "fire"}, {}} {
+		if Catalogued(id) {
+			t.Errorf("%+v is catalogued, but that is not how Warcraft Logs spells it", id)
+		}
 	}
 }
 

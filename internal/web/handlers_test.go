@@ -244,3 +244,23 @@ func TestUnknownSpecGetsTheZeroTablesAndANotice(t *testing.T) {
 		t.Error("the Fire Mage page carries the no-knowledge notice")
 	}
 }
+
+// A player in neither the damage nor the healing table has no spec, and the
+// page must not blame the class for it.
+func TestAPlayerWithNoSpecGetsItsOwnNotice(t *testing.T) {
+	wcl := fakeWCL{
+		fightDetail: func(context.Context, string, int) (*warcraftlogs.FightDetail, error) {
+			d := fightDetail()
+			d.Players = append(d.Players, warcraftlogs.PlayerStats{ActorID: 13, Name: "Testrogue", Class: "Rogue", FightDuration: 300 * time.Second})
+			d.Fight.FriendlyPlayers = append(d.Fight.FriendlyPlayers, 13)
+			return d, nil
+		},
+		timeline: func(context.Context, string, warcraftlogs.Fight, int, knowledge.Knowledge) (*warcraftlogs.Timeline, error) {
+			return fullTimeline(), nil
+		},
+	}
+	body := get(t, wcl, "/report/ExampleReport123/fight/12?player=13").Body.String()
+	if !strings.Contains(body, "specialisation is unknown") || strings.Contains(body, "No rotation knowledge for Rogue") {
+		t.Error("the page blames the class, or says nothing, for a player with no spec")
+	}
+}

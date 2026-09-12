@@ -156,7 +156,14 @@ func (s *Server) fight(w http.ResponseWriter, r *http.Request) {
 			// cooldowns. The page says so, or an empty cooldown lane would
 			// read as a flawless rotation.
 			know, known := knowledge.Lookup(player.SpecID())
-			if !known {
+			switch {
+			case player.Spec == "":
+				// The spec comes from the damage and healing tables; a
+				// player in neither — dead on the pull, or never engaged —
+				// has none, and "no knowledge for Mage" would be false.
+				s.logger(r).Info("player has no spec in the tables", "class", player.Class)
+				data.Notices = append(data.Notices, "This player did no damage or healing in this pull, so their specialisation is unknown: procs and personal cooldowns are not shown.")
+			case !known:
 				s.logger(r).Info("no knowledge for spec", "class", player.Class, "spec", player.Spec)
 				data.Notices = append(data.Notices, "No rotation knowledge for "+player.Title()+" yet: procs and personal cooldowns are not shown.")
 			}

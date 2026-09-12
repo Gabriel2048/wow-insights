@@ -66,7 +66,7 @@ func run(args []string, stderr io.Writer) error {
 
 	ctx := context.Background()
 	recorder := fixture.NewRecorder()
-	wcl := warcraftlogs.New(cfg.ClientID, cfg.ClientSecret, warcraftlogs.WithHTTPClient(recorder.Client()))
+	wcl := warcraftlogs.New(cfg.ClientID, cfg.ClientSecret, warcraftlogs.WithTransport(recorder))
 
 	limit, err := wcl.RateLimit(ctx)
 	if err != nil {

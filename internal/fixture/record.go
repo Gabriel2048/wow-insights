@@ -28,11 +28,6 @@ func NewRecorder() *Recorder {
 	return &Recorder{next: http.DefaultTransport, exchanges: map[string][]byte{}}
 }
 
-// Client returns an http.Client whose every exchange is recorded.
-func (r *Recorder) Client() *http.Client {
-	return &http.Client{Transport: r}
-}
-
 // RoundTrip forwards the request and keeps a successful API response.
 func (r *Recorder) RoundTrip(req *http.Request) (*http.Response, error) {
 	if tokenRequest(req.Header.Get("Content-Type")) {

@@ -3,9 +3,7 @@ package warcraftlogs
 import (
 	"cmp"
 	"context"
-	"errors"
 	"fmt"
-	"net/http"
 	"slices"
 	"sort"
 	"strings"
@@ -842,22 +840,26 @@ type masterDataResponse struct {
 }
 
 // fetchMasterData runs the report-scoped master data query.
-func (c *Client) fetchMasterData(ctx context.Context, code string) (masterData, error) {
+// fetchMasterData fetches the report's abilities, actors and NPCs. The
+// master data is the only source of every name on the page and of the boss
+// filter, so an error on it is an error; an error on one part of it is a
+// gap, named in incomplete so the page can say so.
+func (c *Client) fetchMasterData(ctx context.Context, code string) (master masterData, incomplete []string, err error) {
 	var data masterDataResponse
-	err := c.Query(ctx, masterDataOp, map[string]any{"code": code}, &data)
+	err = c.Query(ctx, masterDataOp, map[string]any{"code": code}, &data)
 	if data.ReportData.Report == nil {
-		return masterData{}, notFound(err, code)
+		return masterData{}, nil, notFound(err, code)
 	}
-	// A partial document with the master data present is the master data;
-	// the timeline query will report its own gaps.
-	var apiErr *APIError
-	if errors.As(err, &apiErr) && apiErr.Status == http.StatusOK && !errors.Is(err, ErrRateLimited) {
-		err = nil
+	if apiErr, ok := Partial(err); ok {
+		if slices.Contains(apiErr.Fields(), "masterData") {
+			return masterData{}, nil, err
+		}
+		incomplete, err = apiErr.Fields(), nil
 	}
 	if err != nil {
-		return masterData{}, err
+		return masterData{}, nil, err
 	}
-	return data.ReportData.Report.MasterData, nil
+	return data.ReportData.Report.MasterData, incomplete, nil
 }
 
 // timelineResponse is the envelope the timeline query returns.
@@ -941,7 +943,7 @@ func (c *Client) Timeline(ctx context.Context, code string, fight Fight, sourceI
 // casts come back separately from the report because the report's own Casts
 // field holds only the first page, whereas the slice is every page.
 func (c *Client) fetchTimeline(ctx context.Context, code string, fight Fight, sourceID int, know knowledge.Knowledge) (*timelineReport, []event, error) {
-	master, err := c.fetchMasterData(ctx, code)
+	master, incomplete, err := c.fetchMasterData(ctx, code)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -955,10 +957,12 @@ func (c *Client) fetchTimeline(ctx context.Context, code string, fight Fight, so
 	// fields that arrived are built, and the ones that did not are named on
 	// the result so the page can say so. A response that carried errors is
 	// never worth caching — see docs/decisions/2026-09-11-error-taxonomy.md.
-	var incomplete []string
-	var apiErr *APIError
-	if errors.As(err, &apiErr) && apiErr.Status == http.StatusOK && report != nil && !errors.Is(err, ErrRateLimited) {
-		incomplete = apiErr.Fields()
+	if apiErr, ok := Partial(err); ok && report != nil {
+		for _, f := range apiErr.Fields() {
+			if !slices.Contains(incomplete, f) {
+				incomplete = append(incomplete, f)
+			}
+		}
 		err = nil
 	}
 	if report == nil {

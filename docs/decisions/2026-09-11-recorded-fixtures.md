@@ -21,7 +21,7 @@ them with no credentials. (Both commands were renamed by #29, which also took th
 offline mode out of the shipped binary; the decisions below are unchanged.) Three choices inside that:
 
 **The replay is an `http.RoundTripper`, not a fake client.** `serve-recorded` installs it
-through `WithHTTPClient` under a real `*warcraftlogs.Client`. Every offline page therefore
+through `WithTransport` under a real `*warcraftlogs.Client`. Every offline page therefore
 comes out of `Query → buildFightDetail → buildTimeline → layout()` — production code with
 only the wire swapped, the cast pagination included. A fake `logsClient` in package
 `main` was the obvious alternative and cannot do this: it can hand back a `Timeline`, but

@@ -10,12 +10,16 @@ import (
 	"wowinsight/internal/knowledge"
 )
 
+// unknownClass is what the master data reports as an actor's class when the
+// log did not say. The tables know better, so it counts as absent.
+const unknownClass = "Unknown"
+
 // Actor is a participant in a report, as listed in the report's master data.
 type Actor struct {
 	ID      int    `json:"id"`
 	Name    string `json:"name"`
 	Type    string `json:"type"`    // "Player"
-	SubType string `json:"subType"` // class, e.g. "Priest"
+	SubType string `json:"subType"` // class, e.g. "Priest"; unknownClass when the log could not tell
 	Server  string `json:"server"`
 	GameID  int    `json:"gameID"` // for an NPC, the creature's id in the game; what a source filter matches on
 }
@@ -213,13 +217,17 @@ func buildFightDetail(report *fightDetailReport) *FightDetail {
 		if !inFight[actor.ID] {
 			continue
 		}
-		byID[actor.ID] = &PlayerStats{
+		p := &PlayerStats{
 			ActorID:       actor.ID,
 			Name:          actor.Name,
 			Server:        actor.Server,
 			Class:         actor.SubType,
 			FightDuration: fight.Duration(),
 		}
+		if p.Class == unknownClass {
+			p.Class = ""
+		}
+		byID[actor.ID] = p
 	}
 
 	// The tables carry the spec (in the icon) and item level; master data does not.

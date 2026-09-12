@@ -41,7 +41,7 @@ func openRecording(t *testing.T) *fixture.Replay {
 // production code with only the wire swapped.
 func recordedServer(t *testing.T, replay *fixture.Replay) *Server {
 	t.Helper()
-	return newTestServer(t, warcraftlogs.New("fixture", "fixture", warcraftlogs.WithHTTPClient(replay.Client())))
+	return newTestServer(t, warcraftlogs.New("fixture", "fixture", warcraftlogs.WithTransport(replay)))
 }
 
 // The acceptance criterion of #10: a fight page renders on a machine with no

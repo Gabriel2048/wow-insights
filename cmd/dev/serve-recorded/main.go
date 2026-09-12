@@ -67,7 +67,7 @@ func run(ctx context.Context, args []string, stderr io.Writer, logger *slog.Logg
 	// The credentials are never sent anywhere: the replay transport mints its
 	// own token. They only need to be non-empty for the client to make the
 	// request at all.
-	wcl := warcraftlogs.New("recorded", "recorded", warcraftlogs.WithHTTPClient(replay.Client()))
+	wcl := warcraftlogs.New("recorded", "recorded", warcraftlogs.WithTransport(replay))
 	announce(logger, replay, wcl, cfg.Addr())
 
 	return web.New(wcl, tpl, logger).Run(ctx, cfg.Addr())

@@ -93,7 +93,7 @@ flowchart TB
     %% record --> knowledge
     %% serve_recorded --> config
     %% record --> config
-    fixture -.->|"WithHTTPClient"| warcraftlogs
+    fixture -.->|"WithTransport"| warcraftlogs
     fixture -.->|"serve-recorded reads"| testdata
     fixture -.->|"record writes"| testdata
     warcraftlogs -.->|"the real wire"| api
@@ -120,7 +120,7 @@ says so. Adding a spec is one file and one row in the table.
 | Seam | Declared in | What hangs on it |
 | --- | --- | --- |
 | `logsClient` — the three methods the handlers call | `internal/web/server.go`, by the consumer | `fakeWCL` in tests; the cache decorator #2 will add |
-| `http.RoundTripper` under the client, via `WithHTTPClient` | `internal/warcraftlogs/client.go` | the recorder and the replay in `internal/fixture` |
+| `http.RoundTripper` under the client, via `WithTransport` | `internal/warcraftlogs/client.go` | the recorder and the replay in `internal/fixture` |
 
 The replay sits *under* the client rather than beside it on purpose: a fake client would
 hand back whatever it was told, while the replay drives the real client's decoding,

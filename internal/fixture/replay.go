@@ -101,11 +101,6 @@ type Fight struct {
 	Players []int
 }
 
-// Client returns an http.Client that talks only to the recording.
-func (r *Replay) Client() *http.Client {
-	return &http.Client{Transport: r}
-}
-
 // RoundTrip serves the token endpoint with a token that means nothing, and
 // every API request from the file its variables name.
 func (r *Replay) RoundTrip(req *http.Request) (*http.Response, error) {

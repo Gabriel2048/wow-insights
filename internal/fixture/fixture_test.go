@@ -107,7 +107,7 @@ func record(t *testing.T) string {
 	rec := NewRecorder()
 	wcl := warcraftlogs.New("id", "secret",
 		warcraftlogs.WithBaseURL(srv.URL+"/oauth/token", srv.URL+"/api"),
-		warcraftlogs.WithHTTPClient(rec.Client()))
+		warcraftlogs.WithTransport(rec))
 	ctx := context.Background()
 	if _, err := wcl.RateLimit(ctx); err != nil {
 		t.Fatalf("RateLimit() returned error: %v", err)
@@ -209,7 +209,7 @@ func TestReplayServesTheRecordingThroughTheRealClient(t *testing.T) {
 		t.Errorf("Fights() = %+v, want fight 12 with player 7", got)
 	}
 
-	wcl := warcraftlogs.New("fixture", "fixture", warcraftlogs.WithHTTPClient(replay.Client()))
+	wcl := warcraftlogs.New("fixture", "fixture", warcraftlogs.WithTransport(replay))
 	ctx := context.Background()
 	report, err := wcl.Report(ctx, FakeCode)
 	if err != nil {
@@ -250,7 +250,7 @@ func TestReplayAnswersAnUnknownCodeWithNotFound(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wcl := warcraftlogs.New("fixture", "fixture", warcraftlogs.WithHTTPClient(replay.Client()))
+	wcl := warcraftlogs.New("fixture", "fixture", warcraftlogs.WithTransport(replay))
 	_, err = wcl.Report(context.Background(), "SomeOtherCode123")
 	if err == nil || !strings.Contains(err.Error(), "not found") {
 		t.Errorf("error = %v, want the client's own not-found message", err)
@@ -264,7 +264,7 @@ func TestReplayRefusesWhatWasNotRecorded(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wcl := warcraftlogs.New("fixture", "fixture", warcraftlogs.WithHTTPClient(replay.Client()))
+	wcl := warcraftlogs.New("fixture", "fixture", warcraftlogs.WithTransport(replay))
 	_, err = wcl.FightDetail(context.Background(), FakeCode, 19)
 	if err == nil || !strings.Contains(err.Error(), "fight-19.json") {
 		t.Errorf("error = %v, want it to name the missing fight-19.json", err)
