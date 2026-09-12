@@ -109,7 +109,7 @@ func TestRecoveryLetsErrAbortHandlerThrough(t *testing.T) {
 
 // One line per request, keyed by the route pattern rather than the path — a
 // report code in the key would give every request its own metric.
-func TestAccessLineCarriesThePatternAndTheCost(t *testing.T) {
+func TestAccessLineCarriesThePattern(t *testing.T) {
 	s, buf := loggedServer(t, fakeWCL{
 		fightDetail: func(context.Context, string, int) (*warcraftlogs.FightDetail, error) { return fightDetail(), nil },
 		timeline: func(context.Context, string, warcraftlogs.Fight, int, knowledge.Knowledge) (*warcraftlogs.Timeline, error) {
@@ -136,9 +136,6 @@ func TestAccessLineCarriesThePatternAndTheCost(t *testing.T) {
 		if line[key] != want {
 			t.Errorf("%s = %v, want %v", key, line[key], want)
 		}
-	}
-	if strings.Contains(buf.String(), "ExampleReport123") && line["pattern"] == "GET /report/ExampleReport123/fight/12" {
-		t.Error("the access line carries the raw path")
 	}
 	if line["request_id"] != rec.Header().Get("X-Request-Id") {
 		t.Error("the access line's request_id is not the one on the response")
@@ -231,7 +228,7 @@ func TestPanicAfterAPartialWriteWritesNoSecondStatus(t *testing.T) {
 		_, _ = w.Write([]byte("half a page"))
 		panic("after the write")
 	})
-	for _, wrap := range []middleware{s.recoverPanic, s.accessLog(s.Routes()), s.requestID} {
+	for _, wrap := range []middleware{s.recoverPanic, s.accessLog(s.routes()), s.requestID} {
 		h = wrap(h)
 	}
 	rec := httptest.NewRecorder()

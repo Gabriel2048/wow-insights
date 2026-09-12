@@ -65,8 +65,8 @@ func TestAbandonedBarIsNotCompletedByAMuchLaterCast(t *testing.T) {
 	// The abandoned bar ran for the spell's typical time, then the gap before
 	// the Fire Blast is idle from there, and the 40s before the last Scorch is
 	// idle too — none of it hidden under a phantom bar.
-	if scorches[1].Wasted != 1500*time.Millisecond {
-		t.Errorf("Wasted = %v, want 1.5s (the spell's median)", scorches[1].Wasted)
+	if scorches[1].Wasted() != 1500*time.Millisecond {
+		t.Errorf("Wasted = %v, want 1.5s (the spell's median)", scorches[1].Wasted())
 	}
 	if fb := byName(casts, "Fire Blast")[0]; fb.Gap != 30*time.Second-11500*time.Millisecond {
 		t.Errorf("gap before Fire Blast = %v, want 18.5s (from the end of the abandoned bar)", fb.Gap)
@@ -118,7 +118,7 @@ func TestMedianIgnoresJitterAbandonedBarsAndItsOwnEstimate(t *testing.T) {
 		{AbilityID: pyroblastID_, CastTime: time.Millisecond, HadBegincast: true},
 		{AbilityID: pyroblastID_, CastTime: 1800 * time.Millisecond, HadBegincast: true},
 		{AbilityID: pyroblastID_, CastTime: 4 * time.Second, Estimated: true, Precast: true},
-		{AbilityID: pyroblastID_, CastTime: 0, Cancelled: true, Wasted: 900 * time.Millisecond},
+		{AbilityID: pyroblastID_, CastTime: 0, Cancelled: true, End: 900 * time.Millisecond},
 	}
 	if got := medianCastTime(casts, pyroblastID_); got != 1800*time.Millisecond {
 		t.Errorf("median = %v, want 1.8s (the one real bar)", got)
@@ -144,11 +144,11 @@ func TestCancelledBarEndsAtTheNextEventOrTheTypicalTime(t *testing.T) {
 	if len(fireballs) != 3 || !fireballs[1].Cancelled || !fireballs[2].Cancelled {
 		t.Fatalf("got %+v, want one completed and two abandoned Fireballs", fireballs)
 	}
-	if fireballs[1].Wasted != 1300*time.Millisecond {
-		t.Errorf("first abandoned bar ran %v, want 1.3s (its typical time; nothing interrupted it)", fireballs[1].Wasted)
+	if fireballs[1].Wasted() != 1300*time.Millisecond {
+		t.Errorf("first abandoned bar ran %v, want 1.3s (its typical time; nothing interrupted it)", fireballs[1].Wasted())
 	}
-	if fireballs[2].Wasted != 400*time.Millisecond {
-		t.Errorf("second abandoned bar ran %v, want 400ms (cut short by the Fire Blast)", fireballs[2].Wasted)
+	if fireballs[2].Wasted() != 400*time.Millisecond {
+		t.Errorf("second abandoned bar ran %v, want 400ms (cut short by the Fire Blast)", fireballs[2].Wasted())
 	}
 	blasts := byName(casts, "Fire Blast")
 	if blasts[0].Gap != 15*time.Second-6300*time.Millisecond {
@@ -159,7 +159,7 @@ func TestCancelledBarEndsAtTheNextEventOrTheTypicalTime(t *testing.T) {
 	}
 	for _, c := range casts {
 		if c.Cancelled && c.CastTime != 0 {
-			t.Errorf("a cancelled cast carries CastTime %v; the time belongs in Wasted", c.CastTime)
+			t.Errorf("a cancelled cast carries CastTime %v; the time is Wasted()", c.CastTime)
 		}
 		if c.Cancelled && c.CastLabel() != "cancelled" {
 			t.Errorf("CastLabel() = %q for a cancelled cast", c.CastLabel())
@@ -176,13 +176,13 @@ func TestCancelledBarOfAnUnseenSpellUsesAFallback(t *testing.T) {
 		ev(5000, "begincast", scorchID_), // never completed anywhere in the fight
 	}
 	casts := buildCasts(events, fightAt(100), fireNames, nil, fire)
-	if s := byName(casts, "Scorch")[0]; s.Wasted != 1300*time.Millisecond {
-		t.Errorf("Wasted = %v, want 1.3s (the median across the player's other bars)", s.Wasted)
+	if s := byName(casts, "Scorch")[0]; s.Wasted() != 1300*time.Millisecond {
+		t.Errorf("Wasted = %v, want 1.3s (the median across the player's other bars)", s.Wasted())
 	}
 	alone := []event{ev(5000, "begincast", scorchID_)}
 	casts = buildCasts(alone, fightAt(100), fireNames, nil, fire)
-	if s := casts[0]; s.Wasted != unknownCastBar {
-		t.Errorf("Wasted = %v, want the fallback %v", s.Wasted, unknownCastBar)
+	if s := casts[0]; s.Wasted() != unknownCastBar {
+		t.Errorf("Wasted = %v, want the fallback %v", s.Wasted(), unknownCastBar)
 	}
 }
 
@@ -359,12 +359,6 @@ func FuzzBuildCasts(f *testing.F) {
 			if c.End < c.Offset {
 				t.Errorf("End before Offset: %+v", c)
 			}
-			if c.Cancelled && c.Wasted != c.End-c.Offset {
-				t.Errorf("Wasted disagrees with the bar: %+v", c)
-			}
-			if !c.Cancelled && c.Wasted != 0 {
-				t.Errorf("a completed cast has Wasted time: %+v", c)
-			}
 			if c.CastTime > maxCastBar {
 				t.Errorf("a cast bar longer than any in the game: %+v", c)
 			}
@@ -391,7 +385,7 @@ func TestGoldenRecordedKill(t *testing.T) {
 	kinds := map[string]int{}
 	var wasted time.Duration
 	for _, c := range casts {
-		wasted += c.Wasted
+		wasted += c.Wasted()
 		switch {
 		case c.Cancelled:
 			kinds["cancelled"]++

@@ -241,7 +241,7 @@ func TestReplayServesTheRecordingThroughTheRealClient(t *testing.T) {
 		t.Errorf("Casts[0].CastTime=%v Casts[1].Gap=%v: the timeline was not built, so the replay is not going through the real client", timeline.Casts[0].CastTime, timeline.Casts[1].Gap)
 	}
 	if _, err := wcl.RateLimit(ctx); err != nil {
-		t.Errorf("RateLimit() returned error: %v (the health endpoint should work offline)", err)
+		t.Errorf("RateLimit() returned error: %v (the budget gauge must work offline)", err)
 	}
 }
 

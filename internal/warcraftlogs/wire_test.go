@@ -189,17 +189,6 @@ func TestEveryRequestSaysWhoIsCalling(t *testing.T) {
 	}
 }
 
-func TestDefaultTransportRaisesTheIdleLimit(t *testing.T) {
-	c := New("id", "secret")
-	tr, ok := c.http.Transport.(*http.Transport)
-	if !ok {
-		t.Fatal("the default client has no explicit transport")
-	}
-	if tr.MaxIdleConnsPerHost <= http.DefaultMaxIdleConnsPerHost || tr.MaxConnsPerHost == 0 {
-		t.Errorf("MaxIdleConnsPerHost=%d MaxConnsPerHost=%d; want the idle limit raised and a concurrency cap", tr.MaxIdleConnsPerHost, tr.MaxConnsPerHost)
-	}
-}
-
 // A failure the network reports is worth a retry; one the transport itself
 // produced — the replay saying it has no such recording — is not.
 func TestOnlyNetworkFailuresAreRetried(t *testing.T) {

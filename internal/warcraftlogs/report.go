@@ -59,7 +59,7 @@ func isReportCode(s string) bool {
 		return false
 	}
 	for _, r := range s {
-		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9') {
+		if !isAlnum(r) {
 			return false
 		}
 	}
@@ -240,7 +240,7 @@ type reportResponse struct {
 // one branch behind a second name.
 func (c *Client) Report(ctx context.Context, code string) (*Report, error) {
 	var data reportResponse
-	err := c.Query(ctx, reportOp, map[string]any{"code": code}, &data)
+	err := c.query(ctx, reportOp, map[string]any{"code": code}, &data)
 	if data.ReportData.Report == nil {
 		return nil, notFound(err, code)
 	}
@@ -248,4 +248,8 @@ func (c *Client) Report(ctx context.Context, code string) (*Report, error) {
 		return nil, err
 	}
 	return data.ReportData.Report.report(), nil
+}
+
+func isAlnum(r rune) bool {
+	return r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9'
 }

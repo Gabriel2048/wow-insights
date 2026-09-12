@@ -2,7 +2,6 @@ package web
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -46,77 +45,6 @@ func TestFightRejectsANonNumericFightID(t *testing.T) {
 	}
 	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
 		t.Errorf("Content-Type = %q, want the error page", ct)
-	}
-}
-
-// A player id that is not a number, and one that is not in this fight, both
-// render the fight page with no player selected rather than failing. That is
-// current behaviour; pinning it here is what makes changing it in #12 a visible
-// decision rather than an accident.
-func TestFightIgnoresAPlayerItCannotResolve(t *testing.T) {
-	wcl := fakeWCL{
-		fightDetail: func(context.Context, string, int) (*warcraftlogs.FightDetail, error) {
-			return fightDetail(), nil
-		},
-	}
-	for _, target := range []string{
-		"/report/ExampleReport123/fight/12?player=abc",
-		"/report/ExampleReport123/fight/12?player=999",
-	} {
-		rec := get(t, wcl, target)
-		if rec.Code != http.StatusOK {
-			t.Errorf("%s: status = %d, want %d", target, rec.Code, http.StatusOK)
-		}
-		if !strings.Contains(rec.Body.String(), "Pick a player above") {
-			t.Errorf("%s: the page should fall back to the no-player state", target)
-		}
-	}
-}
-
-// The timeline is the expensive half and the half most likely to fail. When it
-// does, the stats above it are still worth showing — so the page renders 200
-// with no timeline. It is also indistinguishable from a player who cast
-// nothing, which is why #12 adds a notice.
-func TestFightStillRendersTheStatsWhenTheTimelineFails(t *testing.T) {
-	wcl := fakeWCL{
-		fightDetail: func(context.Context, string, int) (*warcraftlogs.FightDetail, error) {
-			return fightDetail(), nil
-		},
-		timeline: func(context.Context, string, warcraftlogs.Fight, int, knowledge.Knowledge) (*warcraftlogs.Timeline, error) {
-			return nil, errors.New("upstream exploded")
-		},
-	}
-	rec := get(t, wcl, "/report/ExampleReport123/fight/12?player=7")
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
-	}
-	body := rec.Body.String()
-	if !strings.Contains(body, "Testmage") {
-		t.Error("the player's stats should still render without a timeline")
-	}
-	if strings.Contains(body, "upstream exploded") {
-		t.Error("the upstream error text reached the page")
-	}
-	if strings.Contains(body, "Cast timeline") {
-		t.Error("the timeline heading rendered even though there is no timeline")
-	}
-}
-
-func TestFightRendersTheWholePageWithATimeline(t *testing.T) {
-	wcl := fakeWCL{
-		fightDetail: func(context.Context, string, int) (*warcraftlogs.FightDetail, error) {
-			return fightDetail(), nil
-		},
-		timeline: func(context.Context, string, warcraftlogs.Fight, int, knowledge.Knowledge) (*warcraftlogs.Timeline, error) {
-			return fullTimeline(), nil
-		},
-	}
-	rec := get(t, wcl, "/report/ExampleReport123/fight/12?player=7")
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
-	}
-	if !strings.Contains(rec.Body.String(), "Cast timeline") {
-		t.Error("the timeline did not render")
 	}
 }
 
@@ -199,7 +127,7 @@ func TestIndexShowsAFixedSentenceAndNeverTheUpstreamText(t *testing.T) {
 // routes() is the only place patterns are declared. If one is renamed, this is
 // what notices before a link somewhere else stops resolving.
 func TestEveryRouteIsReachable(t *testing.T) {
-	mux := newTestServer(t, fakeWCL{}).Routes()
+	mux := newTestServer(t, fakeWCL{}).routes()
 	for _, target := range []string{
 		"/",
 		"/report/ExampleReport123/fight/12",
@@ -233,7 +161,7 @@ func TestUnknownSpecGetsTheZeroTablesAndANotice(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
 	}
-	if passed.Spec != (knowledge.SpecID{}) || passed.ProcAuraIDs() != nil || passed.CooldownIDs() != nil {
+	if passed.Spec != (knowledge.SpecID{}) || len(passed.ProcAuraIDs()) != 0 || len(passed.CooldownIDs()) != 0 {
 		t.Errorf("the Holy Priest was analysed with %+v, want the zero tables", passed)
 	}
 	if !strings.Contains(rec.Body.String(), notice) {

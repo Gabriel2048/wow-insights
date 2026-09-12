@@ -1,8 +1,9 @@
 package warcraftlogs
 
 import (
+	"cmp"
 	"fmt"
-	"sort"
+	"slices"
 	"time"
 )
 
@@ -109,7 +110,7 @@ func buildBossCasts(events []event, npcs map[int]Actor, names map[int]string, fi
 		entries[i].interrupted = true
 	}
 
-	sort.SliceStable(entries, func(i, j int) bool { return entries[i].start < entries[j].start })
+	slices.SortStableFunc(entries, func(a, b entry) int { return cmp.Compare(a.start, b.start) })
 
 	var casts []BossCast
 	// A burst is one NPC repeating one ability. Keyed on both, as the

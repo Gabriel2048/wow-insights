@@ -141,6 +141,9 @@ func TestAFailedTimelineIsSaidOnThePage(t *testing.T) {
 	if strings.Contains(body, upstreamSecret) {
 		t.Error("the page carries the upstream body")
 	}
+	if strings.Contains(body, "Cast timeline") {
+		t.Error("the timeline heading rendered even though there is no timeline")
+	}
 }
 
 // A document that arrived partially builds what it has and names what it

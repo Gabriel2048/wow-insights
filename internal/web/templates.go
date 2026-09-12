@@ -77,10 +77,6 @@ func (t *Templates) Execute(w io.Writer, page string, data any) error {
 	return set.ExecuteTemplate(w, "layout", data)
 }
 
-// Lookup reports whether a page is known, for the tests that check every
-// page parsed.
-func (t *Templates) Lookup(page string) bool { return t.pages[page] != nil }
-
 // assets maps each static file to the path it is served at, which carries
 // a hash of its content: /static/<hash>/<name>. A changed file is a new
 // path, so the old one can be cached forever and the new one is never

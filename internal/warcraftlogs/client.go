@@ -328,14 +328,14 @@ func (e graphQLError) path() string {
 	return strings.Join(parts, ".")
 }
 
-// Query runs a GraphQL query and unmarshals the "data" object into out.
+// query runs a GraphQL query and unmarshals the "data" object into out.
 //
 // GraphQL permits a 200 carrying both data and errors: one failing field in a
 // document of eleven leaves the other ten intact. So the data is decoded into
 // out before the errors are reported, and the error returned is an *APIError
 // naming the fields that failed — a caller that can use a partial document
 // checks for it with errors.As and carries on with what it has.
-func (c *Client) Query(ctx context.Context, op operation, variables map[string]any, out any) error {
+func (c *Client) query(ctx context.Context, op operation, variables map[string]any, out any) error {
 	if op.expensive() {
 		if err := c.checkBudget(); err != nil {
 			return err
@@ -490,6 +490,6 @@ type RateLimit struct {
 // offers, which makes it a good check that credentials work.
 func (c *Client) RateLimit(ctx context.Context) (RateLimit, error) {
 	var data rateLimitResponse
-	err := c.Query(ctx, rateLimitOp, nil, &data)
+	err := c.query(ctx, rateLimitOp, nil, &data)
 	return data.RateLimitData, err
 }

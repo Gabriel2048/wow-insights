@@ -83,11 +83,11 @@ func TestFireMageIsTheReferenceSpec(t *testing.T) {
 	if !ok || !slices.Equal(rule.Instant, []string{"Hyperthermia", "Hot Streak!"}) || !slices.Equal(rule.HardCast, []string{"Pyroclasm"}) {
 		t.Errorf("Rule(Pyroblast) = %+v, %v", rule, ok)
 	}
-	if got := k.ProcAuraIDs(); !slices.IsSorted(got) || len(got) != 4 {
-		t.Errorf("ProcAuraIDs() = %v, want four sorted ids", got)
+	if got := k.ProcAuraIDs(); !slices.IsSorted(got) || len(got) != len(k.ProcAuras) {
+		t.Errorf("ProcAuraIDs() = %v, want every tracked aura, sorted", got)
 	}
-	if got := k.CooldownIDs(); !slices.IsSorted(got) || len(got) != 5 {
-		t.Errorf("CooldownIDs() = %v, want five sorted ids", got)
+	if got := k.CooldownIDs(); !slices.IsSorted(got) || len(got) != len(k.Cooldowns) {
+		t.Errorf("CooldownIDs() = %v, want every cooldown, sorted", got)
 	}
 }
 
@@ -104,8 +104,8 @@ func TestZeroKnowledgeIsSafe(t *testing.T) {
 	if _, ok := k.Rule(11366); ok {
 		t.Error("Rule found one")
 	}
-	if k.ProcAuraIDs() != nil || k.CooldownIDs() != nil {
-		t.Error("ids are not nil, so a query filter would be sent")
+	if len(k.ProcAuraIDs()) != 0 || len(k.CooldownIDs()) != 0 {
+		t.Error("ids came back for the zero tables, so a query filter would be sent")
 	}
 	if _, ok := Lookup(SpecID{Class: "Warlock", Spec: "Destruction"}); ok {
 		t.Error("Lookup found a spec nobody authored")

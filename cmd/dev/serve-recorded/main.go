@@ -17,7 +17,6 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 
 	"wowinsight/internal/config"
@@ -68,7 +67,7 @@ func run(ctx context.Context, args []string, stderr io.Writer, logger *slog.Logg
 	// own token. They only need to be non-empty for the client to make the
 	// request at all.
 	wcl := warcraftlogs.New("recorded", "recorded", warcraftlogs.WithTransport(replay))
-	announce(logger, replay, wcl, cfg.Addr())
+	announce(logger, replay, wcl, cfg.Port)
 
 	return web.New(wcl, tpl, logger).Run(ctx, cfg.Addr())
 }
@@ -77,11 +76,8 @@ func run(ctx context.Context, args []string, stderr io.Writer, logger *slog.Logg
 // served is visible where a developer is already looking — the output of go
 // run — with no banner in the page and no branch in the templates. The fight
 // names and outcomes come from the recording itself, through the real client.
-func announce(logger *slog.Logger, replay *fixture.Replay, wcl *warcraftlogs.Client, addr string) {
-	base := "http://" + addr
-	if strings.HasPrefix(addr, ":") {
-		base = "http://localhost" + addr
-	}
+func announce(logger *slog.Logger, replay *fixture.Replay, wcl *warcraftlogs.Client, port string) {
+	base := "http://localhost:" + port
 	logger.Info("serving the recording; Warcraft Logs is not contacted", "dir", replay.Dir())
 	logger.Info(base + "/?url=" + replay.Code())
 

@@ -45,7 +45,7 @@ in the link could not be resolved, part of the document did not arrive. #2 and #
 more independently-failing sources to this page; the slot exists before they do.
 
 **A partial GraphQL document is used, not discarded.** GraphQL permits a 200 carrying
-both `data` and `errors`. `Query` decodes the data before reporting the errors, and
+both `data` and `errors`. the client decodes the data before reporting the errors, and
 `Timeline` builds the fields that arrived and names the ones that did not on
 `Timeline.Incomplete`. The companion rule, for #2: **a response that carried GraphQL
 errors is never cached.** It is a document with a hole in it, and a cache would serve the

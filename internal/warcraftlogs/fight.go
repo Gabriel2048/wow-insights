@@ -1,9 +1,10 @@
 package warcraftlogs
 
 import (
+	"cmp"
 	"context"
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -180,7 +181,7 @@ func (c *Client) FightDetail(ctx context.Context, code string, fightID int) (*Fi
 // fightID, which is why they belong here rather than in the assembly.
 func (c *Client) fetchFightDetail(ctx context.Context, code string, fightID int) (*fightDetailReport, error) {
 	var data fightDetailResponse
-	err := c.Query(ctx, fightOp, map[string]any{"code": code, "id": fightID}, &data)
+	err := c.query(ctx, fightOp, map[string]any{"code": code, "id": fightID}, &data)
 	report := data.ReportData.Report
 	if report == nil {
 		return nil, notFound(err, code)
@@ -271,15 +272,12 @@ func buildFightDetail(report *fightDetailReport) *FightDetail {
 	}
 	// A total order: the players come out of a map, so a tie on the name
 	// alone would let two players of one name swap places between requests.
-	sort.Slice(detail.Players, func(i, j int) bool {
-		a, b := detail.Players[i], detail.Players[j]
-		if la, lb := strings.ToLower(a.Name), strings.ToLower(b.Name); la != lb {
-			return la < lb
-		}
-		if a.Name != b.Name {
-			return a.Name < b.Name
-		}
-		return a.ActorID < b.ActorID
+	slices.SortFunc(detail.Players, func(a, b PlayerStats) int {
+		return cmp.Or(
+			strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name)),
+			strings.Compare(a.Name, b.Name),
+			cmp.Compare(a.ActorID, b.ActorID),
+		)
 	})
 	return detail
 }

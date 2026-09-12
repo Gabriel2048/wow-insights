@@ -60,7 +60,7 @@ func (f *fakeAPI) start(t *testing.T) *Client {
 			expires = 3600
 		}
 		w.Header().Set("Content-Type", "application/json")
-		if _, err := w.Write([]byte(`{"access_token":"tok-` + itoa(n) + `","expires_in":` + itoa(expires) + `}`)); err != nil {
+		if _, err := w.Write([]byte(`{"access_token":"tok-` + strconv.Itoa(n) + `","expires_in":` + strconv.Itoa(expires) + `}`)); err != nil {
 			t.Errorf("write token response: %v", err)
 		}
 	})
@@ -98,18 +98,6 @@ func (f *fakeAPI) start(t *testing.T) *Client {
 	c := New("id", "secret", WithBaseURL(srv.URL+"/oauth/token", srv.URL+"/api"))
 	c.backoffBase = time.Millisecond // retries are tested for count, not for patience
 	return c
-}
-
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	var b []byte
-	for n > 0 {
-		b = append([]byte{byte('0' + n%10)}, b...)
-		n /= 10
-	}
-	return string(b)
 }
 
 // The token is worth caching: every query would otherwise pay for a second

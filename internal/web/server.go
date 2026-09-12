@@ -46,10 +46,9 @@ func New(wcl logsClient, tpl *Templates, logger *slog.Logger) *Server {
 	return &Server{wcl: wcl, tpl: tpl, log: logger, handlerDeadline: handlerDeadline}
 }
 
-// Routes returns the mux the server listens on. It returns the concrete type
-// rather than http.Handler because a caller needs Handler() to ask which
-// pattern a path resolves to.
-func (s *Server) Routes() *http.ServeMux {
+// routes returns the mux the server listens on. It is the concrete type so
+// the access log can ask which pattern a path resolves to.
+func (s *Server) routes() *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", s.index)
 	mux.HandleFunc("GET /report/{code}/fight/{id}", s.fight)
@@ -82,14 +81,13 @@ type fightPageData struct {
 
 // pageData is what the index template renders.
 type pageData struct {
-	Title  string
 	URL    string
 	Report *warcraftlogs.Report
 	Error  string
 }
 
 func (s *Server) index(w http.ResponseWriter, r *http.Request) {
-	data := pageData{Title: "wowinsight"}
+	data := pageData{}
 
 	// The form submits back to "/" with the report URL in the query string, so
 	// a bare visit renders an empty form and a submission renders the report.

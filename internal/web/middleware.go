@@ -20,10 +20,8 @@ import (
 type middleware func(http.Handler) http.Handler
 
 // Handler is the routes behind the middleware chain, and what Run serves.
-// Routes stays exposed so a test can ask the mux which pattern a path resolves
-// to; everything that actually serves a request goes through here.
 func (s *Server) Handler() http.Handler {
-	mux := s.Routes()
+	mux := s.routes()
 	var h http.Handler = mux
 	// Listed innermost first. The request id exists before anything logs;
 	// the deadline is inside recovery so a panic from a cancelled context is
