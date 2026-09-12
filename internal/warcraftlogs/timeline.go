@@ -799,6 +799,33 @@ type masterData struct {
 	NPCs      []Actor   `json:"npcs"`
 }
 
+// names is every ability by game id.
+func (m masterData) names() map[int]string {
+	names := make(map[int]string, len(m.Abilities))
+	for _, a := range m.Abilities {
+		names[a.GameID] = a.Name
+	}
+	return names
+}
+
+// actorNames is every player by actor id.
+func (m masterData) actorNames() map[int]string {
+	actors := make(map[int]string, len(m.Actors))
+	for _, a := range m.Actors {
+		actors[a.ID] = a.Name
+	}
+	return actors
+}
+
+// npcsByID is every NPC by actor id.
+func (m masterData) npcsByID() map[int]Actor {
+	npcs := make(map[int]Actor, len(m.NPCs))
+	for _, npc := range m.NPCs {
+		npcs[npc.ID] = npc
+	}
+	return npcs
+}
+
 // bossIDs is the game ids of the encounter's own NPCs, in order, for the
 // boss cast filter. The environment is typed as a boss and carries game id
 // 0; buildBossCasts drops it by its negative actor id, so it is dropped here
@@ -1010,14 +1037,7 @@ func (c *Client) fetchCastPage(ctx context.Context, code string, fight Fight, so
 // nothing after decoding can. What comes out carries times, never positions;
 // internal/view draws it against whatever axis the page chooses.
 func buildTimeline(report *timelineReport, casts []event, fight Fight, know knowledge.Knowledge) *Timeline {
-	names := make(map[int]string, len(report.MasterData.Abilities))
-	for _, a := range report.MasterData.Abilities {
-		names[a.GameID] = a.Name
-	}
-	actors := make(map[int]string, len(report.MasterData.Actors))
-	for _, a := range report.MasterData.Actors {
-		actors[a.ID] = a.Name
-	}
+	names, actors := report.MasterData.names(), report.MasterData.actorNames()
 
 	timeline := &Timeline{Duration: fight.Duration(), Incomplete: report.incomplete, Truncated: report.truncated}
 	timeline.Lusts = lustWindows(report.Lust.Data, fight, names, actors)
@@ -1026,10 +1046,7 @@ func buildTimeline(report *timelineReport, casts []event, fight Fight, know know
 	timeline.DPS = buildDPS(report.Damage, fight)
 	timeline.Taken = buildDPS(report.Taken, fight)
 
-	npcs := make(map[int]Actor, len(report.MasterData.NPCs))
-	for _, npc := range report.MasterData.NPCs {
-		npcs[npc.ID] = npc
-	}
+	npcs := report.MasterData.npcsByID()
 	timeline.BossCasts = buildBossCasts(report.BossCasts.Data, npcs, names, fight)
 	timeline.Cooldowns = cooldownWindows(report.Cooldowns.Data, fight, names, know)
 	timeline.RaidCDs = raidCooldownWindows(report.RaidCDs.Data, fight, actors)

@@ -11,6 +11,7 @@
         <span class="l-cancel">Cancelled</span>
         <span class="l-gap">Idle at or above the threshold</span>
         <span class="l-lust">Bloodlust / Heroism / Time Warp</span>
+        <span class="l-boss">Boss cast</span>
         {{if .HasPhases}}<span class="l-phase">Phase boundary</span>{{end}}
     </div>
 
@@ -32,11 +33,11 @@
 
     <div class="tl-controls">
         <span>Zoom</span>
-        <button type="button" class="zoom active" data-zoom="1">Fit</button>
-        <button type="button" class="zoom" data-zoom="2">2&times;</button>
-        <button type="button" class="zoom" data-zoom="4">4&times;</button>
-        <button type="button" class="zoom" data-zoom="8">8&times;</button>
-        <button type="button" class="zoom" data-zoom="16">16&times;</button>
+        <button type="button" class="zoom active" data-zoom="1" aria-pressed="true">Fit</button>
+        <button type="button" class="zoom" data-zoom="2" aria-pressed="false">2&times;</button>
+        <button type="button" class="zoom" data-zoom="4" aria-pressed="false">4&times;</button>
+        <button type="button" class="zoom" data-zoom="8" aria-pressed="false">8&times;</button>
+        <button type="button" class="zoom" data-zoom="16" aria-pressed="false">16&times;</button>
         <input type="range" id="zoomRange" min="1" max="24" step="0.5" value="1"
                aria-label="Timeline zoom">
         <span id="zoomLabel">1.0&times;</span>
@@ -75,7 +76,7 @@
         </div>
     {{end}}
     </div>
-    <div class="tl-scroll">
+    <div class="tl-scroll" tabindex="0" aria-label="Cast timeline; scrolls sideways when zoomed">
       <div class="tl-inner" id="tlInner"
            data-duration-ms="{{.DurationMS}}"
            data-total-ms="{{.TotalMS}}"

@@ -132,7 +132,9 @@ var whTooltips = {colorLinks: false, iconizeLinks: false, renameLinks: false};
         label.textContent = z.toFixed(1) + '\u00d7';
         range.value = z;
         buttons.forEach(function (b) {
-            b.classList.toggle('active', parseFloat(b.dataset.zoom) === z);
+            var active = parseFloat(b.dataset.zoom) === z;
+            b.classList.toggle('active', active);
+            b.setAttribute('aria-pressed', active ? 'true' : 'false');
         });
         drawRuler();
         layoutLabels();
@@ -302,6 +304,16 @@ var whTooltips = {colorLinks: false, iconizeLinks: false, renameLinks: false};
         }
     });
 
-    window.addEventListener('resize', drawRuler);
+    // A narrower window leaves less room per label, so the ruler and the
+    // label rows are both redone — once per frame, not once per event.
+    var resizeFrame = 0;
+    window.addEventListener('resize', function () {
+        if (resizeFrame) return;
+        resizeFrame = requestAnimationFrame(function () {
+            resizeFrame = 0;
+            drawRuler();
+            layoutLabels();
+        });
+    });
     setZoom(1, false);
 })();

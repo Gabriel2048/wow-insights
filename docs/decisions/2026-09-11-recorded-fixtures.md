@@ -63,12 +63,15 @@ saying what kind of value it was and never which.
 - One directory holds one report. The recorder refuses to write a second report into it.
 - A player whose name is an ordinary word — Fire, Frost — would be replaced inside
   ability names too. The recorder does not detect this; a reviewer reading the diff
-  would. It has not happened; if it does, the answer is a narrower rule,
-  decided then.
+  would. It has happened once, harmlessly: a trash segment in the recorded report is
+  named after a player. If it ever touches a name the page shows, the answer is a
+  narrower rule, decided then.
 - A stream with more events than one page holds is named on `Timeline.Truncated` and
   said on the page. Only the cast stream is paged; on the longest pull in the recorded
   report the largest other stream held 653 events against a 10,000 cut, so paging the
   rest was not built (#43, 2026-09-11).
-- The positioned golden render that #10 ruled out is now cheap: a real client over the
-  replay yields a laid-out `Timeline` in package `main`. It still waits for #17, by
-  choice rather than constraint.
+- The positioned golden render that #10 ruled out landed with #17 as
+  `TestGoldenRenderOfTheRecordedKill`, a real client over the replay.
+- The budget snapshot every document carries is pinned to fixed values on write: it is
+  the one thing that differs between two recordings of the same report, and a snapshot
+  taken near the guard would make the replay refuse every page for an hour.

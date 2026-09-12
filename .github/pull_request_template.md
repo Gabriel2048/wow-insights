@@ -8,8 +8,15 @@ Closes #
 ## Why, and what was decided
 
 <!-- Decisions a reader could not recover from the diff. If a decision spans
-     files or supersedes an earlier one, add docs/decisions/NNNN-slug.md and
-     link it here instead of burying it in this box. -->
+     files or supersedes an earlier one, add docs/decisions/YYYY-MM-DD-slug.md
+     and link it here instead of burying it in this box. -->
+
+## Not as the issue said
+
+<!-- Anything the issue asked for that was done differently, dropped, or
+     built and then removed on the owner's call, and anything piggybacked
+     from outside it. "None" is a fine answer. Keep this heading as is, so
+     `git log --grep` finds every deviation under one name. -->
 
 ## Verification
 

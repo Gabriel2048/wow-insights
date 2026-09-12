@@ -33,7 +33,7 @@ flowchart LR
   one.
 - The tooltips script is the only third-party code that executes, and it runs with full
   origin privileges in the browser. It constrains any Content-Security-Policy work (#7).
-- The wire retries a 429, a 5xx or a network failure three times with doubling backoff
+- The wire retries a 429, a 5xx or a network failure, a few attempts with doubling backoff
   and full jitter, never a 4xx or a GraphQL-level error; a 401 drops the cached token and
   goes once more, so a rotated secret is a non-event. Every request says who is calling.
 - Credentials and `PORT` arrive from the environment, or from `.env` for local work, and
@@ -220,8 +220,9 @@ import graph `go/build` reports for every package in the module. A package or im
 edge missing from the diagram fails the gate; so does an edge the code no longer has.
 Node ids are the last path segment of the package (`config`, `fixture`) with hyphens as
 underscores (`serve_recorded`), and `main` for the root. An edge written in a `%%` comment is verified like a drawn one and not rendered —
-the escape hatch for a package whose edges would only add crossings, used by
-`cmd/record`. Dotted edges (`-.->`) are not checked, which is what they are for.
+the escape hatch for an edge that would only add crossings, used for the three binaries'
+imports of the client and its configuration. Dotted edges (`-.->`) are not checked,
+which is what they are for.
 
 **The other two views are prose-maintained.** The pull request template asks whether this
 document was updated or the change was not structural; answer it honestly. There is no

@@ -16,8 +16,9 @@ go vet ./...
 
 step "go fix (no pending stdlib modernizations)"
 # go fix exits non-zero when it has a diff, which set -e would turn into a
-# silent abort before the diff is printed.
-pending=$(go fix -diff ./... || true)
+# silent abort before the diff is printed. stderr is captured too: a load
+# error would otherwise print, leave pending empty, and pass.
+pending=$(go fix -diff ./... 2>&1 || true)
 if [ -n "$pending" ]; then
   echo "pending modernizations — run 'go fix ./...':"; echo "$pending"; exit 1
 fi
@@ -27,6 +28,7 @@ step "golangci-lint (unchecked errors, dead code, staticcheck)"
 # with the local toolchain instead. Keep the version in step with
 # .github/workflows/ci.yml -- see the note there about the built-with
 # constraint, which only the prebuilt binary can trip.
+go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2 config verify
 go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2 run ./...
 
 step "go test (race detector on, randomised order)"

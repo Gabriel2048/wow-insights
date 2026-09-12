@@ -22,6 +22,9 @@ jobs:
   # permanently unmergeable.
   ci:
     runs-on: ubuntu-latest
+    # The suite has real-time lifecycle tests; a hang should fail in minutes,
+    # not bill the six-hour default.
+    timeout-minutes: 10
     steps:
       - name: Check out the commit under test
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -47,7 +50,7 @@ jobs:
 
       - name: go fix (no pending stdlib modernizations)
         run: |
-          pending=$(go fix -diff ./... || true)
+          pending=$(go fix -diff ./... 2>&1 || true)
           if [ -n "$pending" ]; then
             echo "pending modernizations — run 'go fix ./...':"; echo "$pending"; exit 1
           fi

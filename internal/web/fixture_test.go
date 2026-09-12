@@ -27,6 +27,11 @@ const (
 func openRecording(t *testing.T) *fixture.Replay {
 	t.Helper()
 	if _, err := os.Stat(filepath.Join(recordingDir, "report.json")); err != nil {
+		// Committed, so absent only on a machine that lost it — and in CI
+		// that is a failure, not eight tests quietly skipped.
+		if os.Getenv("CI") != "" {
+			t.Fatalf("no recording in CI: %v", err)
+		}
 		t.Skipf("no recording in testdata/; record one with: %s", recordCommand)
 	}
 	replay, err := fixture.Open(recordingDir)

@@ -136,7 +136,7 @@ func TestBuildFightDetailMergesTheTables(t *testing.T) {
 func TestRecordedRosterSpecsAreCatalogued(t *testing.T) {
 	raw, err := os.ReadFile("../../testdata/fight-1.json")
 	if err != nil {
-		t.Skipf("no recording: %v (record one with go run ./cmd/dev/record)", err)
+		skipWithoutRecording(t, err)
 	}
 	var env struct{ Data fightDetailResponse }
 	if err := json.Unmarshal(raw, &env); err != nil {

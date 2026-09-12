@@ -298,6 +298,10 @@ func TestStaticAssetsAreHashedAndCacheable(t *testing.T) {
 	if strings.Contains(page, "<style>") {
 		t.Error("the page still carries an inline stylesheet")
 	}
+	// An inline handler is an inline script to a Content-Security-Policy.
+	if m := regexp.MustCompile(`\son[a-z]+="`).FindString(page); m != "" {
+		t.Errorf("the page carries an inline event handler (%q); the script must bind it instead", strings.TrimSpace(m))
+	}
 	for _, m := range links {
 		rec := get(t, fakeWCL{}, m[0])
 		if rec.Code != http.StatusOK {

@@ -414,21 +414,22 @@ func TestGoldenRecordedKill(t *testing.T) {
 		t.Errorf("time on abandoned bars = %v, want 13.625s", wasted)
 	}
 
-	// The opener, row by row: the precast Pyroblast with its reconstructed
-	// bar, the Fireball begun on the pull, two instants woven into it, then
-	// the first Hot Streak Pyroblast as the Fireball lands.
+	// The opener, row by row, against the pull as the log times it: the
+	// precast Pyroblast landing 168ms in with its reconstructed bar, the
+	// Fireball begun as it lands, two instants woven into it, then the
+	// first Hot Streak Pyroblast as the Fireball lands.
 	type row struct {
 		name             string
 		offset, castTime time.Duration
 		precast, during  bool
 	}
 	opener := []row{
-		{"Pyroblast", -1818 * time.Millisecond, 1818 * time.Millisecond, true, false},
-		{"Fireball", 0, 1318 * time.Millisecond, false, false},
-		{"Fire Blast", 582 * time.Millisecond, 0, false, true},
-		{"Combustion", 1066 * time.Millisecond, 0, false, true},
-		{"Pyroblast", 1318 * time.Millisecond, 0, false, false},
-		{"Pyroblast", 2423 * time.Millisecond, 0, false, false},
+		{"Pyroblast", -1650 * time.Millisecond, 1818 * time.Millisecond, true, false},
+		{"Fireball", 168 * time.Millisecond, 1318 * time.Millisecond, false, false},
+		{"Fire Blast", 750 * time.Millisecond, 0, false, true},
+		{"Combustion", 1234 * time.Millisecond, 0, false, true},
+		{"Pyroblast", 1486 * time.Millisecond, 0, false, false},
+		{"Pyroblast", 2591 * time.Millisecond, 0, false, false},
 	}
 	for i, w := range opener {
 		got := row{casts[i].Name, casts[i].Offset, casts[i].CastTime, casts[i].Precast, casts[i].DuringCast}
