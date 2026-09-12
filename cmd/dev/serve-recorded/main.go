@@ -29,6 +29,7 @@ import (
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	context.AfterFunc(ctx, stop) // a second Ctrl-C ends the drain at once
 	// Text, not JSON: this is read by a person at a terminal, and the URL
 	// listing below has to be readable as it scrolls past.
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))

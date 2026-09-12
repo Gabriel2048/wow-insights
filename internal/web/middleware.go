@@ -155,7 +155,11 @@ func (s *Server) recoverPanic(next http.Handler) http.Handler {
 				panic(p)
 			}
 			s.logger(r).Error("panic in handler", "panic", p, "stack", string(debug.Stack()))
-			if started, ok := w.(interface{ wroteHeader() bool }); !ok || !started.wroteHeader() {
+			// accessLog's writer is what sits under this handler, and it
+			// knows whether anything was written. Anything else here is a
+			// chain change; write the 500 only when nothing has gone out.
+			rw, ok := w.(*responseWriter)
+			if !ok || !rw.wroteHeader() {
 				http.Error(w, "internal server error", http.StatusInternalServerError)
 			}
 		}()
@@ -235,6 +239,10 @@ func (w *responseWriter) Write(p []byte) (int, error) {
 }
 
 func (w *responseWriter) wroteHeader() bool { return w.wrote }
+
+// Unwrap exposes the underlying writer, so http.ResponseController reaches
+// through this one for Flush and the deadlines.
+func (w *responseWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
 func (w *responseWriter) status() int {
 	if !w.wrote {

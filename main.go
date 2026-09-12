@@ -22,6 +22,9 @@ func main() {
 	// a cancelled context is what lets in-flight requests finish.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	// Once the drain has begun the signal has done its job; restoring the
+	// default disposition lets a second one end the process at once.
+	context.AfterFunc(ctx, stop)
 
 	cfg, err := config.Load(".env")
 	logger := newLogger(os.Stdout, cfg.Project)

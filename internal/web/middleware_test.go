@@ -218,3 +218,38 @@ type budgetedFake struct{ fakeWCL }
 func (budgetedFake) Budget() (warcraftlogs.RateLimit, bool) {
 	return warcraftlogs.RateLimit{LimitPerHour: 3600, PointsSpentThisHour: 118, PointsResetIn: 900}, true
 }
+
+// A panic after the response has started cannot be turned into a 500; the
+// bytes are gone. It is still one ERROR line, and no second status is
+// written on top of the first.
+func TestPanicAfterAPartialWriteWritesNoSecondStatus(t *testing.T) {
+	s, buf := loggedServer(t, fakeWCL{})
+	// The same two links Handler() puts around the routes, around a handler
+	// that writes and then panics.
+	var h http.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte("half a page"))
+		panic("after the write")
+	})
+	for _, wrap := range []middleware{s.recoverPanic, s.accessLog(s.Routes()), s.requestID} {
+		h = wrap(h)
+	}
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/boom", nil))
+	if rec.Code != http.StatusAccepted || rec.Body.String() != "half a page" {
+		t.Errorf("response = %d %q, want the partial 202 left alone", rec.Code, rec.Body.String())
+	}
+	if n := len(withLevel(lines(t, buf), "ERROR")); n != 1 {
+		t.Errorf("%d ERROR lines, want 1", n)
+	}
+}
+
+// The recorder wraps net/http's writer; http.ResponseController must reach
+// through it, or a handler that flushes gets an error instead of a flush.
+func TestResponseWriterUnwrapsForTheController(t *testing.T) {
+	rec := httptest.NewRecorder()
+	rw := &responseWriter{ResponseWriter: rec}
+	if err := http.NewResponseController(rw).Flush(); err != nil {
+		t.Errorf("Flush() through the wrapper: %v", err)
+	}
+}

@@ -19,7 +19,13 @@ func newLogger(w io.Writer, project string) *slog.Logger {
 			}
 			switch a.Key {
 			case slog.LevelKey:
-				return slog.String("severity", severity(a.Value.Any().(slog.Level)))
+				// The key is slog's own, but any handler attribute keyed
+				// "level" arrives here too, and one that is not a Level
+				// must pass through rather than take the process down.
+				if l, ok := a.Value.Any().(slog.Level); ok {
+					return slog.String("severity", severity(l))
+				}
+				return a
 			case slog.MessageKey:
 				return slog.String("message", a.Value.String())
 			case "trace_id":
