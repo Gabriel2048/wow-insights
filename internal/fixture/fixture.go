@@ -3,15 +3,14 @@
 // credentials.
 //
 // Both halves sit at the HTTP transport, underneath the real client. That is
-// the load-bearing choice: a fake client in package main could return a
-// Timeline, but not a laid-out one — layout() is unexported and runs only
-// inside the client — so the offline page would come from a path no user
-// takes. Swapping the wire instead drives every line of production code, the
-// cast pagination included, with only the network replaced.
+// the load-bearing choice: a fake client would hand the page a Timeline that
+// no decoding, paging or building ever touched, so the offline page would
+// come from a path no user takes. Swapping the wire instead drives every
+// line of production code, the cast pagination included, with only the
+// network replaced.
 package fixture
 
 import (
-	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -54,11 +53,8 @@ func key(op string, vars map[string]any) (string, error) {
 // recorder and the replay see variables after a JSON round trip, so an int the
 // client sent arrives as a float64 here — which is why 12 must not become "12.0".
 func number(v any) string {
-	switch n := v.(type) {
-	case float64:
+	if n, ok := v.(float64); ok {
 		return strconv.FormatFloat(n, 'f', -1, 64)
-	case json.Number:
-		return n.String()
 	}
 	return fmt.Sprint(v)
 }

@@ -144,6 +144,17 @@ func (r *redactor) apply(body []byte) ([]byte, error) {
 		}
 	}
 	tree = r.walk(tree)
+	// The budget snapshot is the one value that differs on every recording
+	// and means nothing offline; pinned, so a re-record touches only what
+	// changed, and a snapshot taken near the guard cannot make the replay
+	// refuse every page for an hour.
+	if data, ok := tree.(map[string]any)["data"].(map[string]any); ok {
+		if _, has := data["rateLimitData"]; has {
+			data["rateLimitData"] = map[string]any{
+				"limitPerHour": json.Number("3600"), "pointsResetIn": json.Number("3600"), "pointsSpentThisHour": json.Number("0"),
+			}
+		}
+	}
 
 	var out bytes.Buffer
 	enc := json.NewEncoder(&out)
@@ -163,7 +174,8 @@ func (r *redactor) apply(body []byte) ([]byte, error) {
 // walk applies every rule to every string in the tree, and handles the two
 // things that are not names but are still someone's: a character GUID is an
 // identifier nothing here reads, so it is zeroed; a pet's name is chosen by
-// its owner, so it is replaced. Pets are the one place a key is trusted — a
+// its owner, so it is replaced — under a pet actor's name and under the
+// petName a table entry carries. Pets are the one place a key is trusted: a
 // pet called Echo or Bear cannot be replaced by value without taking the
 // spells of the same name with it.
 func (r *redactor) walk(v any) any {
@@ -175,8 +187,12 @@ func (r *redactor) walk(v any) any {
 			}
 		}
 		for k, child := range v {
-			if k == "guid" {
+			switch k {
+			case "guid":
 				v[k] = json.Number("0")
+				continue
+			case "petName":
+				v[k] = FakePet
 				continue
 			}
 			v[k] = r.walk(child)

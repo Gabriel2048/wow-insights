@@ -96,6 +96,28 @@ func TestCastPagesAreFollowedInOrder(t *testing.T) {
 	}
 }
 
+// The page cap is the other bound on the loop: a stream that keeps
+// advancing past it is cut and said to be, and no further page is fetched.
+func TestCastPagingStopsAtThePageCapAndSaysSo(t *testing.T) {
+	pages := map[float64]string{}
+	for i := 0; i <= maxCastPages+2; i++ {
+		start := 1000 + float64(i)*1000
+		pages[start] = castsPage(start+1, start+1000)
+	}
+	api := &pagedAPI{pages: pages}
+	c := api.start(t)
+	tl, err := c.Timeline(context.Background(), "ExampleReport123", pagedFight, 7, fire)
+	if err != nil {
+		t.Fatalf("Timeline() returned %v", err)
+	}
+	if got := len(api.queries); got != 2+maxCastPages {
+		t.Errorf("%d queries, want MasterData, Timeline and exactly %d cast pages: %v", got, maxCastPages, api.queries)
+	}
+	if strings.Join(tl.Truncated, ",") != "casts" {
+		t.Errorf("Truncated = %v, want [casts]", tl.Truncated)
+	}
+}
+
 // A cursor that does not advance would loop forever; it ends the stream and
 // marks it cut.
 func TestANonAdvancingCursorTerminates(t *testing.T) {

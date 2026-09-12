@@ -94,9 +94,6 @@ type Bar struct {
 	Class        string // an extra CSS class: intermission, or nothing
 }
 
-// Duration is how long the bar spans.
-func (b Bar) Duration() time.Duration { return b.End - b.Start }
-
 // Marker is one boss cast on the boss lane: a tick with a link, and a bar
 // when the cast took time.
 type Marker struct {
@@ -243,36 +240,6 @@ func short(d time.Duration) string {
 		return fmt.Sprintf("%.1fs", d.Seconds())
 	}
 	return fmt.Sprintf("%dm %02ds", int(d.Minutes()), int(d.Seconds())%60)
-}
-
-// Sections groups the positioned casts by phase, for the cast table.
-type Section struct {
-	Phase warcraftlogs.Phase
-	Casts []Cast
-}
-
-// Sections groups the casts by phase. When the encounter has no phase data,
-// every cast lands in a single unnamed section.
-func (v *Timeline) Sections() []Section {
-	if len(v.Timeline.Phases) == 0 {
-		return []Section{{Casts: v.Casts}}
-	}
-	sections := make([]Section, len(v.Timeline.Phases))
-	for i, phase := range v.Timeline.Phases {
-		sections[i].Phase = phase
-	}
-	for _, cast := range v.Casts {
-		// Phases are contiguous, so the last one starting at or before the
-		// cast owns it.
-		index := 0
-		for i, phase := range v.Timeline.Phases {
-			if cast.Offset >= phase.Start {
-				index = i
-			}
-		}
-		sections[index].Casts = append(sections[index].Casts, cast)
-	}
-	return sections
 }
 
 // HasPhases reports whether the encounter had phase data.

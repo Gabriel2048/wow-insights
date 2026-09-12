@@ -27,6 +27,11 @@ const (
 func openRecording(t *testing.T) *fixture.Replay {
 	t.Helper()
 	if _, err := os.Stat(filepath.Join(recordingDir, "report.json")); err != nil {
+		// Committed, so absent only on a machine that lost it — and in CI
+		// that is a failure, not eight tests quietly skipped.
+		if os.Getenv("CI") != "" {
+			t.Fatalf("no recording in CI: %v", err)
+		}
 		t.Skipf("no recording in testdata/; record one with: %s", recordCommand)
 	}
 	replay, err := fixture.Open(recordingDir)
@@ -41,13 +46,12 @@ func openRecording(t *testing.T) *fixture.Replay {
 // production code with only the wire swapped.
 func recordedServer(t *testing.T, replay *fixture.Replay) *Server {
 	t.Helper()
-	return newTestServer(t, warcraftlogs.New("fixture", "fixture", warcraftlogs.WithHTTPClient(replay.Client())))
+	return newTestServer(t, warcraftlogs.New("fixture", "fixture", warcraftlogs.WithTransport(replay)))
 }
 
 // The acceptance criterion of #10: a fight page renders on a machine with no
-// credentials, and it is a real one — laid out, not everything stacked at
-// left: 0.000%. That last part is what a fake client cannot provide, since
-// layout() runs only inside the real one.
+// credentials, and it is a real one — decoded, paged, built and laid out by
+// production code, not everything stacked at left: 0.000%.
 //
 // This is also the staleness detector: when a query grows a field the
 // recording lacks, the page still renders, so the assertions here are on the
@@ -166,13 +170,15 @@ func TestGoldenRenderOfTheRecordedKill(t *testing.T) {
 			t.Errorf("the axis moved: want %s, page has %s", want, regexp.MustCompile(`data-(total|lead|duration)-ms="[0-9]+"`).FindAllString(page, -1))
 		}
 	}
-	// Positions on it, each as the page emits them.
+	// Positions on it. Each pattern names the element and its numbers and
+	// nothing else — not its other classes, attribute order or the rest of
+	// its style — so a markup change that moves nothing stays green.
 	for what, pattern := range map[string]string{
-		"the pull": `class="prepull" style="width: 0\.553%"`,
-		"the precast Pyroblast bar (1.818s, reconstructed)": `class="castbar estimated"\s+style="left: 0\.173%; width: 0\.419%"`,
-		"the precast's tick":                       `class="tick"\s+style="left: 0\.173%"`,
-		"the first phase (Stage One, 2m00s)":       `class="phase"\s+style="left: 0\.553%; width: 27\.764%;"`,
-		"the first boss marker":                    `class="bcast" style="left: 0\.558%"`,
+		"the pull": `class="prepull[^>]*width: 0\.553%`,
+		"the precast Pyroblast bar (1.818s, reconstructed)": `class="castbar estimated[^>]*left: 0\.173%; width: 0\.419%`,
+		"the precast's tick":                       `class="tick[^>]*left: 0\.173%`,
+		"the first phase (Stage One, 2m00s)":       `class="phase[^>]*left: 0\.553%; width: 27\.764%`,
+		"the first boss marker":                    `class="bcast[^>]*left: 0\.558%`,
 		"the DPS curve's first point, on the pull": `points="0\.553,87\.776`,
 	} {
 		if !regexp.MustCompile(pattern).MatchString(page) {

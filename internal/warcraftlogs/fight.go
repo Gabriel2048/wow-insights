@@ -1,21 +1,26 @@
 package warcraftlogs
 
 import (
+	"cmp"
 	"context"
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
 	"wowinsight/internal/knowledge"
 )
 
+// unknownClass is what the master data reports as an actor's class when the
+// log did not say. The tables know better, so it counts as absent.
+const unknownClass = "Unknown"
+
 // Actor is a participant in a report, as listed in the report's master data.
 type Actor struct {
 	ID      int    `json:"id"`
 	Name    string `json:"name"`
 	Type    string `json:"type"`    // "Player"
-	SubType string `json:"subType"` // class, e.g. "Priest"
+	SubType string `json:"subType"` // class, e.g. "Priest"; unknownClass when the log could not tell
 	Server  string `json:"server"`
 	GameID  int    `json:"gameID"` // for an NPC, the creature's id in the game; what a source filter matches on
 }
@@ -176,7 +181,7 @@ func (c *Client) FightDetail(ctx context.Context, code string, fightID int) (*Fi
 // fightID, which is why they belong here rather than in the assembly.
 func (c *Client) fetchFightDetail(ctx context.Context, code string, fightID int) (*fightDetailReport, error) {
 	var data fightDetailResponse
-	err := c.Query(ctx, fightOp, map[string]any{"code": code, "id": fightID}, &data)
+	err := c.query(ctx, fightOp, map[string]any{"code": code, "id": fightID}, &data)
 	report := data.ReportData.Report
 	if report == nil {
 		return nil, notFound(err, code)
@@ -213,13 +218,17 @@ func buildFightDetail(report *fightDetailReport) *FightDetail {
 		if !inFight[actor.ID] {
 			continue
 		}
-		byID[actor.ID] = &PlayerStats{
+		p := &PlayerStats{
 			ActorID:       actor.ID,
 			Name:          actor.Name,
 			Server:        actor.Server,
 			Class:         actor.SubType,
 			FightDuration: fight.Duration(),
 		}
+		if p.Class == unknownClass {
+			p.Class = ""
+		}
+		byID[actor.ID] = p
 	}
 
 	// The tables carry the spec (in the icon) and item level; master data does not.
@@ -263,15 +272,12 @@ func buildFightDetail(report *fightDetailReport) *FightDetail {
 	}
 	// A total order: the players come out of a map, so a tie on the name
 	// alone would let two players of one name swap places between requests.
-	sort.Slice(detail.Players, func(i, j int) bool {
-		a, b := detail.Players[i], detail.Players[j]
-		if la, lb := strings.ToLower(a.Name), strings.ToLower(b.Name); la != lb {
-			return la < lb
-		}
-		if a.Name != b.Name {
-			return a.Name < b.Name
-		}
-		return a.ActorID < b.ActorID
+	slices.SortFunc(detail.Players, func(a, b PlayerStats) int {
+		return cmp.Or(
+			strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name)),
+			strings.Compare(a.Name, b.Name),
+			cmp.Compare(a.ActorID, b.ActorID),
+		)
 	})
 	return detail
 }

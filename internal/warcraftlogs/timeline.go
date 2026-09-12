@@ -3,11 +3,9 @@ package warcraftlogs
 import (
 	"cmp"
 	"context"
-	"errors"
 	"fmt"
-	"net/http"
+	"maps"
 	"slices"
-	"sort"
 	"strings"
 	"time"
 
@@ -77,16 +75,6 @@ const raidCooldownMinWindow = 250 // milliseconds
 // closed, so it cannot run to the end of the fight.
 const defaultRaidCooldownLength = 10000 // milliseconds
 
-// raidCooldownIDs is the sorted key set, so the query is stable.
-func raidCooldownIDs() []int {
-	ids := make([]int, 0, len(raidCooldownAuras))
-	for id := range raidCooldownAuras {
-		ids = append(ids, id)
-	}
-	sort.Ints(ids)
-	return ids
-}
-
 // raidCooldownWindows turns raid cooldown buffs into windows. Unlike lust, no
 // minimum number of targets applies: the curated list is the filter, and a
 // channelled cooldown only ever buffs its caster.
@@ -141,7 +129,7 @@ func raidCooldownWindows(events []event, fight Fight, actors map[int]string) []R
 	}
 
 	var windows []RaidWindow
-	for _, abilityID := range sortedKeys(intervals) {
+	for _, abilityID := range slices.Sorted(maps.Keys(intervals)) {
 		merged := mergeBuffIntervals(intervals[abilityID], defaultRaidCooldownLength)
 		for _, iv := range merged {
 			if iv.end-iv.start < raidCooldownMinWindow {
@@ -245,17 +233,6 @@ func sortRaidWindows(windows []RaidWindow) {
 	})
 }
 
-// sortedKeys is the ascending key set of a map keyed by int, so a slice
-// seeded from the map comes out the same way every time.
-func sortedKeys[V any](m map[int]V) []int {
-	keys := make([]int, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	slices.Sort(keys)
-	return keys
-}
-
 // raidLustMinTargets is how many players a haste buff must land on before it
 // counts as a raid lust. Some abilities in this list also exist as personal
 // effects that reuse the same spell ID; requiring a raid-wide application
@@ -311,9 +288,8 @@ type Cast struct {
 
 	// Cancelled marks a cast that started and never landed, because it was
 	// interrupted, moved out of, or replaced. End is when the bar is judged
-	// to have been abandoned, and Wasted is how long it ran.
+	// to have been abandoned; Wasted() is how long it ran.
 	Cancelled bool
-	Wasted    time.Duration
 
 	// Precast marks a spell that landed just after the pull but whose cast bar
 	// began before it, so the begincast falls outside the logged fight.
@@ -343,8 +319,8 @@ type Cast struct {
 	// Proc names the aura that made this cast worth taking, when one was up.
 	Proc string
 
-	// ProcMissing marks a hard cast that had no aura justifying it, which for
-	// Pyroblast means a cast that should not have been made.
+	// ProcMissing marks a hard cast of a spell the spec judges that had no
+	// aura justifying it: a cast that should not have been made.
 	ProcMissing bool
 
 	// ProcExpired names an aura that was up when the cast began but had run
@@ -353,8 +329,14 @@ type Cast struct {
 	ProcExpired string
 }
 
-// IsInstant reports whether the spell never entered a cast bar at all.
-func (c Cast) IsInstant() bool { return !c.HadBegincast }
+// Wasted is how long an abandoned cast bar ran before it was given up;
+// zero for a cast that landed.
+func (c Cast) Wasted() time.Duration {
+	if !c.Cancelled {
+		return 0
+	}
+	return c.End - c.Offset
+}
 
 // resolvedInstantly reports whether a cast with a bar took no measurable time
 // on it: a proc.
@@ -486,7 +468,7 @@ func cooldownWindows(events []event, fight Fight, names map[int]string, know kno
 	}
 
 	var windows []CooldownWindow
-	for _, id := range sortedKeys(intervals) {
+	for _, id := range slices.Sorted(maps.Keys(intervals)) {
 		name := names[id]
 		if name == "" {
 			name = fmt.Sprintf("Spell %d", id)
@@ -709,7 +691,7 @@ func auraWindows(events []event, fight Fight, know knowledge.Knowledge) []auraWi
 		}
 		seen[e.AbilityGameID] = true
 	}
-	for _, id := range sortedKeys(open) {
+	for _, id := range slices.Sorted(maps.Keys(open)) {
 		name, _ := know.ProcAura(id)
 		windows = append(windows, auraWindow{name, open[id], fight.Duration()})
 	}
@@ -817,6 +799,33 @@ type masterData struct {
 	NPCs      []Actor   `json:"npcs"`
 }
 
+// names is every ability by game id.
+func (m masterData) names() map[int]string {
+	names := make(map[int]string, len(m.Abilities))
+	for _, a := range m.Abilities {
+		names[a.GameID] = a.Name
+	}
+	return names
+}
+
+// actorNames is every player by actor id.
+func (m masterData) actorNames() map[int]string {
+	actors := make(map[int]string, len(m.Actors))
+	for _, a := range m.Actors {
+		actors[a.ID] = a.Name
+	}
+	return actors
+}
+
+// npcsByID is every NPC by actor id.
+func (m masterData) npcsByID() map[int]Actor {
+	npcs := make(map[int]Actor, len(m.NPCs))
+	for _, npc := range m.NPCs {
+		npcs[npc.ID] = npc
+	}
+	return npcs
+}
+
 // bossIDs is the game ids of the encounter's own NPCs, in order, for the
 // boss cast filter. The environment is typed as a boss and carries game id
 // 0; buildBossCasts drops it by its negative actor id, so it is dropped here
@@ -842,22 +851,26 @@ type masterDataResponse struct {
 }
 
 // fetchMasterData runs the report-scoped master data query.
-func (c *Client) fetchMasterData(ctx context.Context, code string) (masterData, error) {
+// fetchMasterData fetches the report's abilities, actors and NPCs. The
+// master data is the only source of every name on the page and of the boss
+// filter, so an error on it is an error; an error on one part of it is a
+// gap, named in incomplete so the page can say so.
+func (c *Client) fetchMasterData(ctx context.Context, code string) (master masterData, incomplete []string, err error) {
 	var data masterDataResponse
-	err := c.Query(ctx, masterDataOp, map[string]any{"code": code}, &data)
+	err = c.query(ctx, masterDataOp, map[string]any{"code": code}, &data)
 	if data.ReportData.Report == nil {
-		return masterData{}, notFound(err, code)
+		return masterData{}, nil, notFound(err, code)
 	}
-	// A partial document with the master data present is the master data;
-	// the timeline query will report its own gaps.
-	var apiErr *APIError
-	if errors.As(err, &apiErr) && apiErr.Status == http.StatusOK && !errors.Is(err, ErrRateLimited) {
-		err = nil
+	if apiErr, ok := Partial(err); ok {
+		if slices.Contains(apiErr.Fields(), "masterData") {
+			return masterData{}, nil, err
+		}
+		incomplete, err = apiErr.Fields(), nil
 	}
 	if err != nil {
-		return masterData{}, err
+		return masterData{}, nil, err
 	}
-	return data.ReportData.Report.MasterData, nil
+	return data.ReportData.Report.MasterData, incomplete, nil
 }
 
 // timelineResponse is the envelope the timeline query returns.
@@ -902,7 +915,7 @@ func timelineVars(code string, fight Fight, sourceID int, bosses []int, know kno
 	filterVariable(vars, "cooldowns", know.CooldownIDs())
 	vars["withProcs"] = len(know.ProcAuraIDs()) > 0
 	vars["withCooldowns"] = len(know.CooldownIDs()) > 0
-	filterVariable(vars, "raidCDs", raidCooldownIDs())
+	filterVariable(vars, "raidCDs", slices.Sorted(maps.Keys(raidCooldownAuras)))
 	// The boss lane keeps only the encounter's own NPCs, so the query asks
 	// for only those: half of an enemy cast stream is adds.
 	if expr, ok := sourceFilter(bosses); ok {
@@ -941,13 +954,13 @@ func (c *Client) Timeline(ctx context.Context, code string, fight Fight, sourceI
 // casts come back separately from the report because the report's own Casts
 // field holds only the first page, whereas the slice is every page.
 func (c *Client) fetchTimeline(ctx context.Context, code string, fight Fight, sourceID int, know knowledge.Knowledge) (*timelineReport, []event, error) {
-	master, err := c.fetchMasterData(ctx, code)
+	master, incomplete, err := c.fetchMasterData(ctx, code)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	var data timelineResponse
-	err = c.Query(ctx, timelineOp, timelineVars(code, fight, sourceID, master.bossIDs(), know), &data)
+	err = c.query(ctx, timelineOp, timelineVars(code, fight, sourceID, master.bossIDs(), know), &data)
 	report := data.ReportData.Report
 	// The document asks for eleven independent fields, and GraphQL may
 	// answer with ten of them and an error on the eleventh. That is a
@@ -955,10 +968,12 @@ func (c *Client) fetchTimeline(ctx context.Context, code string, fight Fight, so
 	// fields that arrived are built, and the ones that did not are named on
 	// the result so the page can say so. A response that carried errors is
 	// never worth caching — see docs/decisions/2026-09-11-error-taxonomy.md.
-	var incomplete []string
-	var apiErr *APIError
-	if errors.As(err, &apiErr) && apiErr.Status == http.StatusOK && report != nil && !errors.Is(err, ErrRateLimited) {
-		incomplete = apiErr.Fields()
+	if apiErr, ok := Partial(err); ok && report != nil {
+		for _, f := range apiErr.Fields() {
+			if !slices.Contains(incomplete, f) {
+				incomplete = append(incomplete, f)
+			}
+		}
 		err = nil
 	}
 	if report == nil {
@@ -1009,7 +1024,7 @@ func (c *Client) fetchTimeline(ctx context.Context, code string, fight Fight, so
 // cursor the previous page returned. n is the page number, for the error.
 func (c *Client) fetchCastPage(ctx context.Context, code string, fight Fight, sourceID int, start float64, n int) (eventPage, error) {
 	var page castPageResponse
-	if err := c.Query(ctx, castPageOp, castVars(code, fight, sourceID, start), &page); err != nil {
+	if err := c.query(ctx, castPageOp, castVars(code, fight, sourceID, start), &page); err != nil {
 		return eventPage{}, err
 	}
 	if page.ReportData.Report == nil {
@@ -1022,14 +1037,7 @@ func (c *Client) fetchCastPage(ctx context.Context, code string, fight Fight, so
 // nothing after decoding can. What comes out carries times, never positions;
 // internal/view draws it against whatever axis the page chooses.
 func buildTimeline(report *timelineReport, casts []event, fight Fight, know knowledge.Knowledge) *Timeline {
-	names := make(map[int]string, len(report.MasterData.Abilities))
-	for _, a := range report.MasterData.Abilities {
-		names[a.GameID] = a.Name
-	}
-	actors := make(map[int]string, len(report.MasterData.Actors))
-	for _, a := range report.MasterData.Actors {
-		actors[a.ID] = a.Name
-	}
+	names, actors := report.MasterData.names(), report.MasterData.actorNames()
 
 	timeline := &Timeline{Duration: fight.Duration(), Incomplete: report.incomplete, Truncated: report.truncated}
 	timeline.Lusts = lustWindows(report.Lust.Data, fight, names, actors)
@@ -1038,10 +1046,7 @@ func buildTimeline(report *timelineReport, casts []event, fight Fight, know know
 	timeline.DPS = buildDPS(report.Damage, fight)
 	timeline.Taken = buildDPS(report.Taken, fight)
 
-	npcs := make(map[int]Actor, len(report.MasterData.NPCs))
-	for _, npc := range report.MasterData.NPCs {
-		npcs[npc.ID] = npc
-	}
+	npcs := report.MasterData.npcsByID()
 	timeline.BossCasts = buildBossCasts(report.BossCasts.Data, npcs, names, fight)
 	timeline.Cooldowns = cooldownWindows(report.Cooldowns.Data, fight, names, know)
 	timeline.RaidCDs = raidCooldownWindows(report.RaidCDs.Data, fight, actors)
@@ -1170,7 +1175,7 @@ func buildCasts(events []event, fight Fight, names map[int]string, lusts []RaidW
 		break
 	}
 
-	sort.SliceStable(casts, func(i, j int) bool { return casts[i].Offset < casts[j].Offset })
+	slices.SortStableFunc(casts, func(a, b Cast) int { return cmp.Compare(a.Offset, b.Offset) })
 
 	// An abandoned bar ran until the player did something else or until it
 	// would have finished, whichever came first. That is time spent, not
@@ -1192,7 +1197,6 @@ func buildCasts(events []event, fight Fight, names map[int]string, lusts []RaidW
 			end = casts[i+1].Offset
 		}
 		casts[i].End = end
-		casts[i].Wasted = end - casts[i].Offset
 	}
 
 	// A cast beginning strictly inside another cast's bar was woven into it.
@@ -1325,7 +1329,7 @@ func lustWindows(events []event, fight Fight, names, actors map[int]string) []Ra
 	}
 
 	var windows []RaidWindow
-	for _, abilityID := range sortedKeys(intervals) {
+	for _, abilityID := range slices.Sorted(maps.Keys(intervals)) {
 		if len(targets[abilityID]) < raidLustMinTargets {
 			continue
 		}
@@ -1382,8 +1386,8 @@ func buildPhases(transitions []phaseTransition, labels map[int]phaseLabel, fight
 		}
 		// A transition can be logged fractionally before the pull, and the
 		// last phase must not overhang the end of the fight.
-		start = clamp(start, 0, duration)
-		end = clamp(end, start, duration)
+		start = min(max(start, 0), duration)
+		end = min(max(end, start), duration)
 
 		label := labels[t.ID]
 		name := label.Name
@@ -1400,14 +1404,4 @@ func buildPhases(transitions []phaseTransition, labels map[int]phaseLabel, fight
 		phases = append(phases, phase)
 	}
 	return phases
-}
-
-func clamp(v, low, high time.Duration) time.Duration {
-	if v < low {
-		return low
-	}
-	if v > high {
-		return high
-	}
-	return v
 }

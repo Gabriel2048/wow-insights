@@ -198,6 +198,7 @@ $S/wi.sh comment 1 "Pushed: <sha> — https://github.com/Gabriel2048/wow-insight
 - Read the item body before acting on it. A one-line title is rarely the whole request.
 - Report what you actually did. If a status change succeeded and the comment failed, say
   exactly that.
-- Push and PR creation are outward-facing. Do not push or open a PR unless asked.
+- Opening the pull request is the last step of every work item; merging is never yours.
+  Do not push mid-task.
 - Check state before assuming an item is open. The user closes items and moves the board
   themselves, sometimes mid-session.

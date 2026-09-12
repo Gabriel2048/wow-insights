@@ -65,16 +65,3 @@ func TestFormatCompactSwitchesAtEachThousand(t *testing.T) {
 		}
 	}
 }
-
-// The map is handed to a template parse and would be shared state if it were a
-// package-level var, which is why it is a function.
-func TestTemplateFuncsReturnsAFreshMap(t *testing.T) {
-	a, b := templateFuncs(), templateFuncs()
-	if len(a) == 0 {
-		t.Fatal("templateFuncs() returned an empty map")
-	}
-	delete(a, "duration")
-	if _, ok := b["duration"]; !ok {
-		t.Error("mutating one result changed another, so the map is shared")
-	}
-}

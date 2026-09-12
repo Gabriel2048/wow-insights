@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"log/slog"
+	"strings"
 	"testing"
 )
 
@@ -54,5 +55,17 @@ func TestSeverityNames(t *testing.T) {
 		if got := severity(l); got != want {
 			t.Errorf("severity(%v) = %s, want %s", l, got, want)
 		}
+	}
+}
+
+// A handler attribute keyed "level" that is not a Level — a plausible key
+// for a log line about a spec table or a coaching verdict — must not take
+// the process down inside the logger.
+func TestLoggerToleratesAForeignLevelAttribute(t *testing.T) {
+	var buf bytes.Buffer
+	logger := newLogger(&buf, "")
+	logger.Info("x", "level", "high")
+	if !strings.Contains(buf.String(), `"level":"high"`) || !strings.Contains(buf.String(), `"severity":"INFO"`) {
+		t.Errorf("line = %s, want the foreign level kept and the real one renamed", buf.String())
 	}
 }

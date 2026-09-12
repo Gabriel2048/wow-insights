@@ -88,7 +88,10 @@ func TestUpstreamTextGoesToTheLog(t *testing.T) {
 func TestARenderFailureIsACleanFiveHundred(t *testing.T) {
 	s := newTestServer(t, fakeWCL{})
 	rec := httptest.NewRecorder()
-	s.render(rec, httptest.NewRequest("GET", "/", nil), http.StatusOK, "no-such-template.html", nil)
+	// A real page with the wrong data: the template writes the document
+	// head before it reaches the field it cannot resolve, so this fails
+	// mid-render — the case a streaming write would get wrong.
+	s.render(rec, httptest.NewRequest("GET", "/", nil), http.StatusOK, "fight.html", fightPageData{})
 	if rec.Code != http.StatusInternalServerError {
 		t.Errorf("status = %d, want 500", rec.Code)
 	}
@@ -138,6 +141,9 @@ func TestAFailedTimelineIsSaidOnThePage(t *testing.T) {
 	if strings.Contains(body, upstreamSecret) {
 		t.Error("the page carries the upstream body")
 	}
+	if strings.Contains(body, "Cast timeline") {
+		t.Error("the timeline heading rendered even though there is no timeline")
+	}
 }
 
 // A document that arrived partially builds what it has and names what it
@@ -152,7 +158,7 @@ func TestAPartialTimelineNamesWhatIsMissing(t *testing.T) {
 		},
 	}
 	rec := get(t, wcl, "/report/ExampleReport123/fight/12?player=7")
-	if body := rec.Body.String(); !strings.Contains(body, "Part of the timeline was unavailable from Warcraft Logs: phases, bossCasts.") {
+	if body := rec.Body.String(); !strings.Contains(body, "Part of the timeline was unavailable from Warcraft Logs: phases, boss casts.") {
 		t.Error("the page does not name the missing fields")
 	}
 }
@@ -223,7 +229,7 @@ func TestATruncatedStreamIsSaidOnThePage(t *testing.T) {
 		},
 	}
 	rec := get(t, wcl, "/report/ExampleReport123/fight/12?player=7")
-	if !strings.Contains(rec.Body.String(), "the following lanes end early: bossCasts.") {
+	if !strings.Contains(rec.Body.String(), "the following lanes end early: boss casts.") {
 		t.Error("the page does not say the stream was cut")
 	}
 }

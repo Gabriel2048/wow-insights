@@ -14,8 +14,8 @@ func TestEveryAuthoredSpecIsConsistent(t *testing.T) {
 	}
 	for _, k := range specs {
 		t.Run(k.Spec.Spec+" "+k.Spec.Class, func(t *testing.T) {
-			if k.Spec.Class == "" || k.Spec.Spec == "" {
-				t.Fatalf("Spec = %+v, want both halves", k.Spec)
+			if !Catalogued(k.Spec) {
+				t.Fatalf("Spec = %+v is not a specialisation as Warcraft Logs spells one; nothing would ever look it up", k.Spec)
 			}
 			names := map[string]bool{}
 			for id, name := range k.ProcAuras {
@@ -52,6 +52,22 @@ func TestEveryAuthoredSpecIsConsistent(t *testing.T) {
 	}
 }
 
+func TestTheCatalogueHasEverySpecialisation(t *testing.T) {
+	if len(catalogue) != 39 {
+		t.Errorf("%d specialisations catalogued, want 39", len(catalogue))
+	}
+	for _, id := range []SpecID{{"Hunter", "BeastMastery"}, {"DeathKnight", "Blood"}, {"Mage", "Fire"}} {
+		if !Catalogued(id) {
+			t.Errorf("%+v is not catalogued", id)
+		}
+	}
+	for _, id := range []SpecID{{"Hunter", "Beast Mastery"}, {"Death Knight", "Blood"}, {"mage", "fire"}, {}} {
+		if Catalogued(id) {
+			t.Errorf("%+v is catalogued, but that is not how Warcraft Logs spells it", id)
+		}
+	}
+}
+
 func TestFireMageIsTheReferenceSpec(t *testing.T) {
 	k, ok := Lookup(SpecID{Class: "Mage", Spec: "Fire"})
 	if !ok {
@@ -67,11 +83,11 @@ func TestFireMageIsTheReferenceSpec(t *testing.T) {
 	if !ok || !slices.Equal(rule.Instant, []string{"Hyperthermia", "Hot Streak!"}) || !slices.Equal(rule.HardCast, []string{"Pyroclasm"}) {
 		t.Errorf("Rule(Pyroblast) = %+v, %v", rule, ok)
 	}
-	if got := k.ProcAuraIDs(); !slices.IsSorted(got) || len(got) != 4 {
-		t.Errorf("ProcAuraIDs() = %v, want four sorted ids", got)
+	if got := k.ProcAuraIDs(); !slices.IsSorted(got) || len(got) != len(k.ProcAuras) {
+		t.Errorf("ProcAuraIDs() = %v, want every tracked aura, sorted", got)
 	}
-	if got := k.CooldownIDs(); !slices.IsSorted(got) || len(got) != 5 {
-		t.Errorf("CooldownIDs() = %v, want five sorted ids", got)
+	if got := k.CooldownIDs(); !slices.IsSorted(got) || len(got) != len(k.Cooldowns) {
+		t.Errorf("CooldownIDs() = %v, want every cooldown, sorted", got)
 	}
 }
 
@@ -88,8 +104,8 @@ func TestZeroKnowledgeIsSafe(t *testing.T) {
 	if _, ok := k.Rule(11366); ok {
 		t.Error("Rule found one")
 	}
-	if k.ProcAuraIDs() != nil || k.CooldownIDs() != nil {
-		t.Error("ids are not nil, so a query filter would be sent")
+	if len(k.ProcAuraIDs()) != 0 || len(k.CooldownIDs()) != 0 {
+		t.Error("ids came back for the zero tables, so a query filter would be sent")
 	}
 	if _, ok := Lookup(SpecID{Class: "Warlock", Spec: "Destruction"}); ok {
 		t.Error("Lookup found a spec nobody authored")

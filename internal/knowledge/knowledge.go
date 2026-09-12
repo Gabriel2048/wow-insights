@@ -9,7 +9,10 @@
 // verifies it.
 package knowledge
 
-import "sort"
+import (
+	"maps"
+	"slices"
+)
 
 // SpecID names a specialisation the way Warcraft Logs does: the class as an
 // actor's subType ("Mage", "DeathKnight") and the spec as the second half of
@@ -66,20 +69,8 @@ func (k Knowledge) Rule(spell int) (CastRule, bool) {
 }
 
 // ProcAuraIDs is the sorted set of tracked aura ids, so a query built from it
-// is stable. Nil when nothing is tracked.
-func (k Knowledge) ProcAuraIDs() []int { return sortedKeys(k.ProcAuras) }
+// is stable. Empty when nothing is tracked.
+func (k Knowledge) ProcAuraIDs() []int { return slices.Sorted(maps.Keys(k.ProcAuras)) }
 
-// CooldownIDs is the sorted set of cooldown ids. Nil when there are none.
-func (k Knowledge) CooldownIDs() []int { return sortedKeys(k.Cooldowns) }
-
-func sortedKeys(m map[int]string) []int {
-	if len(m) == 0 {
-		return nil
-	}
-	ids := make([]int, 0, len(m))
-	for id := range m {
-		ids = append(ids, id)
-	}
-	sort.Ints(ids)
-	return ids
-}
+// CooldownIDs is the sorted set of cooldown ids. Empty when there are none.
+func (k Knowledge) CooldownIDs() []int { return slices.Sorted(maps.Keys(k.Cooldowns)) }

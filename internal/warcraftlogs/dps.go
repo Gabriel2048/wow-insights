@@ -83,8 +83,8 @@ func buildDPS(response dpsGraphResponse, fight Fight) *DPSGraph {
 	var sum float64
 	for i := 0; i <= last; i++ {
 		dps := totals[i] / seconds
-		// Positions are assigned later, by Timeline.layout, so the curve shares
-		// one x domain with the casts.
+		// A time, not a position: internal/view draws the curve on the same
+		// axis as the casts.
 		point := DPSPoint{
 			Offset: time.Duration(base-fight.StartTime)*time.Millisecond +
 				time.Duration(float64(i)*interval)*time.Millisecond,

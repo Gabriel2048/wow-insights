@@ -3,6 +3,10 @@
 The contract for coding agents working in this repository. Read it before your first
 edit. `CLAUDE.md` points here; there is no second copy.
 
+**Start here.** `./scripts/check.sh` is the gate; run it before every push. `ARCHITECTURE.md`
+is the map; read it before the code. The board and the issue → branch → pull request
+lifecycle are in `.claude/skills/work-items/SKILL.md`. Never push to `main`, never merge.
+
 ## The gate
 
 Run before every push. CI runs the same list, with the same step names, and is a
@@ -12,10 +16,17 @@ required check on `main`.
 ./scripts/check.sh
 ```
 
+The first run compiles the linter (about a minute); `-race` needs a C compiler; govulncheck
+needs the network. **When govulncheck goes red with no change of yours** — a new advisory
+against the pinned toolchain — open a work item "Bump toolchain to go1.26.N", change only
+the `toolchain` line in `go.mod`, run `go fix ./...` in the same pull request, say so on the
+blocked pull request and rebase it once the bump lands. If the Go minor changed, the linter
+floor noted in `.github/workflows/ci.yml` may need to move too.
+
 ## Running it
 
-Go 1.26 or newer, and a Warcraft Logs API client from
-<https://www.warcraftlogs.com/api/clients/>.
+Go 1.26 — `go.mod` pins the exact toolchain and fetches it on first use — and a Warcraft
+Logs API client from <https://www.warcraftlogs.com/api/clients/>.
 
 ```
 cp .env.example .env      # then fill in the two values
@@ -23,8 +34,8 @@ go run .                  # http://localhost:8080, or PORT=9999 go run .
 ```
 
 Without both credentials the binary exits at startup naming what is missing — it does
-not start and fail every request. Ctrl-C or SIGTERM drains in-flight requests for up to
-eight seconds, then exits 0.
+not start and fail every request. Ctrl-C or SIGTERM drains in-flight requests, then
+exits 0; a second Ctrl-C ends it at once.
 
 `GET /healthz` is the only health endpoint and touches nothing. There is deliberately no
 endpoint that asks Warcraft Logs whether it is up: the app stays up and says so when it
@@ -39,9 +50,12 @@ go run ./cmd/dev/serve-recorded   # serves the recorded report; the log lists th
 `testdata/` holds real API responses, recorded once by a human with
 `go run ./cmd/dev/record` and redacted. Every page comes through the real client with only
 the network replaced, so the timeline you see is laid out by the same code that lays it
-out in production. Anything not in the recording is an error, never a live request. If
-`testdata/` is missing, `TestFixtureRendersAFightPage` skips and its message says what to
-run. See `docs/decisions/2026-09-11-recorded-fixtures.md`.
+out in production. Anything not in the recording is an error, never a live request. The
+recording-backed tests skip when `testdata/` is absent locally and fail in CI, where it is
+committed. The redaction renames and never renumbers, so the actor ids in
+`testdata/masterdata.json` are the real ones and are what `-players` takes: when you need a
+re-record, name the fight id and the actor ids. See
+`docs/decisions/2026-09-11-recorded-fixtures.md`.
 
 ## Non-negotiables
 
@@ -50,8 +64,7 @@ second is the repository owner's call, always. Your work ends at `gh pr create`.
 
 **No real player data, anywhere.** No real character names, guild names, servers or
 Warcraft Logs report codes in tests, fixtures, doc comments or user-facing strings. Use
-`ExampleReport123` and `Testmage`. The initial commit was rewritten on 2026-09-10 to
-remove them. `testdata/` is the one place real API responses live, and the recorder that
+`ExampleReport123` and `Testmage`. `testdata/` is the one place real API responses live, and the recorder that
 writes it (`cmd/dev/record`) redacts every name, server, owner and code before writing, and
 refuses to write if one survives. Never edit a recording by hand, and never commit one
 the recorder did not produce.
@@ -64,15 +77,13 @@ replaces and why the standard library is not enough, and let the owner decide be
 lands. Never add one silently inside a larger change.
 
 **Templates live under `internal/web/templates/`, static files under `internal/web/static/`.**
-`internal/web/templates.go` embeds both at compile time; a file outside those directories
-is simply not in the binary — the failure is a blank page or a 404 at runtime, not a build
-error. A page is a file defining `title` and `content` and listed in `pages`; the layout
-and the partials are parsed once and cloned per page, which is what lets two pages both
-define `content`. **Never `ExecuteTemplate` a partials file by its filename**: a file
-holding only `{{define}}` blocks also registers an almost-empty template under its own
-name, and it renders nothing without an error. A page links its stylesheet and script with
-`{{asset "app.css"}}`, which resolves to a content-hashed path; no page carries an inline
-`<style>` or `<script>`, and #7's Content-Security-Policy depends on that staying true.
+Both are embedded at compile time: a static file anywhere else is a 404 at runtime, and a
+template anywhere else fails `ParseTemplates` at startup. A page defines `page` and
+`content` and is listed in `pages`; `internal/web/templates.go` says how the layout and
+partials are cloned per page, and why a partials file is never executed by its filename.
+No page carries an inline `<style>`, `<script>` or `on*=` attribute; #7's
+Content-Security-Policy depends on that. Positioning is inline `style=` attributes, so that
+policy will need `'unsafe-inline'` for styles and nothing else.
 
 ## Go idioms this project expects
 
@@ -90,8 +101,6 @@ These are the calls tooling cannot make.
   sentinels and `*APIError` are the pattern, `classify` in `internal/web` is the one
   place an error becomes a status and a sentence, and a handler never builds a message
   from `err.Error()`. See `docs/decisions/2026-09-11-error-taxonomy.md`.
-- **`log.Fatal` and `os.Exit` run no deferred function.** Shutdown, flushes and cleanup
-  are all skipped. `main` should have exactly one exit point.
 - **Functional options, not a family of constructors.** There is no overloading and no
   optional parameters: `New(id, secret string, opts ...Option)`.
 - **Struct equality is field-wise, and a pointer field compares by address.** `Fight`
@@ -99,20 +108,20 @@ These are the calls tooling cannot make.
   as a map key. Build such keys explicitly.
 - **Tests live in the package they test.** A same-package `_test.go` reaches unexported
   identifiers; that is the intended seam for testing internals, not a workaround.
-- **Prefer the standard library's own shapes** — `slices` and `maps` over hand-written
-  comparators, `cmp.Or` over an if-chain. `go fix` catches some of this, not all of it.
-- **`context.Context` is the first parameter and must be honoured.** Anything doing I/O
-  takes one and passes it down; never stash it in a struct.
+- **Plain Go otherwise:** the standard library's shapes (`slices`, `maps`, `cmp.Or`) over
+  hand-rolled ones, `context.Context` first and honoured, `main` with one exit point since
+  `os.Exit` runs no deferred function.
 - **The analysis carries no geometry.** `internal/warcraftlogs` produces times relative
   to the pull; `internal/view` turns them into positions against an axis the page chooses.
   A percentage, a row or an SVG path on an analysis type is a defect: the analysis does
   not import the view, so the compiler catches the import, and a reviewer catches the
   field. Every lane on a page is a `view.Lane` of `view.Bar`s, packed by one function and
   drawn by one template block; a new lane is a `Lane`, not a struct, a packer and a loop.
-- **A GraphQL document is a named `const` in `operations.go`, never built by
-  concatenation.** Anything that varies is a declared variable — a filter is a nullable
-  `String` left out of the variables map when its set is empty, which omits the argument.
-  A test holds every document to this.
+- **A GraphQL document is a named `operation` in `operations.go`, never built by
+  concatenation.** Anything that varies is a declared variable. A filter is a nullable
+  `String` left out of the variables map when its set is empty — which omits the
+  *argument*, not the field; a field that must not be fetched at all is gated with
+  `@include(if:)` on a Boolean. A test holds every document to this.
 
 ## What tests are for
 
@@ -140,10 +149,10 @@ the number does not.
 1. **Known wrong, not yet fixed.** There is no way to push that here. A defect you find
    and cannot fix in the same change gets an issue, not a skipped test: a skipped test is
    a broken test with a note attached, and Go has no strict xfail — a `t.Skip` does not
-   fail when it starts passing, so it would never tell anyone the note was stale. (A
-   temporary exception allowing exactly that existed for #13 and #14 and was removed
-   when they landed.) `t.Skip` is for a precondition the environment lacks — the
-   committed recording being absent — and for nothing else.
+   fail when it starts passing, so it would never tell anyone the note was stale.
+   `t.Skip` is for a precondition the environment lacks — the committed recording being
+   absent on a developer machine — and for nothing else; a fuzz target rejecting an input
+   is the other legitimate skip.
 2. **A refactor turned a test red and you believe the test is what is wrong.** Start from
    the opposite assumption: a refactor is not meant to change behaviour, so a red test
    means you broke something until you can say why it does not. Red proves something
@@ -166,36 +175,31 @@ the number does not.
 **They are still Go tests.** Straight-line unless a table genuinely reads better; this
 suite is mostly straight-line by choice. `t.Fatalf` for a precondition that makes the
 following assertions meaningless, `t.Errorf` for each assertion. `t.Helper()` in helpers.
-Floats compared with a tolerance, never `==`. And **fixtures are functions returning fresh
-values, never package-level vars** — `buildCasts`, `auraWindows` and `buildPhases` sort
-their input slice in place, and the suite runs with `-shuffle=on`, so a shared fixture would
-be silently mutated by whichever test ran first.
+Floats compared with a tolerance, never `==`. **Fixtures are functions returning fresh
+values, never package-level vars**: the builders return slices they go on to mutate, tests
+mutate what they are handed, and the suite runs with `-shuffle=on`, so a shared fixture
+would be silently changed by whichever test ran first. And a pin on formatting, whitespace,
+attribute order, a stylesheet token or a line of the script is not a behaviour pin; it goes
+red on an honest change and protects nothing.
 
 ## Logging
 
 `log/slog`, never `log`. Inside a handler use `s.logger(r)`, which carries the request id;
 the middleware writes the one access line per request, so a handler logs only what went
-wrong. Severity means something: **ERROR** is a request that failed; **WARNING** is a
-request that degraded but rendered (the timeline branch of the fight page); a client that
-went away (`context.Canceled`) is **INFO**, through `s.upstreamFailed`, because logging
-it as a failure would drown the failures that matter. The shipped binary writes JSON
-spelt for Cloud Logging (`severity`, `message`); the dev binaries write text. Same calls,
-different handler, chosen in each `main`.
+wrong, at the level `classify` in `internal/web/errors.go` assigns. The shipped binary
+writes JSON spelt for Cloud Logging; the dev binaries write text.
 
 ## The one third-party thing that actually executes
 
-`templates/fight.html` loads `https://wow.zamimg.com/js/tooltips.js` — unversioned, no
+`internal/web/templates/fight.html` loads `https://wow.zamimg.com/js/tooltips.js` — unversioned, no
 SRI, on every fight page view. "No Go dependencies" is true of the module and false of
 the product. It is the one script here running with full origin privileges, and it
 constrains any Content-Security-Policy work in #7.
 
 ## Credentials
 
-`.env` is gitignored and read from the process working directory by `internal/config`,
-which never writes to the process environment — a real export wins over the file. The
-names are `WARCRAFTLOGS_CLIENT_ID` and `WARCRAFTLOGS_CLIENT_SECRET`, one per value; the
-`ClientId` / `ClientSecret` spellings from Warcraft Logs' client page are no longer
-accepted. `PORT` defaults to 8080.
+`.env.example` names the variables; `internal/config` reads them, with a real export
+winning over the file.
 
 Never echo, log, commit or paste a value. Secret-scanning push protection is enabled, but
 it only recognises known credential formats — a backstop, not a permission.
@@ -258,8 +262,9 @@ These are the shapes today's code has. New work should not deepen them.
   template; `lustAbilityIDs` and `raidCooldownAuras` stay in the analysis because they
   are class-agnostic. Adding a spec must not touch `timeline.go`.
 - **No persistence.** Nothing is stored between requests, so every page view re-queries
-  Warcraft Logs against a single hourly points budget (measured: 3,600) shared by all
-  users. #2 owns the cache; do not invent an ad-hoc one.
+  Warcraft Logs against one hourly points budget shared by all users. The cache is a
+  roadmap item (#2 and #4 both describe it), keyed on `Subject` plus a version of the
+  knowledge tables; do not invent an ad-hoc one.
 - **A `Timeline` is one pull's.** `view.Options` can draw two on one axis, which is what
   #3 needs; nothing yet does.
 

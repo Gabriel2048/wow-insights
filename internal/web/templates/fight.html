@@ -16,7 +16,7 @@
 
 <form method="get" class="picker">
     <label for="player">Player</label>
-    <select id="player" name="player" onchange="this.form.submit()">
+    <select id="player" name="player">
         <option value="">Select a player&hellip;</option>
         {{range .Detail.Players}}
             <option value="{{.ActorID}}" {{if eq .ActorID $.SelectedID}}selected{{end}}>

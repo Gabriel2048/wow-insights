@@ -3,6 +3,7 @@ package warcraftlogs
 import (
 	"errors"
 	"fmt"
+	"net/http"
 	"slices"
 	"strconv"
 	"strings"
@@ -75,12 +76,28 @@ func (e *APIError) Unwrap() error {
 	switch {
 	case e.Status == 429, e.mentionsRateLimit():
 		return ErrRateLimited
+	case e.Status == http.StatusUnauthorized, e.Status == http.StatusForbidden:
+		// The API refusing a fresh token is the credentials, not an
+		// outage — the same fault as the token endpoint rejecting them.
+		return ErrBadCredentials
 	case e.onReport():
 		// An error on the report itself is the API saying the report is
 		// not there for this client — nonexistent, or private. Not an outage.
 		return ErrReportNotFound
 	}
 	return ErrUpstream
+}
+
+// Partial reports whether err is a document that arrived with data and
+// errors both: a 200 whose errors name fields, not a refusal. The caller
+// then builds what came and names what did not. A rate limit reported
+// inside a 200 is a refusal, whatever else the document carries.
+func Partial(err error) (*APIError, bool) {
+	var apiErr *APIError
+	if errors.As(err, &apiErr) && apiErr.Status == http.StatusOK && !errors.Is(err, ErrRateLimited) {
+		return apiErr, true
+	}
+	return nil, false
 }
 
 // mentionsRateLimit reports whether a GraphQL error was the points budget.

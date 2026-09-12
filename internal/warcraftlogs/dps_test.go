@@ -51,7 +51,6 @@ func TestBuildDPSSumsSeriesAcrossAbilities(t *testing.T) {
 	if g.Points[0].Offset != 0 || g.Points[1].Offset != 2*time.Second {
 		t.Errorf("offsets = %v, %v; want 0 and 2s", g.Points[0].Offset, g.Points[1].Offset)
 	}
-	// Positions are assigned by Timeline.layout, not here.
 }
 
 func TestBuildDPSAlignsSeriesStartingLate(t *testing.T) {

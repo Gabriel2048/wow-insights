@@ -13,7 +13,7 @@ func recordedKill(t *testing.T) (*timelineReport, Fight) {
 	t.Helper()
 	raw, err := os.ReadFile("../../testdata/timeline-1-21-1141518.json")
 	if err != nil {
-		t.Skipf("no recording: %v (record one with go run ./cmd/dev/record)", err)
+		skipWithoutRecording(t, err)
 	}
 	var env struct{ Data timelineResponse }
 	if err := json.Unmarshal(raw, &env); err != nil {
@@ -32,32 +32,52 @@ func recordedKill(t *testing.T) (*timelineReport, Fight) {
 		t.Fatal(err)
 	}
 	report.MasterData = master.Data.ReportData.Report.MasterData
-	// The fight is anchored on the first cast, which is what the goldens
-	// pinned their offsets against.
-	first := report.Casts.Data[0].Timestamp
-	return report, Fight{StartTime: first, EndTime: first + 425000}
+	return report, recordedFight(t, recordedKillID)
 }
 
-func (r *timelineReport) names() map[int]string {
-	names := map[int]string{}
-	for _, a := range r.MasterData.Abilities {
-		names[a.GameID] = a.Name
+// skipWithoutRecording skips a recording-backed test on a machine with no
+// recording — and fails it in CI, where the recording is committed, so a
+// change that loses testdata/ cannot pass by skipping everything that
+// reads it.
+func skipWithoutRecording(t *testing.T, err error) {
+	t.Helper()
+	if os.Getenv("CI") != "" {
+		t.Fatalf("no recording in CI: %v", err)
 	}
-	return names
+	t.Skipf("no recording: %v (record one with go run ./cmd/dev/record)", err)
 }
 
-func (r *timelineReport) actorNames() map[int]string {
-	actors := map[int]string{}
-	for _, a := range r.MasterData.Actors {
-		actors[a.ID] = a.Name
+// recordedFight reads one fight's bounds from the recorded report, so the
+// goldens are pinned against the pull as the page draws it.
+func recordedFight(t *testing.T, id int) Fight {
+	t.Helper()
+	raw, err := os.ReadFile("../../testdata/report.json")
+	if err != nil {
+		t.Fatalf("the recording has no report.json: %v", err)
 	}
-	return actors
+	var env struct{ Data reportResponse }
+	if err := json.Unmarshal(raw, &env); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range env.Data.ReportData.Report.Fights {
+		if f.ID == id {
+			return f.fight()
+		}
+	}
+	t.Fatalf("the recorded report has no fight %d", id)
+	return Fight{}
 }
 
-func (r *timelineReport) npcs() map[int]Actor {
-	npcs := map[int]Actor{}
-	for _, n := range r.MasterData.NPCs {
-		npcs[n.ID] = n
-	}
-	return npcs
-}
+// The recorded subject: report ExampleReport123, fight 1 (the kill) with the
+// Fire Mage as actor 21, a Holy Paladin as 11 and a Shadow Priest as 29;
+// fight 6 (a wipe) with actor 21. Actor ids are the real ones — the
+// redaction renames, it does not renumber — which is what cmd/dev/record
+// -players takes.
+const (
+	recordedKillID   = 1
+	recordedFireMage = 21
+)
+
+func (r *timelineReport) names() map[int]string      { return r.MasterData.names() }
+func (r *timelineReport) actorNames() map[int]string { return r.MasterData.actorNames() }
+func (r *timelineReport) npcs() map[int]Actor        { return r.MasterData.npcsByID() }

@@ -2,7 +2,6 @@ package view
 
 import (
 	"fmt"
-	"math"
 	"strings"
 
 	"wowinsight/internal/warcraftlogs"
@@ -35,13 +34,13 @@ func plot(points []warcraftlogs.DPSPoint, xs []float64, peak float64) (line, are
 		if i > 0 {
 			b.WriteByte(' ')
 		}
-		x := math.Min(100, math.Max(0, xs[i]))
+		x := min(100, max(0, xs[i]))
 		y := 100 - 100*p.DPS/peak
 		fmt.Fprintf(&b, "%.3f,%.3f", x, y)
 	}
 	line = b.String()
 	area = fmt.Sprintf("M%.3f,100 L%s L%.3f,100 Z",
-		math.Min(100, math.Max(0, xs[0])), line,
-		math.Min(100, math.Max(0, xs[len(points)-1])))
+		min(100, max(0, xs[0])), line,
+		min(100, max(0, xs[len(points)-1])))
 	return line, area
 }

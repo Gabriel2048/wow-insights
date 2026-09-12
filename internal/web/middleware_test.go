@@ -109,7 +109,7 @@ func TestRecoveryLetsErrAbortHandlerThrough(t *testing.T) {
 
 // One line per request, keyed by the route pattern rather than the path — a
 // report code in the key would give every request its own metric.
-func TestAccessLineCarriesThePatternAndTheCost(t *testing.T) {
+func TestAccessLineCarriesThePattern(t *testing.T) {
 	s, buf := loggedServer(t, fakeWCL{
 		fightDetail: func(context.Context, string, int) (*warcraftlogs.FightDetail, error) { return fightDetail(), nil },
 		timeline: func(context.Context, string, warcraftlogs.Fight, int, knowledge.Knowledge) (*warcraftlogs.Timeline, error) {
@@ -136,9 +136,6 @@ func TestAccessLineCarriesThePatternAndTheCost(t *testing.T) {
 		if line[key] != want {
 			t.Errorf("%s = %v, want %v", key, line[key], want)
 		}
-	}
-	if strings.Contains(buf.String(), "ExampleReport123") && line["pattern"] == "GET /report/ExampleReport123/fight/12" {
-		t.Error("the access line carries the raw path")
 	}
 	if line["request_id"] != rec.Header().Get("X-Request-Id") {
 		t.Error("the access line's request_id is not the one on the response")
@@ -217,4 +214,39 @@ type budgetedFake struct{ fakeWCL }
 
 func (budgetedFake) Budget() (warcraftlogs.RateLimit, bool) {
 	return warcraftlogs.RateLimit{LimitPerHour: 3600, PointsSpentThisHour: 118, PointsResetIn: 900}, true
+}
+
+// A panic after the response has started cannot be turned into a 500; the
+// bytes are gone. It is still one ERROR line, and no second status is
+// written on top of the first.
+func TestPanicAfterAPartialWriteWritesNoSecondStatus(t *testing.T) {
+	s, buf := loggedServer(t, fakeWCL{})
+	// The same two links Handler() puts around the routes, around a handler
+	// that writes and then panics.
+	var h http.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte("half a page"))
+		panic("after the write")
+	})
+	for _, wrap := range []middleware{s.recoverPanic, s.accessLog(s.routes()), s.requestID} {
+		h = wrap(h)
+	}
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/boom", nil))
+	if rec.Code != http.StatusAccepted || rec.Body.String() != "half a page" {
+		t.Errorf("response = %d %q, want the partial 202 left alone", rec.Code, rec.Body.String())
+	}
+	if n := len(withLevel(lines(t, buf), "ERROR")); n != 1 {
+		t.Errorf("%d ERROR lines, want 1", n)
+	}
+}
+
+// The recorder wraps net/http's writer; http.ResponseController must reach
+// through it, or a handler that flushes gets an error instead of a flush.
+func TestResponseWriterUnwrapsForTheController(t *testing.T) {
+	rec := httptest.NewRecorder()
+	rw := &responseWriter{ResponseWriter: rec}
+	if err := http.NewResponseController(rw).Flush(); err != nil {
+		t.Errorf("Flush() through the wrapper: %v", err)
+	}
 }

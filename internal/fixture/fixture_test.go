@@ -22,7 +22,7 @@ import (
 const (
 	realCode  = "AbCdEfGh12345678"
 	realOwner = "Zorbulaxlogs"
-	realRealm = "Twisting Nether"
+	realRealm = "Whispering Marsh"
 )
 
 // fakeAPI answers the client's queries the way the real service would, with
@@ -68,7 +68,7 @@ func fakeAPI(t *testing.T) *httptest.Server {
 					{"id":11,"name":"Ash","type":"Player","subType":"Priest","server":"` + realRealm + `"}]},
 				"damage":{"data":{"entries":[{"id":7,"name":"Zorbulax","guid":123456789,"type":"Mage","icon":"Mage-Fire","itemLevel":678,"total":240000000,"activeTime":250000,
 					"pets":[{"id":40,"name":"Echo","type":"Pet","total":1000}]}],"totalTime":300000}},
-				"healing":{"data":{"entries":[{"id":11,"name":"Ash-TwistingNether","guid":987654321,"type":"Priest","icon":"Priest-Holy","itemLevel":675,"total":90000000,"overheal":30000000}],"totalTime":300000}},
+				"healing":{"data":{"entries":[{"id":11,"name":"Ash-WhisperingMarsh","guid":987654321,"type":"Priest","icon":"Priest-Holy","itemLevel":675,"total":90000000,"overheal":30000000}],"totalTime":300000}},
 				"deaths":{"data":{"entries":[{"id":11,"name":"Ash","guid":987654321,"deathWindow":"killed by Dread Bolt while Zorbulax was casting"}]}}}}}}`,
 			"timeline-12-7-1000": `{"data":{"reportData":{"report":{
 				"casts":{"data":[{"timestamp":2000,"type":"begincast","sourceID":7,"targetID":-1,"abilityGameID":133},
@@ -107,7 +107,7 @@ func record(t *testing.T) string {
 	rec := NewRecorder()
 	wcl := warcraftlogs.New("id", "secret",
 		warcraftlogs.WithBaseURL(srv.URL+"/oauth/token", srv.URL+"/api"),
-		warcraftlogs.WithHTTPClient(rec.Client()))
+		warcraftlogs.WithTransport(rec))
 	ctx := context.Background()
 	if _, err := wcl.RateLimit(ctx); err != nil {
 		t.Fatalf("RateLimit() returned error: %v", err)
@@ -154,7 +154,7 @@ func TestRecordingIsRedactedEverywhere(t *testing.T) {
 		}
 		all.WriteString(string(data) + "\n")
 	}
-	for _, real := range []string{"Zorbulax", "Ash", "Twisting Nether", "TwistingNether", realOwner, realCode, "123456789", "987654321"} {
+	for _, real := range []string{"Zorbulax", "Ash", "Whispering Marsh", "WhisperingMarsh", realOwner, realCode, "123456789", "987654321"} {
 		// As a whole word: "Ash" is also the start of "Ashen Call", which
 		// is game data and must stay.
 		if regexp.MustCompile(`(?i)\b` + regexp.QuoteMeta(real) + `\b`).MatchString(all.String()) {
@@ -209,7 +209,7 @@ func TestReplayServesTheRecordingThroughTheRealClient(t *testing.T) {
 		t.Errorf("Fights() = %+v, want fight 12 with player 7", got)
 	}
 
-	wcl := warcraftlogs.New("fixture", "fixture", warcraftlogs.WithHTTPClient(replay.Client()))
+	wcl := warcraftlogs.New("fixture", "fixture", warcraftlogs.WithTransport(replay))
 	ctx := context.Background()
 	report, err := wcl.Report(ctx, FakeCode)
 	if err != nil {
@@ -241,7 +241,7 @@ func TestReplayServesTheRecordingThroughTheRealClient(t *testing.T) {
 		t.Errorf("Casts[0].CastTime=%v Casts[1].Gap=%v: the timeline was not built, so the replay is not going through the real client", timeline.Casts[0].CastTime, timeline.Casts[1].Gap)
 	}
 	if _, err := wcl.RateLimit(ctx); err != nil {
-		t.Errorf("RateLimit() returned error: %v (the health endpoint should work offline)", err)
+		t.Errorf("RateLimit() returned error: %v (the budget gauge must work offline)", err)
 	}
 }
 
@@ -250,7 +250,7 @@ func TestReplayAnswersAnUnknownCodeWithNotFound(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wcl := warcraftlogs.New("fixture", "fixture", warcraftlogs.WithHTTPClient(replay.Client()))
+	wcl := warcraftlogs.New("fixture", "fixture", warcraftlogs.WithTransport(replay))
 	_, err = wcl.Report(context.Background(), "SomeOtherCode123")
 	if err == nil || !strings.Contains(err.Error(), "not found") {
 		t.Errorf("error = %v, want the client's own not-found message", err)
@@ -264,7 +264,7 @@ func TestReplayRefusesWhatWasNotRecorded(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wcl := warcraftlogs.New("fixture", "fixture", warcraftlogs.WithHTTPClient(replay.Client()))
+	wcl := warcraftlogs.New("fixture", "fixture", warcraftlogs.WithTransport(replay))
 	_, err = wcl.FightDetail(context.Background(), FakeCode, 19)
 	if err == nil || !strings.Contains(err.Error(), "fight-19.json") {
 		t.Errorf("error = %v, want it to name the missing fight-19.json", err)
@@ -312,7 +312,7 @@ func TestReplaceWordMatchesWholeWordsCaseInsensitively(t *testing.T) {
 		{"Ash", "Ash", "Testpriest", 1},
 		{"ash", "Ash", "Testpriest", 1},
 		{"Ashen Call", "Ash", "Ashen Call", 0},
-		{"Ash-TwistingNether", "Ash", "Testpriest-TwistingNether", 1},
+		{"Ash-WhisperingMarsh", "Ash", "Testpriest-WhisperingMarsh", 1},
 		{"Zorbulax's Tuesday", "Zorbulax", "Testmage's Tuesday", 1},
 		{"Zorbulaxé", "Zorbulax", "Zorbulaxé", 0}, // an accented letter is still a letter
 		{"Zorbulaxé", "Zorbulaxé", "Testmage", 1}, // and a name can carry one

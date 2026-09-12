@@ -80,8 +80,10 @@ const budgetGuard = 0.9
 // The retry policy for the wire — a 429, a 5xx, or a transport error. Never
 // a 4xx and never a GraphQL-level error: those are the document's, and asking
 // again gets the same answer. Three attempts with doubling backoff and full
-// jitter is about 3.5s in the worst case, well inside a request's deadline.
+// jitter wait at most 1.5s in total, well inside a request's deadline. The
+// one retry on a 401 is on top of these: it is a new token, not a new try.
 const (
+	requestTimeout = 30 * time.Second
 	maxAttempts    = 3
 	backoffBase    = 500 * time.Millisecond
 	maxResponseAPI = 32 << 20
@@ -104,13 +106,14 @@ var ErrResponseTooLarge = errors.New("warcraftlogs: response too large")
 // parameters, so this is how New takes anything beyond the credentials.
 type Option func(*Client)
 
-// WithHTTPClient replaces the HTTP client used for both the token request and
-// the API request. A nil client is ignored rather than installed, so a caller
-// cannot accidentally strip the default timeout.
-func WithHTTPClient(h *http.Client) Option {
+// WithTransport replaces the transport under both the token request and the
+// API request — what the recorder and the replay hang on. The client's
+// timeout stays: a transport that hangs is bounded the same as the real one.
+// A nil transport is ignored rather than installed.
+func WithTransport(rt http.RoundTripper) Option {
 	return func(c *Client) {
-		if h != nil {
-			c.http = h
+		if rt != nil {
+			c.http.Transport = rt
 		}
 	}
 }
@@ -130,7 +133,7 @@ func New(id, secret string, opts ...Option) *Client {
 	c := &Client{
 		id:          id,
 		secret:      secret,
-		http:        &http.Client{Timeout: 30 * time.Second, Transport: newTransport()},
+		http:        &http.Client{Timeout: requestTimeout, Transport: newTransport()},
 		tokenURL:    defaultTokenURL,
 		apiURL:      defaultAPIURL,
 		maxResponse: maxResponseAPI,
@@ -325,14 +328,14 @@ func (e graphQLError) path() string {
 	return strings.Join(parts, ".")
 }
 
-// Query runs a GraphQL query and unmarshals the "data" object into out.
+// query runs a GraphQL query and unmarshals the "data" object into out.
 //
 // GraphQL permits a 200 carrying both data and errors: one failing field in a
 // document of eleven leaves the other ten intact. So the data is decoded into
 // out before the errors are reported, and the error returned is an *APIError
 // naming the fields that failed — a caller that can use a partial document
 // checks for it with errors.As and carries on with what it has.
-func (c *Client) Query(ctx context.Context, op operation, variables map[string]any, out any) error {
+func (c *Client) query(ctx context.Context, op operation, variables map[string]any, out any) error {
 	if op.expensive() {
 		if err := c.checkBudget(); err != nil {
 			return err
@@ -487,6 +490,6 @@ type RateLimit struct {
 // offers, which makes it a good check that credentials work.
 func (c *Client) RateLimit(ctx context.Context) (RateLimit, error) {
 	var data rateLimitResponse
-	err := c.Query(ctx, rateLimitOp, nil, &data)
+	err := c.query(ctx, rateLimitOp, nil, &data)
 	return data.RateLimitData, err
 }

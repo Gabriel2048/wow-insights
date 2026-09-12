@@ -87,7 +87,6 @@ func (s *Server) logProblem(r *http.Request, p problem, what string, err error, 
 
 // errorPageData is what the error template renders.
 type errorPageData struct {
-	Title   string
 	Status  int
 	Message string
 }
@@ -98,9 +97,7 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, p problem) {
 	if p.status == 0 {
 		return
 	}
-	s.render(w, r, p.status, "error.html", errorPageData{
-		Title: "wowinsight", Status: p.status, Message: p.message,
-	})
+	s.render(w, r, p.status, "error.html", errorPageData{Status: p.status, Message: p.message})
 }
 
 // render executes a template into a buffer and commits the response only if

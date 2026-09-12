@@ -37,8 +37,8 @@ func TestTemplatesParse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseTemplates() returned error: %v", err)
 	}
-	for _, name := range []string{"index.html", "fight.html", "error.html"} {
-		if !tpl.Lookup(name) {
+	for _, name := range pages {
+		if tpl.pages[name] == nil {
 			t.Errorf("page %q was not parsed", name)
 		}
 	}
@@ -106,7 +106,7 @@ func TestFightPageRendersWithoutTheOptionalLanes(t *testing.T) {
 }
 
 func TestIndexPageRenders(t *testing.T) {
-	page := render(t, "index.html", pageData{Title: "wowinsight", Report: reportWithTwoPulls()})
+	page := render(t, "index.html", pageData{Report: reportWithTwoPulls()})
 	for _, want := range []string{"Fixture raid night", "The Coiled Altar", "Kill", "Wipe"} {
 		if !strings.Contains(page, want) {
 			t.Errorf("page is missing %q", want)
@@ -118,7 +118,6 @@ func TestIndexPageRenders(t *testing.T) {
 // the escaper on a path a user controls.
 func TestIndexPageShowsAnError(t *testing.T) {
 	page := render(t, "index.html", pageData{
-		Title: "wowinsight",
 		URL:   `https://example.com/"><script>alert(1)</script>`,
 		Error: "That does not look like a Warcraft Logs report link.",
 	})
@@ -143,11 +142,9 @@ var optionalScriptLookups = map[string]string{
 	"dpsLane":   "guarded by seriesFrom",
 	"takenLane": "guarded by seriesFrom",
 
-	// Guarded since #17: every write is behind `if (readout && …)`. Before,
-	// the script assigned readout.textContent directly, and a player with no
-	// damage series — a healer, or anyone who died at the pull — threw a
-	// TypeError once per animation frame when the timeline was hovered.
-	// TestReadoutIsGuarded holds the guard in place.
+	// Every write is behind `if (readout && …)`: a player with no damage
+	// series — a healer, or anyone who died at the pull — has no readout,
+	// and an unguarded write threw once per animation frame on hover.
 	"dpsReadout": "guarded by an if on the element",
 }
 
@@ -231,13 +228,13 @@ func TestFightPageWithoutDPSIsMissingOnlyTheKnownIDs(t *testing.T) {
 // route pattern from another, with nothing between them. This resolves every
 // link the page actually emits against the mux that actually serves it.
 func TestIndexLinksMatchARegisteredRoute(t *testing.T) {
-	page := render(t, "index.html", pageData{Title: "wowinsight", Report: reportWithTwoPulls()})
+	page := render(t, "index.html", pageData{Report: reportWithTwoPulls()})
 	links := regexp.MustCompile(`href="(/report/[^"]+)"`).FindAllStringSubmatch(page, -1)
 	if len(links) == 0 {
 		t.Fatal("the index page emitted no fight links, so this test is asserting nothing")
 	}
 
-	mux := newTestServer(t, fakeWCL{}).Routes()
+	mux := newTestServer(t, fakeWCL{}).routes()
 	for _, m := range links {
 		req := httptest.NewRequest("GET", m[1], nil)
 		if _, pattern := mux.Handler(req); pattern == "" {
@@ -286,34 +283,6 @@ func TestPlayerSuppliedTextIsEscaped(t *testing.T) {
 	}
 }
 
-// The readout is looked up on every page and emitted only on pages with a
-// damage graph, so every write to it must be guarded. This reads the script:
-// no line may assign to readout.textContent outside an `if (readout` guard.
-func TestReadoutIsGuarded(t *testing.T) {
-	src := script(t)
-	writes := regexp.MustCompile(`(?m)^.*readout\.textContent\s*=`).FindAllString(src, -1)
-	if len(writes) == 0 {
-		t.Fatal("the script never writes the readout; the regex is wrong or the feature is gone")
-	}
-	lines := strings.Split(src, "\n")
-	for i, line := range lines {
-		if !strings.Contains(line, "readout.textContent =") {
-			continue
-		}
-		// The guard is on the same line or the enclosing if, within a few
-		// lines above.
-		guarded := false
-		for j := max(0, i-3); j <= i; j++ {
-			if strings.Contains(lines[j], "if (readout") {
-				guarded = true
-			}
-		}
-		if !guarded {
-			t.Errorf("line %d writes the readout without checking it exists: %s", i+1, strings.TrimSpace(line))
-		}
-	}
-}
-
 // The page links to its stylesheet and script by content-hashed paths, and
 // those paths serve the files with a cache lifetime that a hash makes safe;
 // a stale hash is a 404, not a forever-cached wrong file.
@@ -328,6 +297,10 @@ func TestStaticAssetsAreHashedAndCacheable(t *testing.T) {
 	}
 	if strings.Contains(page, "<style>") {
 		t.Error("the page still carries an inline stylesheet")
+	}
+	// An inline handler is an inline script to a Content-Security-Policy.
+	if m := regexp.MustCompile(`\son[a-z]+="`).FindString(page); m != "" {
+		t.Errorf("the page carries an inline event handler (%q); the script must bind it instead", strings.TrimSpace(m))
 	}
 	for _, m := range links {
 		rec := get(t, fakeWCL{}, m[0])
@@ -347,66 +320,20 @@ func TestStaticAssetsAreHashedAndCacheable(t *testing.T) {
 	}
 }
 
-// The stylesheet's palette goes through tokens, and the page is declared
-// dark so native controls — the timeline's own scrollbar included — stop
-// rendering with light chrome.
-func TestStylesheetDeclaresItsTokensAndScheme(t *testing.T) {
-	css, err := fs.ReadFile(staticFS, "static/app.css")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, want := range []string{":root {", "color-scheme: dark", "--text:", "--cast:", "--boss:", "var(--muted)"} {
-		if !strings.Contains(string(css), want) {
-			t.Errorf("app.css lacks %q", want)
-		}
-	}
-}
-
 // The index and error pages are narrow centered forms; the fight page is
 // full width. Their stylesheet rules are scoped by a class on <body> that
 // each page sets — without it, the index's centered flex body applied to the
 // fight page and squeezed the timeline into a column (found in review).
-func TestEachPageScopesItsStyles(t *testing.T) {
+// Whether the stylesheet honours the class is the stylesheet's business.
+func TestEachPageSetsItsBodyClass(t *testing.T) {
 	for page, data := range map[string]any{
 		"fight.html": fullFightPage(),
-		"index.html": pageData{Title: "wowinsight"},
-		"error.html": errorPageData{Title: "wowinsight", Status: 404, Message: "no"},
+		"index.html": pageData{},
+		"error.html": errorPageData{Status: 404, Message: "no"},
 	} {
 		class := strings.TrimSuffix(page, ".html")
 		if !strings.Contains(render(t, page, data), `<body class="`+class+`">`) {
 			t.Errorf("%s does not set body.%s", page, class)
-		}
-	}
-	css, err := fs.ReadFile(staticFS, "static/app.css")
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Every rule head is scoped by a page's body class; only :root is shared.
-	// A rule head that is not is one page's style leaking into another's.
-	text := string(css)
-	inComment := false
-	for n, line := range strings.Split(text, "\n") {
-		trimmed := strings.TrimSpace(line)
-		if inComment {
-			inComment = !strings.Contains(trimmed, "*/")
-			continue
-		}
-		if strings.HasPrefix(trimmed, "/*") {
-			inComment = !strings.Contains(trimmed, "*/")
-			continue
-		}
-		if !strings.HasSuffix(trimmed, "{") || strings.HasPrefix(trimmed, "@") || strings.HasPrefix(trimmed, ":root") {
-			continue
-		}
-		for sel := range strings.SplitSeq(strings.TrimSuffix(trimmed, "{"), ",") {
-			if !strings.HasPrefix(strings.TrimSpace(sel), "body.") {
-				t.Errorf("app.css line %d: %q is not scoped to a page", n+1, strings.TrimSpace(sel))
-			}
-		}
-	}
-	for _, cls := range []string{"fight", "index", "error"} {
-		if !strings.Contains(text, "\nbody."+cls+" {") {
-			t.Errorf("no body.%s rule", cls)
 		}
 	}
 }

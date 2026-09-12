@@ -60,7 +60,7 @@ func (f *fakeAPI) start(t *testing.T) *Client {
 			expires = 3600
 		}
 		w.Header().Set("Content-Type", "application/json")
-		if _, err := w.Write([]byte(`{"access_token":"tok-` + itoa(n) + `","expires_in":` + itoa(expires) + `}`)); err != nil {
+		if _, err := w.Write([]byte(`{"access_token":"tok-` + strconv.Itoa(n) + `","expires_in":` + strconv.Itoa(expires) + `}`)); err != nil {
 			t.Errorf("write token response: %v", err)
 		}
 	})
@@ -98,18 +98,6 @@ func (f *fakeAPI) start(t *testing.T) *Client {
 	c := New("id", "secret", WithBaseURL(srv.URL+"/oauth/token", srv.URL+"/api"))
 	c.backoffBase = time.Millisecond // retries are tested for count, not for patience
 	return c
-}
-
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	var b []byte
-	for n > 0 {
-		b = append([]byte{byte('0' + n%10)}, b...)
-		n /= 10
-	}
-	return string(b)
 }
 
 // The token is worth caching: every query would otherwise pay for a second
@@ -307,19 +295,21 @@ func TestQueryWithoutCredentialsNeverReachesTheNetwork(t *testing.T) {
 	}
 }
 
-// WithHTTPClient is the seam the offline fixture mode installs a replay
-// transport through, so a nil must not be able to strip the default client.
-func TestWithHTTPClientIgnoresNil(t *testing.T) {
-	c := New("id", "secret", WithHTTPClient(nil))
-	if c.http == nil {
-		t.Error("a nil http.Client was installed, leaving the client with no transport and no timeout")
+// WithTransport is the seam the recorder and the replay hang on. It swaps
+// the transport only: the timeout that bounds a hung upstream stays, and a
+// nil cannot strip either.
+func TestWithTransportKeepsTheTimeout(t *testing.T) {
+	rt := roundTripperFunc(func(*http.Request) (*http.Response, error) { return nil, errors.New("x") })
+	c := New("id", "secret", WithTransport(rt))
+	if c.http.Timeout != requestTimeout {
+		t.Errorf("Timeout = %v after WithTransport, want %v", c.http.Timeout, requestTimeout)
 	}
-}
-
-func TestNewDefaultsToTheRealEndpoints(t *testing.T) {
-	c := New("id", "secret")
-	if c.tokenURL != defaultTokenURL || c.apiURL != defaultAPIURL {
-		t.Errorf("New() gave tokenURL=%q apiURL=%q, want the package defaults", c.tokenURL, c.apiURL)
+	if _, ok := c.http.Transport.(roundTripperFunc); !ok {
+		t.Errorf("Transport = %T, want the one installed", c.http.Transport)
+	}
+	c = New("id", "secret", WithTransport(nil))
+	if c.http.Transport == nil || c.http.Timeout != requestTimeout {
+		t.Error("a nil transport was installed")
 	}
 }
 
@@ -346,6 +336,39 @@ func TestTimelineBuildsFromAPartialDocument(t *testing.T) {
 	}
 	if len(tl.Incomplete) != 1 || tl.Incomplete[0] != "phases" {
 		t.Errorf("Incomplete = %v, want [phases]", tl.Incomplete)
+	}
+	if want := (Subject{ReportCode: "ExampleReport123", FightID: 12, ActorID: 7, Spec: fire.Spec}); tl.Subject != want {
+		t.Errorf("Subject = %+v, want %+v", tl.Subject, want)
+	}
+}
+
+// The master data is the only source of every name and of the boss filter.
+// An error on one of its parts is a gap the page can name; an error on the
+// master data itself is no timeline at all, not a page of "Spell 133".
+func TestAMasterDataGapIsNamedAndAMissingMasterDataIsAnError(t *testing.T) {
+	// The same document answers both queries: the master data arrives with
+	// its npcs missing, and the timeline arrives whole.
+	api := &fakeAPI{body: `{"data":{"reportData":{"report":{
+		"casts":{"data":[],"nextPageTimestamp":null},
+		"lust":{"data":[]},"procs":{"data":[]},"cooldowns":{"data":[]},"raidCDs":{"data":[]},
+		"damage":{"data":{"series":[]}},"taken":{"data":{"series":[]}},"bossCasts":{"data":[]},
+		"masterData":{"abilities":[{"gameID":133,"name":"Fireball"}],"actors":[],"npcs":null},
+		"fights":[],"phases":[]}}},
+		"errors":[{"message":"npcs unavailable","path":["reportData","report","masterData","npcs"]}]}`}
+	c := api.start(t)
+	tl, err := c.Timeline(context.Background(), "ExampleReport123", Fight{ID: 12, StartTime: 1000, EndTime: 301000}, 7, fire)
+	if err != nil {
+		t.Fatalf("Timeline() returned %v for a gap in the master data, want the timeline with the gap named", err)
+	}
+	if len(tl.Incomplete) != 1 || tl.Incomplete[0] != "npcs" {
+		t.Errorf("Incomplete = %v, want [npcs] once, though both documents reported it", tl.Incomplete)
+	}
+
+	api = &fakeAPI{body: `{"data":{"reportData":{"report":{"masterData":null}}},
+		"errors":[{"message":"unavailable","path":["reportData","report","masterData"]}]}`}
+	c = api.start(t)
+	if _, err := c.Timeline(context.Background(), "ExampleReport123", Fight{ID: 12, StartTime: 1000, EndTime: 301000}, 7, fire); err == nil {
+		t.Error("Timeline() built a timeline with no master data at all")
 	}
 }
 

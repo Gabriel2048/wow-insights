@@ -1,9 +1,8 @@
 {{define "page"}}index{{end}}
-{{define "title"}}{{.Title}}{{end}}
 {{define "content"}}
 <form method="get" action="/">
     <input type="url" name="url" placeholder="https://www.warcraftlogs.com/reports/..."
-           value="{{.URL}}" required autofocus>
+           aria-label="Warcraft Logs report link" value="{{.URL}}" required autofocus>
     <button type="submit">Analyze</button>
 </form>
 

@@ -68,6 +68,7 @@ body.fight .wipe {
 
 body.fight .picker {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 0.75rem;
     padding: 1rem;
@@ -79,6 +80,8 @@ body.fight .picker {
 
 body.fight select {
     flex: 1;
+    min-width: 0;
+    max-width: 100%;
     padding: 0.6rem 0.75rem;
     font-size: 1rem;
     border: 1px solid var(--border);
@@ -136,6 +139,7 @@ body.fight h3 {
 
 body.fight .tl-controls {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 0.5rem;
     margin-bottom: 0.6rem;
@@ -183,6 +187,7 @@ body.fight .advanced-body {
 
 body.fight .advanced-row {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 0.5rem;
     font-size: 0.85rem;
@@ -201,7 +206,6 @@ body.fight .advanced .note strong {
     color: var(--text-soft);
 }
 
-.tl-controls input[type="number"],
 body.fight .advanced-row input[type="number"] {
     width: 6rem;
     padding: 0.3rem 0.5rem;
@@ -433,30 +437,9 @@ body.fight .track .pull span {
     white-space: nowrap;
 }
 
-body.fight .track .phase {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    border-left: 1px solid var(--rule);
-    background: rgba(255, 255, 255, 0.018);
-    overflow: hidden;
-}
 
-body.fight .track .phase:nth-child(even) {
-    background: rgba(255, 255, 255, 0.05);
-}
 
-body.fight .track .phase.intermission {
-    background: rgba(150, 120, 255, 0.13);
-}
 
-body.fight .track .phase span {
-    display: block;
-    padding: 0.1rem 0.35rem;
-    font-size: 0.68rem;
-    color: var(--text-dim);
-    white-space: nowrap;
-}
 
 body.fight .track .lust {
     position: absolute;
@@ -797,6 +780,7 @@ body.fight .scale {
 
 body.fight .legend {
     display: flex;
+    flex-wrap: wrap;
     gap: 1.25rem;
     margin-bottom: 1rem;
     font-size: 0.8rem;
@@ -955,9 +939,6 @@ body.fight .casts th {
     letter-spacing: 0.05em;
 }
 
-body.fight .casts tr.downtime td {
-    color: var(--danger-soft);
-}
 
 body.fight .casts tr.lust td:first-child {
     border-left: 2px solid var(--warn);

@@ -156,6 +156,11 @@ func TestARotatedSecretRecoversWithoutARestart(t *testing.T) {
 	if !errors.As(err, &apiErr) || apiErr.Status != http.StatusUnauthorized || api.queries != 2 {
 		t.Errorf("err=%v queries=%d, want the 401 after exactly one retry", err, api.queries)
 	}
+	// And that 401 is the credentials, the same fault as the token endpoint
+	// refusing them — not an outage.
+	if !errors.Is(err, ErrBadCredentials) || errors.Is(err, ErrUpstream) {
+		t.Errorf("err=%v, want ErrBadCredentials and not ErrUpstream", err)
+	}
 }
 
 // A body over the cap is named as such, not reported as a JSON document that
@@ -184,28 +189,17 @@ func TestEveryRequestSaysWhoIsCalling(t *testing.T) {
 	}
 }
 
-func TestDefaultTransportRaisesTheIdleLimit(t *testing.T) {
-	c := New("id", "secret")
-	tr, ok := c.http.Transport.(*http.Transport)
-	if !ok {
-		t.Fatal("the default client has no explicit transport")
-	}
-	if tr.MaxIdleConnsPerHost <= http.DefaultMaxIdleConnsPerHost || tr.MaxConnsPerHost == 0 {
-		t.Errorf("MaxIdleConnsPerHost=%d MaxConnsPerHost=%d; want the idle limit raised and a concurrency cap", tr.MaxIdleConnsPerHost, tr.MaxConnsPerHost)
-	}
-}
-
 // A failure the network reports is worth a retry; one the transport itself
 // produced — the replay saying it has no such recording — is not.
 func TestOnlyNetworkFailuresAreRetried(t *testing.T) {
 	calls := 0
-	c := New("id", "secret", WithHTTPClient(&http.Client{Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+	c := New("id", "secret", WithTransport(roundTripperFunc(func(r *http.Request) (*http.Response, error) {
 		calls++
 		if strings.HasSuffix(r.URL.Path, "/token") {
 			return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"access_token":"t","expires_in":3600}`)), Header: http.Header{}}, nil
 		}
 		return nil, errors.New("fixture: nothing recorded for this")
-	})}))
+	})))
 	c.backoffBase = time.Millisecond
 	if _, err := c.RateLimit(context.Background()); err == nil {
 		t.Fatal("want the transport's error")

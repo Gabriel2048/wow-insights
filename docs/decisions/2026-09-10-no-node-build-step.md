@@ -40,8 +40,9 @@ actually emitted.
 
 - No type checking on the browser code. The DOM-id contract test in #10 is the
   compensating control, and it is weaker.
-- No minification. The fight page is large and repetitive; gzip in #11 recovers most of
-  what a minifier would, on machine-generated markup that compresses roughly 8-10x.
+- No minification. The fight page is large and repetitive; gzip recovers most of what a
+  minifier would, on machine-generated markup that compresses roughly 8-10x. (Measured
+  under #11 at 600 KB → 40 KB and parked for #7 to decide where compression lives.)
 - If this is ever revisited, revisit it against the single-binary goal, not against the
   ergonomics of the JavaScript.
 

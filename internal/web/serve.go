@@ -27,6 +27,13 @@ const (
 	// and well below net/http's 1 MB default.
 	maxHeaderBytes = 16 << 10
 
+	// writeTimeout bounds the response write. It is an absolute deadline
+	// from the end of the header read, so it sits above handlerDeadline:
+	// the handler's own deadline is what bounds the work, and this is the
+	// backstop for a client that reads the finished page too slowly to
+	// ever let the handler return.
+	writeTimeout = 2 * handlerDeadline
+
 	// shutdownBudget is how long in-flight requests get to finish after the
 	// process is told to stop. Cloud Run gives a revision ten seconds between
 	// SIGTERM and SIGKILL; this stays strictly inside that so the process is
@@ -39,10 +46,6 @@ const (
 // and Run returns nil. This is the one place an http.Server is built, so the
 // shipped binary and the recorded-server both get the same timeouts and the
 // same shutdown.
-//
-// WriteTimeout is deliberately left at zero. It is an absolute deadline
-// measured from the end of the header read, so any value would hard-cap the
-// long renders #2 plans; the work is bounded per handler instead.
 func (s *Server) Run(ctx context.Context, addr string) error {
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
@@ -57,6 +60,7 @@ func (s *Server) serve(ctx context.Context, ln net.Listener) error {
 		Handler:           s.Handler(),
 		ReadHeaderTimeout: readHeaderTimeout,
 		ReadTimeout:       readTimeout,
+		WriteTimeout:      writeTimeout,
 		IdleTimeout:       idleTimeout,
 		MaxHeaderBytes:    maxHeaderBytes,
 		ErrorLog:          slog.NewLogLogger(s.log.Handler(), slog.LevelError),

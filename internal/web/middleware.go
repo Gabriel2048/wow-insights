@@ -20,10 +20,8 @@ import (
 type middleware func(http.Handler) http.Handler
 
 // Handler is the routes behind the middleware chain, and what Run serves.
-// Routes stays exposed so a test can ask the mux which pattern a path resolves
-// to; everything that actually serves a request goes through here.
 func (s *Server) Handler() http.Handler {
-	mux := s.Routes()
+	mux := s.routes()
 	var h http.Handler = mux
 	// Listed innermost first. The request id exists before anything logs;
 	// the deadline is inside recovery so a panic from a cancelled context is
@@ -155,7 +153,11 @@ func (s *Server) recoverPanic(next http.Handler) http.Handler {
 				panic(p)
 			}
 			s.logger(r).Error("panic in handler", "panic", p, "stack", string(debug.Stack()))
-			if started, ok := w.(interface{ wroteHeader() bool }); !ok || !started.wroteHeader() {
+			// accessLog's writer is what sits under this handler, and it
+			// knows whether anything was written. Anything else here is a
+			// chain change; write the 500 only when nothing has gone out.
+			rw, ok := w.(*responseWriter)
+			if !ok || !rw.wroteHeader() {
 				http.Error(w, "internal server error", http.StatusInternalServerError)
 			}
 		}()
@@ -235,6 +237,10 @@ func (w *responseWriter) Write(p []byte) (int, error) {
 }
 
 func (w *responseWriter) wroteHeader() bool { return w.wrote }
+
+// Unwrap exposes the underlying writer, so http.ResponseController reaches
+// through this one for Flush and the deadlines.
+func (w *responseWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
 func (w *responseWriter) status() int {
 	if !w.wrote {
