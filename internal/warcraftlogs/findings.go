@@ -166,12 +166,8 @@ func cooldownFindings(t *Timeline, know knowledge.Knowledge, actedUntil time.Dur
 		if len(used) == 0 {
 			continue
 		}
-		if len(used) >= 2 {
-			gaps := make([]time.Duration, 0, len(used)-1)
-			for i := 1; i < len(used); i++ {
-				gaps = append(gaps, used[i]-used[i-1])
-			}
-			if f, ok := unusedTail(rule, used, observedCooldown(rule, gaps), actedUntil); ok {
+		if floor, ok := ObservedCooldown(rule, used); ok {
+			if f, ok := unusedTail(rule, used, floor, actedUntil); ok {
 				found = append(found, f)
 			}
 		}
@@ -228,22 +224,37 @@ func roomFor(first, every, fight time.Duration) int {
 	return n
 }
 
-// observedCooldown is the cooldown the player demonstrated, bounded by what
-// the game could plausibly give them. The shortest gap is the estimate; Base
-// stops an ability that was reset, or that banked a second charge, from being
-// read as a two-second cooldown and turning one pull into forty missed uses.
-func observedCooldown(rule knowledge.JudgedCooldown, gaps []time.Duration) time.Duration {
+// ObservedCooldown is the cooldown the player demonstrated, bounded by what
+// the game could plausibly give them. The shortest gap between their uses is
+// the estimate; Base stops an ability that was reset, or that banked a second
+// charge, from being read as a two-second cooldown and turning one pull into
+// forty missed uses. It reports false when there are fewer than two uses, so
+// there is no gap to measure and nothing may be said about spacing.
+//
+// It is exported because it is the number every claim about this ability is
+// measured against, and anything describing the pull alongside a finding has
+// to state the same one. A second implementation of this arithmetic elsewhere
+// would eventually disagree with the finding it sits next to, which is a page
+// arguing with itself in front of the person it is advising.
+func ObservedCooldown(rule knowledge.JudgedCooldown, used []time.Duration) (time.Duration, bool) {
+	if len(used) < 2 {
+		return 0, false
+	}
+	gaps := make([]time.Duration, 0, len(used)-1)
+	for i := 1; i < len(used); i++ {
+		gaps = append(gaps, used[i]-used[i-1])
+	}
 	base := time.Duration(rule.Base) * time.Second
 	floor := slices.Min(gaps)
 	if base <= 0 {
-		return floor
+		return floor, true
 	}
 	// No talent in the game halves a cooldown twice over, so a gap under
 	// half the untalented cooldown is a reset, not a rotation.
 	if floor < base/2 {
 		floor = base / 2
 	}
-	return min(floor, base)
+	return min(floor, base), true
 }
 
 // roundSeconds renders a duration the way a player would say it.

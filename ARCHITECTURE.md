@@ -20,11 +20,13 @@ flowchart LR
     oauth["Warcraft Logs OAuth<br/>/oauth/token"]
     api[("Warcraft Logs v2 GraphQL API<br/>/api/v2/client<br/>3,600 points per hour, shared by every user")]
     zam["wow.zamimg.com/js/tooltips.js<br/>unversioned, no SRI"]
+    claude["Anthropic Messages API<br/>/v1/messages, claude-opus-5<br/>optional: no key, no prose"]
 
     user -->|"GET /?url=…<br/>GET /report/{code}/fight/{id}?player={actor}<br/>GET /report/{code}/fight/{id}/analysis?player={actor}<br/>POST the same, to start the analysis<br/>GET /healthz"| app
     app -->|"client-credentials token, cached until expiry,<br/>one fetch shared by concurrent callers"| oauth
     app -->|"one query per page section, every page view"| api
     user -.->|"loaded by every fight page"| zam
+    app -->|"one request per analysis that found something,<br/>carrying a fact sheet with no player in it"| claude
     app -->|"GET /static/{hash}/…<br/>the stylesheet and the script, cached for a year"| user
 ```
 
@@ -36,6 +38,16 @@ flowchart LR
   reported errors on is never cached at all.
 - The tooltips script is the only third-party code that executes, and it runs with full
   origin privileges in the browser. It constrains any Content-Security-Policy work (#7).
+- **The Anthropic API is the only destination that is not Warcraft Logs, and the only one
+  this app sends its own content to.** It is asked one question — how should these findings
+  read? — about an analysis that is already complete, and only when that analysis found
+  something. It is optional in the strongest sense: with no `ANTHROPIC_API_KEY` the binary
+  starts, says so once, and every finding appears in the analyser's own sentences. A refusal,
+  an outage, a rate limit or an answer that fails validation all land on that same page.
+  What goes out is a compressed fact sheet built field by field in `internal/coach`; it
+  carries no character name, no server, no guild and no report code, and a fail-closed check
+  against this fight's own roster runs on the bytes before they leave. The model may reword
+  the findings, order them and set one aside with a reason — it cannot add one.
 - The wire retries a 429, a 5xx or a network failure, a few attempts with doubling backoff
   and full jitter, never a 4xx or a GraphQL-level error; a 401 drops the cached token and
   goes once more, so a rotated secret is a non-event. Every request says who is calling.
@@ -46,11 +58,11 @@ flowchart LR
 
 ## 2. How the code is organised
 
-One package ships, two a developer runs, and six they are built from. Solid
+One package ships, three a developer runs, and seven they are built from. Solid
 arrows are imports and are verified. Not every import is drawn: each binary also builds
-the client with `warcraftlogs.New`, and all three read their configuration — those edges
-are declared in the diagram source and checked, but left off the picture, because the
-labels already say it and the lines would only cross what matters. Dotted arrows are
+the client with `warcraftlogs.New`, and every one of them reads its configuration — those
+edges are declared in the diagram source and checked, but left off the picture, because
+the labels already say it and the lines would only cross what matters. Dotted arrows are
 relations that are not imports, which is what makes them worth drawing — including the
 two wires under the client: in the shipped binary it talks to Warcraft Logs; under
 `serve-recorded` the replay transport sits beneath the same client and answers from
@@ -65,15 +77,18 @@ flowchart TB
     subgraph dev["cmd/dev — nothing here ships"]
         serve_recorded["serve-recorded<br/>recording → client → web"]
         record["record<br/>the fixture recorder"]
+        measure_insight["measure-insight<br/>times the model against a real pull"]
     end
     templates[/"internal/web/templates/ and static/<br/>embedded at compile time"/]
     web["internal/web<br/>HTTP layer, routes, templates<br/>middleware, the http.Server and its shutdown"]
+    coach["internal/coach<br/>words the findings with a language model<br/>and refuses anything it cannot trace to one"]
     view["internal/view<br/>the drawing model: positions, lanes, paths<br/>against an axis the page chooses"]
     config["internal/config<br/>PORT and credentials, from the environment or .env"]
     fixture["internal/fixture<br/>replay and record transports"]
     warcraftlogs["internal/warcraftlogs<br/>API client + analysis"]
     knowledge["internal/knowledge<br/>per-spec tables: proc auras, cooldowns, cast rules<br/>one file per spec, imports nothing"]
     api[("Warcraft Logs API")]
+    claude_api[("Anthropic Messages API")]
     testdata[/"testdata/<br/>the committed recording"/]
 
     main --> config
@@ -83,23 +98,33 @@ flowchart TB
     record -->|"records through"| fixture
     templates -.->|"go:embed"| web
     web -->|"Lookup(spec)"| knowledge
+    web -->|"WithWriter, optional"| coach
+    measure_insight -->|"times"| coach
+    coach --> warcraftlogs
+    coach --> knowledge
     web --> warcraftlogs
     web --> view
     view --> warcraftlogs
     warcraftlogs -->|"analyses with"| knowledge
     %% Every binary also builds the client (warcraftlogs.New) and reads its
-    %% configuration. Real, verified, and not drawn: the labels say it and
-    %% the lines would only cross what matters.
+    %% configuration, and the shipped one builds the writer when it has a key.
+    %% Real, verified, and not drawn: the labels say it and the lines would
+    %% only cross what matters.
+    %% main --> coach
+    %% measure_insight --> knowledge
     %% main --> warcraftlogs
+    %% measure_insight --> warcraftlogs
     %% serve_recorded --> warcraftlogs
     %% record --> warcraftlogs
     %% record --> knowledge
     %% serve_recorded --> config
     %% record --> config
+    %% measure_insight --> config
     fixture -.->|"WithTransport"| warcraftlogs
     fixture -.->|"serve-recorded reads"| testdata
     fixture -.->|"record writes"| testdata
     warcraftlogs -.->|"the real wire"| api
+    coach -.->|"WithTransport"| claude_api
 ```
 
 **The analysis carries no geometry.** `internal/warcraftlogs` produces times relative to
@@ -118,12 +143,14 @@ class-agnostic lanes (casts, pauses, phases, boss casts, lust, raid cooldowns) s
 the spec-shaped ones stay empty, the query asks for no procs or cooldowns, and the page
 says so. Adding a spec is one file and one row in the table.
 
-**The two seams**, which is where anything gets substituted:
+**The four seams**, which is where anything gets substituted:
 
 | Seam | Declared in | What hangs on it |
 | --- | --- | --- |
 | `logsClient` — the three methods the handlers call | `internal/web/server.go`, by the consumer | `fakeWCL` in tests; `warcraftlogs.Cache` in the shipped binary |
+| `writer` — the one method that words findings | `internal/web/server.go`, by the consumer | `*coach.Writer` when there is a key; nil otherwise, and nil is a working page |
 | `http.RoundTripper` under the client, via `WithTransport` | `internal/warcraftlogs/client.go` | the recorder and the replay in `internal/fixture` |
+| `http.RoundTripper` under the model, via `WithTransport` | `internal/coach/coach.go` | the fake wire in the coach tests, so the gate needs no key and no network |
 
 The replay sits *under* the client rather than beside it on purpose: a fake client would
 hand back whatever it was told, while the replay drives the real client's decoding,
@@ -132,6 +159,12 @@ wire swapped. `cmd/dev/serve-recorded` reads the committed recording in
 `testdata/` through that seam; `cmd/dev/record` is how a human makes one. Neither is in
 the shipped binary, which has no offline mode. See
 `docs/decisions/2026-09-11-recorded-fixtures.md`.
+
+The model's seam is the same shape and is there for the same reason, but nothing is
+recorded through it yet: the two committed recordings both produce zero findings, so a
+replayed model would have nothing to have worded. The coach tests drive a fake wire
+instead, which is why the whole gate passes with no `ANTHROPIC_API_KEY` and no network.
+`cmd/dev/measure-insight` is what a human with a key runs against a real pull to time it.
 
 **Inside `internal/warcraftlogs`**, one file per concern. `FightDetail` and `Timeline` are
 each split into a `fetchX` method on `*Client` that does I/O and a pure `buildX` from the
@@ -197,9 +230,17 @@ of the spec's knowledge tables, so a refresh, a second browser and a second tab 
 to one run rather than starting three. **Its context comes from a process-lifetime root
 made in `New`, never from a request** — `net/http` cancels an incoming request's context
 when `ServeHTTP` returns, so a job given one would die with the response still on the wire.
-That is the ceiling this exists to raise: the request deadline is a minute, and a model
-that has to read a guide and call a tool will want longer. Shutdown drains it after
+That is the ceiling this exists to raise: the request deadline is a minute, and the model
+that words the findings takes longer than that on its own. Shutdown drains it after
 `srv.Shutdown`, inside the *same* eight-second budget rather than a second one.
+
+**The job ends by asking the model to word what it found**, and only if it found
+something. Nothing about that step may fail the job: the findings are computed and true
+before the model is asked, so a refusal, an outage, a rate limit, a key the API rejects,
+or an answer that does not survive validation all produce the same page with the
+analyser's own sentences on it and one notice saying why. A pull with no findings never
+reaches the model at all — which is the common case, and also the case where a model with
+nothing to do would be most tempted to find something.
 
 Polling is answered from the registry alone, addressed by what the URL already carries. The
 full key needs the player's spec and that spec's table digest, and finding those means

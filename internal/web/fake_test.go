@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"wowinsight/internal/coach"
 	"wowinsight/internal/knowledge"
 	"wowinsight/internal/view"
 	"wowinsight/internal/warcraftlogs"
@@ -168,7 +169,7 @@ func analysisPage() fightPageData {
 func analysisWithFindings() fightPageData {
 	page := analysisPage()
 	page.Analysis = analysisDone
-	page.Findings = []warcraftlogs.Finding{
+	page.Findings = coach.Deterministic([]warcraftlogs.Finding{
 		{
 			RuleID: "cooldown-late-first-use", Severity: warcraftlogs.Major,
 			Title:    "First Combustion came late",
@@ -183,7 +184,16 @@ func analysisWithFindings() fightPageData {
 			At:       229500 * time.Millisecond,
 			Evidence: []warcraftlogs.Evidence{{Label: "uses", Value: "7"}},
 		},
-	}
+	})
+	return page
+}
+
+// analysisWithSetAside is the coaching page where the model judged one of the
+// findings to have had a good reason behind it.
+func analysisWithSetAside() fightPageData {
+	page := analysisWithFindings()
+	page.Findings[1].SetAside = true
+	page.Findings[1].Why = "Combustion was held for the intermission, where damage is doubled."
 	return page
 }
 
