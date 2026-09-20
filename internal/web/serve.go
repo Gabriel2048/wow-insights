@@ -79,12 +79,20 @@ func (s *Server) serve(ctx context.Context, ln net.Listener) error {
 	}
 
 	s.log.Info("shutting down", "drain_budget", shutdownBudget.String())
+	// One budget, shared. Cloud Run allows ten seconds between SIGTERM and
+	// SIGKILL and this stays inside eight; two sequential eight-second drains
+	// would be sixteen and the process would be killed mid-way.
 	drain, cancel := context.WithTimeout(context.Background(), shutdownBudget)
 	defer cancel()
-	if err := srv.Shutdown(drain); err != nil {
+	shutdownErr := srv.Shutdown(drain)
+	// Deliberately not conditional on shutdownErr. The background analyses
+	// have to be told to stop whether or not the listener drained cleanly;
+	// returning first would walk out of main with them still running.
+	s.jobs.stop(drain, s.log)
+	if shutdownErr != nil {
 		// The budget ran out with requests still in flight; they are cut off
 		// now, which is what would have happened at t=0 without Shutdown.
-		return fmt.Errorf("shutdown: %w", err)
+		return fmt.Errorf("shutdown: %w", shutdownErr)
 	}
 	if err := <-errc; !errors.Is(err, http.ErrServerClosed) {
 		return fmt.Errorf("serve: %w", err)

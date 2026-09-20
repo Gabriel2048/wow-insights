@@ -1298,3 +1298,13 @@ body.analysis .finding .evidence dd {
     color: var(--text-soft);
     font-variant-numeric: tabular-nums;
 }
+
+/* The analysis page's own states: a button to start, and something honest to
+   look at while it runs. */
+body.analysis form.analyse {
+    margin-top: 1rem;
+}
+
+body.analysis .empty.working h2::after {
+    content: "\2026";
+}
