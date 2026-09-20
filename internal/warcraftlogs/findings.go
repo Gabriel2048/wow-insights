@@ -42,6 +42,14 @@ type Evidence struct {
 
 // Finding is one thing the log says a player could have done differently.
 //
+// Every one of these answers three questions, in this order, because that is
+// the order a player asks them: what happened, why it is bad, and what should
+// have happened instead. Title is the first. Detail is the second and third,
+// and names a concrete moment and a concrete alternative rather than an
+// average — "it was ready at 3:19 and you used it at 3:51" is something you
+// can go and look at; "37s of cumulative drift measured against your fastest
+// gap" is the arithmetic talking to itself.
+//
 // It carries a time.Duration and never a percentage, a row or a position:
 // where a finding is drawn is internal/view's business, and the page links
 // to At by turning it into a timeline offset itself.
@@ -161,12 +169,13 @@ func lateOpener(rule knowledge.JudgedCooldown, first time.Duration) (Finding, bo
 	return Finding{
 		RuleID:   ruleCooldownLate,
 		Severity: Major,
-		Title:    "First " + rule.Name + " came late",
-		Detail: fmt.Sprintf("%s was first used %s into the pull. A cooldown held that long at the start is usually one that was forgotten, and every later use inherits the delay.",
-			rule.Name, roundSeconds(first)),
-		At: first,
+		Title:    fmt.Sprintf("%s went unused for the first %s", rule.Name, roundSeconds(first)),
+		Detail: fmt.Sprintf("Your first %s was at %s. It should go out in the opener, while the raid's damage buffs are still up and the boss is fresh — and starting late pushes every later use back with it, which usually costs a whole one by the end of the pull.",
+			rule.Name, formatOffset(first)),
+		At: 0,
 		Evidence: []Evidence{
-			{Label: "first use", Value: formatOffset(first)},
+			{Label: "first used", Value: formatOffset(first)},
+			{Label: "should have been", Value: "in the opener"},
 		},
 	}, true
 }
@@ -205,18 +214,24 @@ func driftFinding(rule knowledge.JudgedCooldown, used []time.Duration, fight tim
 	if drift >= floor {
 		severity = Major
 	}
+	// The moment it came off cooldown and was not pressed. This is what the
+	// finding points at, because it is where a player should look to see what
+	// they were doing instead.
+	readyAt := at + floor
+	usedAt := at + worst + floor
 	return Finding{
 		RuleID:   ruleCooldownDrift,
 		Severity: severity,
-		Title:    rule.Name + " drifted later each use",
-		Detail: fmt.Sprintf("Across %d uses, %s came back %s later than it had to, measured against your own fastest %s between them. The worst single wait was %s longer than that, after the use at %s.",
-			len(used), rule.Name, roundSeconds(drift), roundSeconds(floor), roundSeconds(worst), formatOffset(at)),
-		At: at,
+		Title:    fmt.Sprintf("%s sat ready for %s at %s", rule.Name, roundSeconds(worst), formatOffset(readyAt)),
+		Detail: fmt.Sprintf("After the %s at %s it was ready again around %s, and you used it at %s — %s of it sitting there ready. Across the pull that added up to %s. %s is your biggest damage window, so every second it spends ready and unpressed is damage you do not do.",
+			rule.Name, formatOffset(at), formatOffset(readyAt), formatOffset(usedAt),
+			roundSeconds(worst), roundSeconds(drift), rule.Name),
+		At: readyAt,
 		Evidence: []Evidence{
-			{Label: "uses", Value: fmt.Sprintf("%d", len(used))},
-			{Label: "your fastest gap", Value: roundSeconds(floor)},
-			{Label: "cumulative drift", Value: roundSeconds(drift)},
-			{Label: "worst single wait", Value: roundSeconds(worst + floor)},
+			{Label: "ready at", Value: formatOffset(readyAt)},
+			{Label: "used at", Value: formatOffset(usedAt)},
+			{Label: "your usual gap", Value: roundSeconds(floor)},
+			{Label: "total time sitting ready", Value: roundSeconds(drift)},
 		},
 	}, true
 }
@@ -233,17 +248,19 @@ func unusedTail(rule knowledge.JudgedCooldown, used []time.Duration, floor, figh
 	if more < 1 {
 		return Finding{}, false
 	}
+	readyAt := last + floor
 	return Finding{
 		RuleID:   ruleCooldownTail,
 		Severity: Major,
-		Title:    "The pull outlasted your last " + rule.Name,
-		Detail: fmt.Sprintf("Your last %s was at %s, with %s of the pull still to go. At your own pace that was room for %s.",
-			rule.Name, formatOffset(last), roundSeconds(fight-last), plural(more, "more use")),
-		At: last,
+		Title:    fmt.Sprintf("%s came back at %s and was never used again", rule.Name, formatOffset(readyAt)),
+		Detail: fmt.Sprintf("Your last %s was at %s, so it came back around %s with %s of the pull still to run. It was never pressed again. That is %s of your strongest damage window left on the table.",
+			rule.Name, formatOffset(last), formatOffset(readyAt), roundSeconds(fight-readyAt), plural(more, "full use")),
+		At: readyAt,
 		Evidence: []Evidence{
-			{Label: "last use", Value: formatOffset(last)},
-			{Label: "pull remaining", Value: roundSeconds(fight - last)},
-			{Label: "room for", Value: plural(more, "more use")},
+			{Label: "last used", Value: formatOffset(last)},
+			{Label: "ready again at", Value: formatOffset(readyAt)},
+			{Label: "pull still to run", Value: roundSeconds(fight - readyAt)},
+			{Label: "uses left unspent", Value: fmt.Sprintf("%d", more)},
 		},
 	}, true
 }

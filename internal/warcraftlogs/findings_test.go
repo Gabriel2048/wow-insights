@@ -57,7 +57,13 @@ func TestCooldownDriftOnTheRecordedKill(t *testing.T) {
 	if f.Severity != Minor {
 		t.Errorf("Severity = %v, want minor: the drift is real but cost no use", f.Severity)
 	}
-	for _, want := range []string{"Combustion", "52s", "7 uses", "61s", "worst single wait"} {
+	// What happened, why it is bad, what should have happened — in that order.
+	for _, want := range []string{
+		"it was ready again around", // what should have happened, and when
+		"and you used it at",        // what happened instead
+		"added up to 52s",           // what it cost across the pull
+		"damage you do not do",      // why it matters
+	} {
 		if !strings.Contains(f.Detail, want) {
 			t.Errorf("Detail = %q\n  missing %q", f.Detail, want)
 		}
@@ -79,8 +85,13 @@ func TestALateFirstUseIsItsOwnFinding(t *testing.T) {
 	if found[0].RuleID != ruleCooldownLate {
 		t.Errorf("RuleID = %q, want %q", found[0].RuleID, ruleCooldownLate)
 	}
-	if got := found[0].Timestamp(); got != "0:38" {
-		t.Errorf("Timestamp() = %q, want 0:38", got)
+	// It points at the opener, not at the late cast: the opener is where a
+	// player should look to see what they did instead.
+	if got := found[0].Timestamp(); got != "0:00" {
+		t.Errorf("Timestamp() = %q, want 0:00 — the finding is about the opener", got)
+	}
+	if !strings.Contains(found[0].Detail, "should go out in the opener") {
+		t.Errorf("Detail = %q, want it to say what should have happened", found[0].Detail)
 	}
 }
 
@@ -172,17 +183,20 @@ func TestDriftAndAnUnusedTailAreSeparateFindings(t *testing.T) {
 	if len(found) != 2 || byRule[ruleCooldownDrift].RuleID == "" || byRule[ruleCooldownTail].RuleID == "" {
 		t.Fatalf("got %d findings, want drift and unused-tail separately: %+v", len(found), found)
 	}
-	if got := byRule[ruleCooldownDrift].Detail; !strings.Contains(got, "worst single wait") {
-		t.Errorf("the drift finding does not name the worst wait: %q", got)
+	if got := byRule[ruleCooldownDrift].Detail; !strings.Contains(got, "ready again around") {
+		t.Errorf("the drift finding does not say when it should have been used: %q", got)
 	}
-	if strings.Contains(byRule[ruleCooldownDrift].Detail, "room for") {
-		t.Error("the drift finding claims uses were available; that is the tail finding's claim, and blaming one on the other explains neither")
+	if strings.Contains(byRule[ruleCooldownDrift].Detail, "left on the table") {
+		t.Error("the drift finding claims uses were lost; that is the tail finding's claim, and blaming one on the other explains neither")
 	}
 	tail := byRule[ruleCooldownTail]
 	if tail.Severity != Major {
 		t.Errorf("the unused tail is %v, want major", tail.Severity)
 	}
-	if !strings.Contains(tail.Detail, "room for 4 more uses") {
-		t.Errorf("tail Detail = %q, want room for 4 more uses", tail.Detail)
+	if !strings.Contains(tail.Detail, "4 full uses") {
+		t.Errorf("tail Detail = %q, want it to name the four uses left unspent", tail.Detail)
+	}
+	if !strings.Contains(tail.Detail, "never pressed again") {
+		t.Errorf("tail Detail = %q, want it to say plainly what happened", tail.Detail)
 	}
 }
