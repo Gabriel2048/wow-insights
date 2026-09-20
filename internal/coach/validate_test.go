@@ -1,6 +1,7 @@
 package coach
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -214,5 +215,53 @@ func TestTheSheetNamesNobody(t *testing.T) {
 	// the raider who pressed it.
 	if strings.Contains(string(body), fakeOther) {
 		t.Error("the sheet names whoever pressed Time Warp")
+	}
+}
+
+// The schema carries two constraints no validator can match, because the
+// model is decoded against it and cannot emit anything else: the ref is an
+// enum of what was actually handed out, and the properties are in the order
+// they should be written.
+//
+// The order is the one that bit. Go marshals a map's keys alphabetically,
+// which put "detail" first — so a constrained decoder was asked for the prose
+// before the model had committed to which finding it was about, and a real
+// call came back with the detail empty.
+func TestTheSchemaNamesTheRefsAndOrdersTheFields(t *testing.T) {
+	in := fixtureInput(t)
+	refs := []string{ref(in.Findings[0])}
+	schema, err := replySchema(refs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := json.Marshal(schema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(body)
+
+	if !strings.Contains(got, `"enum":["cooldown-unused-tail@5:54"]`) {
+		t.Errorf("the ref is not an enum of the refs handed out:\n%s", got)
+	}
+	want := `"properties":{"ref":`
+	if !strings.Contains(got, want) {
+		t.Errorf("the item's first property is not ref:\n%s", got)
+	}
+	order := []string{`"ref":`, `"title":`, `"detail":`, `"set_aside":`, `"set_aside_reason":`}
+	at := 0
+	for _, field := range order {
+		i := strings.Index(got[at:], field)
+		if i < 0 {
+			t.Fatalf("the schema has no %s:\n%s", field, got)
+		}
+		at += i
+	}
+	// The API rejects minItems and maxItems on an array, so "one block per
+	// finding" cannot live here. If that ever changes, this is the test that
+	// should start failing.
+	for _, unsupported := range []string{"minItems", "maxItems"} {
+		if strings.Contains(got, unsupported) {
+			t.Errorf("the schema sends %s, which the API rejects for an array", unsupported)
+		}
 	}
 }

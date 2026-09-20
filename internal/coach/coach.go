@@ -230,6 +230,14 @@ func (w *Writer) Write(ctx context.Context, in Input) (Findings, error) {
 
 // ask makes the one request and decodes the reply into blocks.
 func (w *Writer) ask(ctx context.Context, in Input, facts []byte) ([]block, error) {
+	refs := make([]string, len(in.Findings))
+	for i, f := range in.Findings {
+		refs[i] = ref(f)
+	}
+	schema, err := replySchema(refs)
+	if err != nil {
+		return nil, err
+	}
 	msg, err := w.api.Messages.New(ctx, anthropic.MessageNewParams{
 		Model:     model,
 		MaxTokens: maxTokens,
@@ -239,7 +247,7 @@ func (w *Writer) ask(ctx context.Context, in Input, facts []byte) ([]block, erro
 		// and the kind a confident guess gets wrong.
 		Thinking: anthropic.ThinkingConfigParamUnion{OfAdaptive: &anthropic.ThinkingConfigAdaptiveParam{}},
 		OutputConfig: anthropic.OutputConfigParam{
-			Format: anthropic.JSONOutputFormatParam{Schema: replySchema},
+			Format: anthropic.JSONOutputFormatParam{Schema: schema},
 		},
 		Messages: []anthropic.MessageParam{
 			anthropic.NewUserMessage(anthropic.NewTextBlock(userPrompt(in, facts))),
