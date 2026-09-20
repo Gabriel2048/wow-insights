@@ -242,3 +242,104 @@ func TestTheStoreIsBoundedAndReleasesWhatItDrops(t *testing.T) {
 		}
 	}
 }
+
+// THE DEFECT THIS FOLLOW-UP EXISTS FOR. An entry's lifetime used to be
+// consulted only while evicting, which runs at the end of a miss — so an
+// entry that kept being hit was never reconsidered and its TTL meant
+// nothing. A report grows through a raid night, and one raider refreshing
+// their own live log never produces a second key, so their fight list froze
+// for the life of the process.
+func TestAnEntryThatKeepsBeingAskedForStillExpires(t *testing.T) {
+	src := &fakeSource{}
+	c := NewCache(src)
+	c.reportTTL = 20 * time.Millisecond
+
+	for range 4 {
+		if _, err := c.Report(context.Background(), "ExampleReport123"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := src.reports.Load(); got != 1 {
+		t.Fatalf("within its lifetime the report was fetched %d times, want 1", got)
+	}
+
+	time.Sleep(40 * time.Millisecond)
+	if _, err := c.Report(context.Background(), "ExampleReport123"); err != nil {
+		t.Fatal(err)
+	}
+	if got := src.reports.Load(); got != 2 {
+		t.Errorf("past its lifetime the report was fetched %d times, want 2: the entry never expired", got)
+	}
+}
+
+// A browser that navigates away mid-fetch must not fail everyone queued
+// behind it. The client says why for its own token refresh — "a client that
+// disconnects mid-refresh cannot fail it for everyone behind it" — and here
+// it is worse than unfair: the request has already gone and its points are
+// already spent, so failing the waiters throws away an answer that was paid
+// for and makes the next caller buy it again.
+func TestACancelledLeaderDoesNotFailTheCallersBehindIt(t *testing.T) {
+	src := &fakeSource{block: make(chan struct{})}
+	c := NewCache(src)
+
+	leaderCtx, cancelLeader := context.WithCancel(context.Background())
+	var leaderErr error
+	leaderDone := make(chan struct{})
+	go func() {
+		defer close(leaderDone)
+		_, leaderErr = c.Report(leaderCtx, "ExampleReport123")
+	}()
+	// Let the leader claim the key before anyone queues behind it.
+	time.Sleep(20 * time.Millisecond)
+
+	var waiterErr error
+	waiterDone := make(chan struct{})
+	go func() {
+		defer close(waiterDone)
+		_, waiterErr = c.Report(context.Background(), "ExampleReport123")
+	}()
+	time.Sleep(20 * time.Millisecond)
+
+	cancelLeader()
+	close(src.block)
+	<-leaderDone
+	<-waiterDone
+
+	if waiterErr != nil {
+		t.Errorf("a caller with a live context got %v because the one in front of it went away", waiterErr)
+	}
+	_ = leaderErr // the leader's own caller is gone; whatever it got is its business.
+
+	// And the answer that was paid for is kept, so the next caller is free.
+	if _, err := c.Report(context.Background(), "ExampleReport123"); err != nil {
+		t.Fatal(err)
+	}
+	if got := src.reports.Load(); got != 1 {
+		t.Errorf("the report was fetched %d times, want 1: the answer the cancelled caller paid for was thrown away", got)
+	}
+}
+
+// Timelines are bounded more tightly than the rest because they are two
+// orders of magnitude larger: a pathological pull is about 6.5 MB, and the
+// smallest instance this runs on has 512 MiB.
+func TestTimelinesAreBoundedMoreTightlyThanTheRest(t *testing.T) {
+	if maxTimelines >= maxEntries {
+		t.Fatalf("maxTimelines = %d, maxEntries = %d: the large store must be the smaller one", maxTimelines, maxEntries)
+	}
+	if worst := maxTimelines * 6.5; worst > 100 {
+		t.Errorf("the timelines store's worst case is ~%.0f MB, which is most of a 512 MiB instance", worst)
+	}
+
+	src := &fakeSource{}
+	c := NewCache(src)
+	for i := range maxTimelines * 2 {
+		if _, err := c.Timeline(context.Background(), "ExampleReport123", Fight{ID: i}, 7, fireKnowledge(t)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	c.timelines.mu.Lock()
+	defer c.timelines.mu.Unlock()
+	if len(c.timelines.entries) > maxTimelines {
+		t.Errorf("holding %d timelines, want at most %d", len(c.timelines.entries), maxTimelines)
+	}
+}
