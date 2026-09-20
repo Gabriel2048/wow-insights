@@ -28,6 +28,9 @@ type DPSGraph struct {
 type dpsGraphResponse struct {
 	Data struct {
 		Series []struct {
+			// Name is decoded because one of the series is the sum of the
+			// others. Without it every value was counted twice.
+			Name          string    `json:"name"`
 			PointStart    float64   `json:"pointStart"`
 			PointInterval float64   `json:"pointInterval"`
 			Data          []float64 `json:"data"`
@@ -35,7 +38,20 @@ type dpsGraphResponse struct {
 	} `json:"data"`
 }
 
+// totalSeries is the name Warcraft Logs gives the series that is already the
+// sum of all the others. On the committed recording it is the eighteenth of
+// eighteen, and per bucket it equals the other seventeen added up to the
+// decimal — 104,119.6 against 104,119.7.
+const totalSeries = "Total"
+
 // buildDPS sums the per-ability series into a single damage-per-second curve.
+//
+// Two things here were wrong together and nearly cancelled, which is why
+// neither could be fixed alone. The series were all summed including the one
+// called Total, doubling every value; and the values, which are already
+// damage per second, were then divided by the bucket width as though they
+// were damage. The page read about 10% high, and dropping the Total series
+// on its own would have left it 45% low.
 func buildDPS(response dpsGraphResponse, fight Fight) *DPSGraph {
 	series := response.Data.Series
 	if len(series) == 0 {
@@ -61,7 +77,7 @@ func buildDPS(response dpsGraphResponse, fight Fight) *DPSGraph {
 	totals := map[int]float64{}
 	last := -1
 	for _, s := range series {
-		if s.PointInterval != interval {
+		if s.PointInterval != interval || s.Name == totalSeries {
 			continue
 		}
 		offset := int(math.Round((s.PointStart - base) / interval))
@@ -77,12 +93,15 @@ func buildDPS(response dpsGraphResponse, fight Fight) *DPSGraph {
 		return nil
 	}
 
-	seconds := interval / 1000
 	graph := &DPSGraph{Interval: time.Duration(interval) * time.Millisecond}
 
 	var sum float64
 	for i := 0; i <= last; i++ {
-		dps := totals[i] / seconds
+		// No division: the API sends damage per second, not damage per
+		// bucket. The table's own figure for a player agrees with the mean
+		// of these values to within a percent, and a test holds the two to
+		// each other rather than to a number somebody wrote down.
+		dps := totals[i]
 		// A time, not a position: internal/view draws the curve on the same
 		// axis as the casts.
 		point := DPSPoint{
