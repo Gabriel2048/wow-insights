@@ -1,5 +1,7 @@
 package knowledge
 
+import "time"
+
 // fireMage is the reference spec: the data the analysis was written against.
 var fireMage = Knowledge{
 	Spec: SpecID{Class: "Mage", Spec: "Fire"},
@@ -32,6 +34,22 @@ var fireMage = Knowledge{
 	// assumes (on the recorded kill this player's own shortest gap is 61 s).
 	JudgedCooldowns: map[int]JudgedCooldown{
 		190319: {Name: "Combustion", Base: 120},
+	},
+
+	// Two entries, and deliberately only two. Both bases are the game's, and
+	// the recorded kill independently confirms their ratio: reading each
+	// Fireball bar against the nearest Scorch bar within six seconds recovers
+	// a base with a median of 1750 ms over 26 samples.
+	//
+	// Pyroblast is absent on purpose. The same method gives it a median of
+	// 2576 ms across a 2525-3046 ms range — a 20% spread that Fireball and
+	// Scorch do not have, so something other than haste is moving that bar.
+	// Adding it changes no reported pause on either recording and introduces
+	// a number that cannot be defended. Flamestrike is absent because neither
+	// recording contains a single bar of it.
+	BaseCasts: map[int]BaseCast{
+		133:  {Base: 1750 * time.Millisecond}, // Fireball
+		2948: {Base: 1500 * time.Millisecond}, // Scorch
 	},
 
 	// Several auras can be up at once, and which ones matter depends on the

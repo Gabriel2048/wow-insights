@@ -26,6 +26,10 @@ import (
 // reordering that changes what the page says invisible to every cache keyed
 // on this — the quietest kind of stale.
 //
+// A base cast time is in here because it decides where every pause on the
+// page falls: an edit to that table with no change of digest would serve a
+// cached timeline computed against the old numbers, with nothing to notice.
+//
 // The zero value has a Version of its own, distinct from any authored spec,
 // because "nobody has written this spec down" is a real state a result can be
 // computed under.
@@ -68,6 +72,15 @@ func (k Knowledge) Version() string {
 		write(strconv.Itoa(id))
 		write(cd.Name)
 		write(strconv.Itoa(cd.Base))
+	}
+	for _, id := range slices.Sorted(maps.Keys(k.BaseCasts)) {
+		b := k.BaseCasts[id]
+		write(strconv.Itoa(id))
+		// The integer nanoseconds, not String(): two durations that format
+		// identically are the same digest either way, but a formatting change
+		// in the standard library would silently move every key.
+		write(strconv.FormatInt(int64(b.Base), 10))
+		write(strconv.FormatBool(b.Channel))
 	}
 
 	// Twelve hex characters is plenty to key a process-lifetime cache on and

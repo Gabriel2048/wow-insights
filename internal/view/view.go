@@ -56,9 +56,15 @@ type Timeline struct {
 	Cooldowns Lane
 	Phases    Lane
 	Lusts     Lane
-	Boss      []Marker
-	DPS       *Graph
-	Taken     *Graph
+	// Pauses is time the player was not occupied, once the global cooldown is
+	// accounted for. It is empty when the cooldown could not be modelled;
+	// HasPauses is what a template must ask, because an empty lane and an
+	// unmodelled one mean different things and the page says different things
+	// about them.
+	Pauses Lane
+	Boss   []Marker
+	DPS    *Graph
+	Taken  *Graph
 }
 
 // Cast is one cast with its place on the track.
@@ -120,6 +126,7 @@ func Layout(t *warcraftlogs.Timeline, o Options) *Timeline {
 		Cooldowns: Lane{Class: "cdblock", Stacked: true, Labelled: true},
 		Phases:    Lane{Class: "phase", Labelled: true},
 		Lusts:     Lane{Class: "lust"},
+		Pauses:    Lane{Class: "pause"},
 	}
 	if v.LeadIn == 0 {
 		v.LeadIn = minLeadIn
@@ -172,7 +179,18 @@ func Layout(t *warcraftlogs.Timeline, o Options) *Timeline {
 			Title: fmt.Sprintf("%s — %s for %s", l.Label(), l.Timestamp(), short(l.Duration())),
 		})
 	}
-	for _, lane := range []*Lane{&v.RaidCDs, &v.Cooldowns, &v.Phases, &v.Lusts} {
+	for _, p := range t.Pauses {
+		// The tooltip carries the global cooldown this pause was measured
+		// against, because that is the model's own number and printing it is
+		// what lets a sceptical reader check the whole thing. It replaces the
+		// threshold slider, which was the previous way to probe the model.
+		title := fmt.Sprintf("%s idle from %s — global cooldown %s", short(p.Duration), p.Timestamp(), short(p.GCD))
+		if p.Reason != "" {
+			title += ", " + string(p.Reason)
+		}
+		v.Pauses.Bars = append(v.Pauses.Bars, Bar{Start: p.Start, End: p.End, Title: title})
+	}
+	for _, lane := range []*Lane{&v.RaidCDs, &v.Cooldowns, &v.Phases, &v.Lusts, &v.Pauses} {
 		lane.Rows = packRows(lane.Bars)
 		for i := range lane.Bars {
 			b := &lane.Bars[i]
@@ -247,3 +265,14 @@ func (v *Timeline) HasPhases() bool { return len(v.Phases.Bars) > 0 }
 
 // HasLusts reports whether any raid haste buff ran during the pull.
 func (v *Timeline) HasLusts() bool { return len(v.Lusts.Bars) > 0 }
+
+// HasPauses reports whether the pauses lane should be drawn at all.
+//
+// It is not `len(Bars) > 0`. An empty lane on a modelled pull means the player
+// was never idle for long enough to report, which is a real and good answer; an
+// empty lane on an unmodelled pull means nothing could be measured, which is a
+// different thing the page has to say out loud. A template that asked only
+// about the bars would render the second as the first.
+func (v *Timeline) HasPauses() bool {
+	return v.Timeline != nil && v.GCD.Modelled
+}

@@ -125,9 +125,34 @@ func fullTimeline() *warcraftlogs.Timeline {
 			{AbilityID: 97463, Name: "Rallying Cry", Source: "Testwarrior",
 				Start: sec(60), End: sec(70), Targets: 20},
 		},
+		// Two pauses and a modelled global cooldown, so every branch of the
+		// pauses lane executes: one ordinary, one running to the end of the
+		// pull, which the page has to say out loud because it usually means
+		// the player was dead rather than idle.
+		GCD: warcraftlogs.GCDModel{Modelled: true, Median: 1087 * time.Millisecond, Samples: 88},
+		Pauses: []warcraftlogs.Pause{
+			// This one ends exactly where the Pyroblast at 0:20 begins, which
+			// is what puts it in line in the cast table: a pause ends where
+			// the cast that resumed starts, and PauseBefore matches on that
+			// exactly rather than on whichever cast is nearest.
+			{Start: sec(14), End: sec(20), Duration: sec(6), GCD: 1087 * time.Millisecond},
+			{Start: sec(290), End: sec(300), Duration: sec(10), GCD: 1071 * time.Millisecond,
+				Reason: warcraftlogs.PauseToFightEnd},
+		},
 		DPS:   graph(1_200_000, 800_000),
 		Taken: graph(90_000, 40_000),
 	}
+}
+
+// unmodelledTimeline is the same pull for a specialisation nobody has
+// authored: no base cast times, so no global cooldown, so no pauses. The page
+// must say why rather than draw an empty lane, because "you were never idle"
+// and "nothing here could tell" are different answers.
+func unmodelledTimeline() *warcraftlogs.Timeline {
+	t := fullTimeline()
+	t.GCD = warcraftlogs.GCDModel{}
+	t.Pauses = nil
+	return t
 }
 
 func graph(peak, mean float64) *warcraftlogs.DPSGraph {

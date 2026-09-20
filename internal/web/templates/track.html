@@ -9,25 +9,39 @@
         <span class="l-cd">Your cooldown</span>
         <span class="l-rcd">Raid cooldown</span>
         <span class="l-cancel">Cancelled</span>
-        <span class="l-gap">Idle at or above the threshold</span>
+        <span class="l-gap">Pause (idle beyond the global cooldown)</span>
         <span class="l-lust">Bloodlust / Heroism / Time Warp</span>
         <span class="l-boss">Boss cast</span>
         {{if .HasPhases}}<span class="l-phase">Phase boundary</span>{{end}}
     </div>
 
     <details class="advanced">
-        <summary>Advanced</summary>
+        <summary>How a pause is worked out</summary>
         <div class="advanced-body">
-            <div class="advanced-row">
-                <label for="idleMs">Show idle of</label>
-                <input type="number" id="idleMs" min="0" max="60000" step="50" value="1500">
-                <span>ms or more</span>
-                <span class="hint" id="idleSummary"></span>
-            </div>
+            {{if .HasPauses}}
             <p class="note">
-                Idle still includes the GCD, which is not modelled yet. Below ~1.5s you will mostly see
-                normal GCD waits; raise it until only avoidable pauses remain.
+                Your global cooldown is measured from your own cast bars: a spell's observed cast time
+                against what it takes unhasted. Here it came out at
+                <strong>{{short .GCD.Median}}</strong>, from <strong>{{.GCD.Samples}}</strong> cast
+                {{if eq .GCD.Samples 1}}bar{{else}}bars{{end}}. A cast occupies you until its bar is done
+                <em>and</em> that cooldown has expired &mdash; the two run together, they do not add up.
+                What is left over is a pause.
             </p>
+            <p class="note">
+                A pause is only shown when it runs more than twice the global cooldown, because the
+                measurement has error and a page that prints its own error as a mistake is worse than
+                one that says nothing. Each pause carries the cooldown it was measured against, so if
+                the number above does not match the haste you were playing at, none of the rest is right.
+            </p>
+            {{else}}
+            <p class="note">
+                Pauses are not shown for this pull. Working out what is a pause means knowing your
+                global cooldown, and that is measured from your own cast bars &mdash; this pull did not
+                give enough of them{{if .GCD.Samples}} ({{.GCD.Samples}}){{end}}, either because
+                nothing here has been told what this specialisation's spells take to cast, or because
+                almost everything cast was instant. A wrong number would be worse than none.
+            </p>
+            {{end}}
         </div>
     </details>
 
@@ -109,13 +123,7 @@
             <div class="phaseline" style="left: {{printf "%.3f" .StartPercent}}%"></div>
         {{end}}
         {{template "bars" .Lusts}}
-        {{range .Casts}}
-            {{if .Gap}}
-                <div class="gap" data-ms="{{.GapMS}}"
-                     style="left: {{printf "%.3f" .GapStartPercent}}%; width: {{printf "%.3f" .GapWidthPercent}}%"
-                     title="{{short .Gap}} idle before {{.Name}}"></div>
-            {{end}}
-        {{end}}
+        {{if .HasPauses}}{{template "bars" .Pauses}}{{end}}
         {{range .Casts}}
             {{if .CastWidthPercent}}
                 <div class="castbar{{if .Estimated}} estimated{{end}}{{if .Cancelled}} cancelled{{end}}"
@@ -179,10 +187,10 @@
 
     <div class="stats" style="margin-bottom: 1.5rem">
         <div class="stat"><span class="value">{{len .Casts}}</span><span class="label">Casts</span></div>
-        <div class="stat"><span class="value" id="statPauses">&ndash;</span><span class="label" id="statPausesLabel">Pauses</span></div>
+        <div class="stat"><span class="value">{{if .HasPauses}}{{len .Pauses.Bars}}{{else}}&ndash;{{end}}</span><span class="label">Pauses</span></div>
         <div class="stat"><span class="value">{{.CancelledCount}}</span><span class="label">Cancelled</span></div>
-        <div class="stat"><span class="value" id="statIdle">&ndash;</span><span class="label">Total idle shown</span></div>
-        <div class="stat"><span class="value">{{short .LongestGap}}</span><span class="label">Longest gap</span></div>
+        <div class="stat"><span class="value">{{if .HasPauses}}{{short .TotalPaused}}{{else}}&ndash;{{end}}</span><span class="label">Total paused</span></div>
+        <div class="stat"><span class="value">{{if .HasPauses}}{{short .GCD.Median}}{{else}}&ndash;{{end}}</span><span class="label">Global cooldown</span></div>
     </div>
 
     {{end}}

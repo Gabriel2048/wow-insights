@@ -3,6 +3,7 @@ package knowledge
 import (
 	"slices"
 	"testing"
+	"time"
 )
 
 // Every row of the table is checked for the things a typo would break: a
@@ -43,6 +44,19 @@ func TestEveryAuthoredSpecIsConsistent(t *testing.T) {
 					if !names[name] {
 						t.Errorf("CastRules[%d] names %q, which ProcAuras does not track", spell, name)
 					}
+				}
+			}
+			for spell, b := range k.BaseCasts {
+				// A zero base would divide the global cooldown by zero, and a
+				// negative one is nonsense the estimator would happily use.
+				if spell <= 0 || b.Base <= 0 {
+					t.Errorf("BaseCasts[%d] = %v", spell, b.Base)
+				}
+				// Nothing in the game casts for a fifth of a second or for
+				// half a minute. A number outside this is a unit mistake, and
+				// a unit mistake here scatters phantom pauses across a pull.
+				if b.Base < 200*time.Millisecond || b.Base > 30*time.Second {
+					t.Errorf("BaseCasts[%d] = %v, which is not a cast time anything in the game has", spell, b.Base)
 				}
 			}
 			if got, ok := Lookup(k.Spec); !ok || got.Spec != k.Spec {
@@ -106,6 +120,12 @@ func TestZeroKnowledgeIsSafe(t *testing.T) {
 	}
 	if len(k.ProcAuraIDs()) != 0 || len(k.CooldownIDs()) != 0 {
 		t.Error("ids came back for the zero tables, so a query filter would be sent")
+	}
+	// The global cooldown is modelled from this table, and a nil map reads a
+	// zero duration, which would divide by zero or claim an infinite haste.
+	// The accessor has to refuse rather than return the zero value.
+	if _, ok := k.BaseCast(133); ok {
+		t.Error("BaseCast found a base cast time in the zero tables")
 	}
 	if _, ok := Lookup(SpecID{Class: "Warlock", Spec: "Destruction"}); ok {
 		t.Error("Lookup found a spec nobody authored")

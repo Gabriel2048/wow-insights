@@ -190,7 +190,7 @@ func TestFightPageHasTheElementsTheScriptLooksUp(t *testing.T) {
 	// selector is not an id. This is the short list that must stay in step.
 	for _, sel := range []string{
 		`class="tick`, `class="bcast"`, `class="cdblock"`, `class="rcdblock"`,
-		`class="gap"`, `class="idlerow"`, `class="zoom`,
+		`class="pause"`, `class="pauserow"`, `class="zoom`,
 	} {
 		if !strings.Contains(page, sel) {
 			t.Errorf("the script queries for %s but the page emits none", sel)
@@ -571,5 +571,58 @@ func TestAllFindingsSetAsideStillShowsThem(t *testing.T) {
 	}
 	if !strings.Contains(out, "Set aside") {
 		t.Error("the findings vanished entirely")
+	}
+}
+
+// A pause is only meaningful against the global cooldown it was measured
+// against, so the page prints that cooldown next to every one of them and says
+// where the estimate came from. This is what replaces the threshold slider:
+// the slider let a sceptical reader probe the model by moving it, and what is
+// left instead is the model showing its own working.
+func TestThePauseLaneShowsTheModelItRestsOn(t *testing.T) {
+	page := render(t, "fight.html", fullFightPage())
+
+	for _, want := range []string{
+		`class="pause"`,    // the lane
+		`class="pauserow"`, // and the same pause in the cast list
+		"1.1s",             // the global cooldown it was measured against
+		"88",               // and how many cast bars said so
+		"Global cooldown",  // the stat
+		"to the end of the pull",
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("the page does not show %q, so a reader cannot check the model", want)
+		}
+	}
+	// The slider and its disclaimer are gone, and so is the claim they made.
+	for _, gone := range []string{`id="idleMs"`, "Idle still includes the GCD", "Threshold under"} {
+		if strings.Contains(page, gone) {
+			t.Errorf("the page still carries %q from the threshold slider", gone)
+		}
+	}
+}
+
+// "Nothing could be measured" and "you were never idle" are different answers
+// and the page must not render the second when it means the first. A spec
+// nobody has authored has no base cast times, so it has no global cooldown,
+// so a pauses lane drawn for it would be fiction — measured, 116 pauses
+// totalling 271 s of a 431 s fight.
+func TestAnUnmodelledPullSaysSoRatherThanDrawingAnEmptyLane(t *testing.T) {
+	page := render(t, "fight.html", pageWith(unmodelledTimeline()))
+
+	if strings.Contains(page, `class="pause"`) || strings.Contains(page, `class="pauserow"`) {
+		t.Error("pauses are drawn for a pull whose global cooldown could not be modelled")
+	}
+	for _, want := range []string{"Pauses are not shown for this pull", "measured from your own cast bars"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("the page does not say why there are no pauses; it lacks %q", want)
+		}
+	}
+	// And the rest of the timeline still renders — an unmodelled global
+	// cooldown costs one lane, not the page.
+	for _, want := range []string{"Cast timeline", `class="castbar`, `class="phase`} {
+		if !strings.Contains(page, want) {
+			t.Errorf("the timeline lost %q along with its pauses", want)
+		}
 	}
 }

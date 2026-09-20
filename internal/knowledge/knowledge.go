@@ -12,6 +12,7 @@ package knowledge
 import (
 	"maps"
 	"slices"
+	"time"
 )
 
 // SpecID names a specialisation the way Warcraft Logs does: the class as an
@@ -55,6 +56,39 @@ type Knowledge struct {
 	// On the recorded kill Blazing Barrier's shortest gap between uses is
 	// 7.6 seconds, which would claim forty-one missed uses.
 	JudgedCooldowns map[int]JudgedCooldown
+
+	// BaseCasts are how long the game makes a spell take with no haste, by
+	// spell id. They exist so the global cooldown can be modelled: haste is
+	// an observed cast bar over its base, and the global cooldown is hasted
+	// by exactly the same multiplier.
+	//
+	// The table need not be complete, and weighting it by coverage would be
+	// false precision — one spell out of three was measured to give the same
+	// answer as two. What it must not contain is a number nobody can check:
+	// a base that is wrong by 15% moves the reported pause count by a third
+	// at the tightest threshold, as a scatter of one-second pauses through
+	// otherwise perfect casting.
+	BaseCasts map[int]BaseCast
+}
+
+// BaseCast is how long one spell occupies the player before the next can
+// begin, with no haste.
+type BaseCast struct {
+	// Base is the cast bar, or for a channel its full length.
+	Base time.Duration
+	// Channel marks a spell the log reports as an instant even though it
+	// takes time. Warcraft Logs emits no begincast for a channel, so in the
+	// event stream a three-second Mind Flay is byte-identical to a Shadow
+	// Word: Death and nothing but this flag can tell them apart. A channel
+	// is therefore useless for measuring haste — there is no bar to measure —
+	// and must still be counted as time the player was busy.
+	Channel bool
+}
+
+// BaseCast reports the base cast time of a spell, if the spec has one.
+func (k Knowledge) BaseCast(spell int) (BaseCast, bool) {
+	b, ok := k.BaseCasts[spell]
+	return b, ok && b.Base > 0
 }
 
 // JudgedCooldown is one cooldown the analysis holds a player to.

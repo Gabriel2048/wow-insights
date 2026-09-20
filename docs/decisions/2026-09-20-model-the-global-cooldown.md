@@ -43,19 +43,52 @@ reader who stops to think about it. It did not make 480 pauses usable.
 cast time over base cast time, estimated over recent casts rather than averaged across the
 fight, because haste moves with lust, procs and trinkets.
 
-**A pause is the complement of a union of busy intervals**, where busy is every cast bar
-plus the estimated GCD that follows it. That is what makes the number mean something: what
-is left over is time the player could have been doing something and was not.
+**A pause is the complement of a union of busy intervals**, where a cast occupies the
+player from the moment it begins until both its bar has finished and the global cooldown it
+triggered has expired — `busy = [Offset, max(End, Offset + GCD)]`. That is what makes the
+number mean something: what is left over is time the player could have been doing something
+and was not.
+
+**The global cooldown runs alongside the cast bar, not after it.** This was measured rather
+than assumed, because the obvious model is the wrong one: on the recorded kill a quarter of
+the waits following a hard cast are under 30 ms, which is impossible if a fresh cooldown
+began when the bar ended. Charging `End + GCD` inflates busy by about one global at the end
+of every run of casting — 59 raw spans instead of 108, 46.9 s instead of 59.2 s — which
+silently erases short pauses on a fight that has any.
 
 **Base cast times are a table on `knowledge.Knowledge`, and the zero value stays safe.** A
 spec nobody has authored gets an explicit *unmodelled* state and the page says the GCD is
 not modelled for it — rather than a wrong number, and rather than silence. This is the
 same contract every other spec-shaped table here already honours.
 
-**A pause within one GCD of the threshold is not reported at all.** The estimate has error
-— about 4% across three estimators on one fight, and unknown on a spec nobody has measured
-— and a page that turns that error into an accusation has done something worse than saying
-nothing. The dead band is the price of modelling at all.
+**Unmodelled means "this pull gave no cast bar to measure", not "this spec has no table".**
+The two are not the same and the difference is not hypothetical: the Holy Paladin in the
+recorded raid cast 546 times in 431 seconds with **zero cast bars**, so an authored Paladin
+table would still yield no sample. The state is therefore gated on the sample count, with a
+floor of three — below that one mis-measured bar is the entire estimate — and it covers the
+Fire Mage in a heavy-movement pull for free.
+
+**A channel is a cast bar the log does not report.** Warcraft Logs emits no `begincast` for
+one, so in the event stream a three-second Mind Flay is byte-identical to an instant. Only
+the table can know, so it carries a flag per spell from the start rather than a bare
+duration — Fire Mage authors no channels, so this costs nothing today and is a migration
+avoided.
+
+**A pause within one GCD of the threshold is not reported at all**, so a pause is reported
+only when it runs longer than **twice** the global cooldown in force where it began. Busy
+already charges one global per cast, so a computed pause is time during which the cooldown
+had already expired and nothing was pressed; the smallest unit of something missed is one
+whole wasted global, and the issue's own rule then adds another on top.
+
+The band was chosen on measurement, not taste. At one global the three extra pauses it
+keeps exceed the threshold by 0.09 s, 0.61 s and 0.87 s — that is the estimator's own error
+being printed as an accusation, which is the thing the band exists to prevent. At two it is
+also far steadier under a bad table: a 15% error in the base cast times moves the reported
+count by a third at one global and by one at two.
+
+On the recorded kill this takes **480 pauses totalling 264.7 s down to 6 totalling 31.9 s**,
+and on the wipe to 6 totalling 52.2 s — of which 36.4 s is a single pause running to the
+end of the fight, because the player was dead.
 
 **`Cast.Gap` keeps its current meaning and is not redefined.** It is wall-clock time
 between casts, it is used elsewhere, and its two existing tests stay green. The pause model
@@ -83,9 +116,19 @@ coaching page is [#57](https://github.com/Gabriel2048/wow-insights/issues/57), a
 set one aside. Making the number honest and making an accusation from it are separate
 changes on purpose.
 
-A spec with a wrong base cast time in its table reports phantom pauses. The dead band
-absorbs small errors; a badly wrong table is a defect, and the test that catches it is that
-the recorded kill must report on the order of ten pauses rather than hundreds.
+A spec with a wrong base cast time in its table reports phantom pauses — a scatter of one
+to two second pauses during otherwise perfect chain-casting, each resolving with the next
+cast. The dead band absorbs small errors; a badly wrong table is a defect, and the test that
+catches it is the golden count on the recorded kill.
+
+**The change swaps a loudly wrong number for a quietly wrong one, and that is its real
+cost.** Four hundred and eighty pauses is absurd on its face and a reader discounts it; six
+is plausible, so a reader believes it — including when it is six because a table is wrong or
+a channel is invisible. The slider being removed was, for a sceptical reader, a way to probe
+the model by moving it. What replaces it is that **the page shows its own working**: every
+pause carries the global cooldown the model used at that moment, and the lane says what the
+estimate came from — "GCD 1.09s, from 115 cast bars". A reader who knows their own haste can
+falsify the whole model at a glance. The lane must not ship without it.
 
 ## What the superseded record still gets right
 

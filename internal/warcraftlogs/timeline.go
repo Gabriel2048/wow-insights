@@ -544,11 +544,29 @@ type Timeline struct {
 	// Taken is the damage the player received, on the same bucket grid as DPS.
 	Taken *DPSGraph
 
+	// Pauses is every stretch the player was not occupied, once the global
+	// cooldown is accounted for. Empty when the cooldown could not be
+	// modelled, which GCD says.
+	Pauses []Pause
+	// GCD is what the analysis worked out about the player's global cooldown,
+	// and whether it worked anything out at all. Check Modelled before
+	// reading anything else on it or drawing Pauses.
+	GCD GCDModel
+
 	// Duration is the length of the fight itself. Where anything is drawn
 	// against it is internal/view's decision, not this package's: every
 	// time here is absolute and relative to the pull, and there is no
 	// position, percentage or path anywhere in the analysis.
 	Duration time.Duration
+}
+
+// TotalPaused is how long the reported pauses add up to.
+func (t *Timeline) TotalPaused() time.Duration {
+	var total time.Duration
+	for _, p := range t.Pauses {
+		total += p.Duration
+	}
+	return total
 }
 
 // Subject is what a Timeline is about: whose casts, in which pull, in which
@@ -1043,6 +1061,7 @@ func buildTimeline(report *timelineReport, casts []event, fight Fight, know know
 	timeline.Lusts = lustWindows(report.Lust.Data, fight, names, actors)
 	timeline.Casts = buildCasts(casts, fight, names, timeline.Lusts, know)
 	classifyProcs(timeline.Casts, auraWindows(report.Procs.Data, fight, know), know)
+	timeline.Pauses, timeline.GCD = buildPauses(timeline.Casts, fight, know)
 	timeline.DPS = buildDPS(report.Damage, fight)
 	timeline.Taken = buildDPS(report.Taken, fight)
 
