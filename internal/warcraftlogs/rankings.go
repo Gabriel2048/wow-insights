@@ -135,3 +135,18 @@ func rankingsByName(raw json.RawMessage, fightID int) (map[string]Ranking, bool)
 	}
 	return byName, true
 }
+
+// Explain writes the percentile out as a sentence a player who has never seen
+// one can act on. "4th" on its own says nothing — it is not a rank, it is not
+// out of ten, and which way is good is not obvious — so the sentence says what
+// it is measured against, how many parses that is, and which direction is
+// better. It takes the spec name because a Ranking does not know whose it is.
+func (r Ranking) Explain(spec string) string {
+	if r.TotalParses == 0 {
+		return ""
+	}
+	return fmt.Sprintf(
+		"Better than %d%% of ranked %s parses at %.0f item level, out of %d of them. "+
+			"Against every item level: better than %d%%. 100th is the best parse on record.",
+		int(r.BracketPercent), spec, r.ItemLevel, r.TotalParses, int(r.RankPercent))
+}

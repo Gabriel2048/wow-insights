@@ -50,6 +50,11 @@ type PlayerStats struct {
 	Ranking Ranking
 }
 
+// RankingExplained is the percentile as a sentence, naming the spec the
+// ranking is against. Empty when there is no ranking, so a template can ask
+// without checking first.
+func (p PlayerStats) RankingExplained() string { return p.Ranking.Explain(p.Title()) }
+
 // Ranked reports whether Warcraft Logs rated this pull. It is false for a
 // wipe, an unranked difficulty, a player nobody ranked, and a recording made
 // before the fight query asked for rankings — the page shows nothing in every

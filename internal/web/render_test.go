@@ -346,10 +346,12 @@ func TestEachPageSetsItsBodyClass(t *testing.T) {
 func TestFightPageShowsTheRankingAndOmitsItWhenThereIsNone(t *testing.T) {
 	page := render(t, "fight.html", fullFightPage())
 	for _, want := range []string{
-		"61st",             // the bracket percentile, as an ordinal
-		"Percentile",       // the tile's label
-		"440 ranked parse", // what the percentile is measured against
-		"55th",             // the all-parses percentile, in the sentence
+		"61st",       // the bracket percentile, as an ordinal
+		"Percentile", // the tile's label
+		"Better than 61% of ranked Fire Mage parses", // the tip says which way is good
+		"out of 440 of them",                         // what the percentile is measured against
+		"better than 55%",                            // the all-parses figure
+		`class="stat tipped" tabindex="0"`,           // reachable by keyboard, not hover alone
 	} {
 		if !strings.Contains(page, want) {
 			t.Errorf("ranked page is missing %q", want)

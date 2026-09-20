@@ -2,6 +2,7 @@ package warcraftlogs
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -127,4 +128,32 @@ func mustJSON(t *testing.T, v any) json.RawMessage {
 		t.Fatalf("marshal the fixture: %v", err)
 	}
 	return b
+}
+
+// "4th" on its own is not actionable: it is not a rank, it is not out of ten,
+// and which direction is good is not obvious. The sentence has to say all
+// three.
+func TestExplainSaysWhatThePercentileIsMeasuredAgainst(t *testing.T) {
+	r := Ranking{RankPercent: 21.4, BracketPercent: 4.8, TotalParses: 467, ItemLevel: 323}
+	got := r.Explain("Fire Mage")
+	for _, want := range []string{
+		"Better than 4%",    // which way is good, and rounded down
+		"Fire Mage parses",  // measured against this spec, not the raid
+		"323 item level",    // and this gear bracket
+		"out of 467",        // how many parses that is
+		"better than 21%",   // the all-item-level figure, which can differ sharply
+		"100th is the best", // what the top of the scale means
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("Explain() = %q\n  missing %q", got, want)
+		}
+	}
+}
+
+// A player with no ranking has nothing to explain, and the template asks
+// without checking first.
+func TestExplainIsEmptyWithoutARanking(t *testing.T) {
+	if got := (Ranking{}).Explain("Fire Mage"); got != "" {
+		t.Errorf("Explain() on the zero value = %q, want empty", got)
+	}
 }
