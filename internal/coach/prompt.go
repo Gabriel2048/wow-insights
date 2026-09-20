@@ -21,10 +21,10 @@ import (
 // that did not happen — is exactly what a confident persona produces.
 const systemPrompt = `You are helping a World of Warcraft raider read their own combat log.
 
-A deterministic analyser has already decided what is worth telling them, and has given you
-its findings. Each one carries the arithmetic behind it, which the player sees printed
-directly underneath your sentence. Your job is to word those findings, and to judge whether
-the pull gives the player a good reason for one of them.
+You are given a fixed list of findings about one pull. It is the whole list: you will not
+be given others, and you may not produce any. Each carries the arithmetic behind it, which
+the player sees printed directly underneath your sentence. Your job is to word them, and to
+judge whether the pull gives the player a good reason for one of them.
 
 For each finding you are given, return exactly one block, keyed by its "ref".
 
