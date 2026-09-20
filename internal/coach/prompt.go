@@ -119,8 +119,9 @@ func userPrompt(in Input, sheet []byte) string {
 	var b strings.Builder
 	b.WriteString("Here is the pull.\n\n<fact_sheet>\n")
 	b.Write(sheet)
-	b.WriteString("\n</fact_sheet>\n\nHere are the findings to word. There are ")
-	fmt.Fprintf(&b, "%d of them and you must return %d blocks.\n\n<findings>\n", len(in.Findings), len(in.Findings))
+	b.WriteString("\n</fact_sheet>\n\n")
+	fmt.Fprintf(&b, "Here %s to word, and you must return %s.\n\n<findings>\n",
+		countOf(len(in.Findings), "is", "are", "finding"), countOf(len(in.Findings), "", "", "block"))
 	for _, f := range in.Findings {
 		fmt.Fprintf(&b, "ref: %s\n", ref(f))
 		fmt.Fprintf(&b, "severity: %s\n", f.Severity)
@@ -135,6 +136,20 @@ func userPrompt(in Input, sheet []byte) string {
 	}
 	b.WriteString("</findings>\n")
 	return b.String()
+}
+
+// countOf writes "is 1 finding" or "are 3 findings". The prompt asks the model
+// to be careful with number and unit, so the sentence doing the asking should
+// not read "There are 1 of them and you must return 1 blocks."
+func countOf(n int, singular, plural, noun string) string {
+	verb, s := singular, ""
+	if n != 1 {
+		verb, s = plural, "s"
+	}
+	if verb != "" {
+		verb += " "
+	}
+	return fmt.Sprintf("%s%d %s%s", verb, n, noun, s)
 }
 
 // decodeReply pulls the structured answer out of the response.
