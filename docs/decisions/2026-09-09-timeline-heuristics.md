@@ -1,6 +1,7 @@
 # Timeline heuristics
 
-- **Status:** accepted, partly superseded (see *Known wrong* below)
+- **Status:** accepted, partly superseded (see *Known wrong* below); the idle decision is
+  superseded by [2026-09-20-model-the-global-cooldown.md](2026-09-20-model-the-global-cooldown.md)
 - **Issue:** [#1](https://github.com/Gabriel2048/wow-insights/issues/1)
 - **Date:** 2026-09-09
 
@@ -23,6 +24,12 @@ casts. An unpaired `begincast` is kept as a cancelled cast.
 rather than being summed into a single statistic. The number still includes the global
 cooldown, which is not modelled — the page says so, because at low thresholds most of
 what you see is a normal GCD wait rather than a mistake.
+
+> **Superseded** by [2026-09-20-model-the-global-cooldown.md](2026-09-20-model-the-global-cooldown.md).
+> The premise above — that the global cooldown is not modelled — was measured and turned
+> out to be derivable from the log alone, three ways, agreeing within about 4%. The
+> argument for *not* inventing an unmeasured number stands; only this application of it
+> changed. The paragraph is left as it was written.
 
 **Boss abilities are filtered and burst-merged.** Only the encounter's own NPCs are kept;
 adds and the environment cast constantly and say nothing about the fight's structure.
