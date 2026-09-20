@@ -44,6 +44,7 @@ func TestTheFindingsSurviveAModelThatFails(t *testing.T) {
 		{"an outage", coach.ErrModelUnavailable, "was not available"},
 		{"a rate limit", coach.ErrModelBusy, "was not available"},
 		{"a bad key", coach.ErrBadKey, "missing or rejected"},
+		{"an empty account", coach.ErrNoCredit, "out of credit"},
 		{"prose that did not check out", coach.ErrUntrustworthy, "did not match the evidence"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -76,7 +77,7 @@ func TestTheFindingsSurviveAModelThatFails(t *testing.T) {
 // bottom of classify, which names the wrong vendor.
 func TestEveryModelFailureHasItsOwnSentence(t *testing.T) {
 	for _, err := range []error{
-		coach.ErrModelUnavailable, coach.ErrModelBusy, coach.ErrBadKey,
+		coach.ErrModelUnavailable, coach.ErrModelBusy, coach.ErrBadKey, coach.ErrNoCredit,
 		coach.ErrDeclined, coach.ErrUntrustworthy, coach.ErrWouldLeak,
 	} {
 		p := classify(err)

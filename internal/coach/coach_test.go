@@ -3,6 +3,7 @@ package coach
 import (
 	"context"
 	"errors"
+	"net/http"
 	"strings"
 	"testing"
 
@@ -228,6 +229,21 @@ func TestAnOutageIsAPlainerPageAndNotAFailure(t *testing.T) {
 	}
 	if len(got) != 1 || got[0].Title != tailFinding().Title {
 		t.Error("the findings did not survive the outage, and they were computed before it")
+	}
+}
+
+// An account with no money on it answers 400 with the same error type a
+// malformed request gets. Reporting that as an outage sends whoever reads the
+// log looking for a problem at Anthropic, when the fix is a billing page.
+func TestAnEmptyAccountIsNotReportedAsAnOutage(t *testing.T) {
+	w := &wire{t: t, status: http.StatusBadRequest,
+		raw: `{"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API."}}`}
+	_, err := writerOver(w).Write(context.Background(), fixtureInput(t))
+	if !errors.Is(err, ErrNoCredit) {
+		t.Fatalf("err = %v, want ErrNoCredit", err)
+	}
+	if errors.Is(err, ErrModelUnavailable) || errors.Is(err, ErrBadKey) {
+		t.Error("an empty account is reported as an outage or a bad credential")
 	}
 }
 

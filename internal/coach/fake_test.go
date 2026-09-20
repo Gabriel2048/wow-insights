@@ -39,11 +39,15 @@ func (w *wire) RoundTrip(req *http.Request) (*http.Response, error) {
 		w.sent = body
 	}
 	if w.status != 0 && w.status != http.StatusOK {
+		body := w.raw
+		if body == "" {
+			body = `{"type":"error","error":{"type":"overloaded_error","message":"overloaded"}}`
+		}
 		return &http.Response{
 			StatusCode: w.status,
 			Status:     http.StatusText(w.status),
 			Header:     http.Header{"Content-Type": []string{"application/json"}},
-			Body:       io.NopCloser(bytes.NewReader([]byte(`{"type":"error","error":{"type":"overloaded_error","message":"overloaded"}}`))),
+			Body:       io.NopCloser(bytes.NewReader([]byte(body))),
 			Request:    req,
 		}, nil
 	}

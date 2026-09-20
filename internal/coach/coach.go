@@ -34,6 +34,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
@@ -278,6 +279,13 @@ func wireError(err error) error {
 	var apiErr *anthropic.Error
 	if errors.As(err, &apiErr) {
 		switch {
+		case apiErr.StatusCode == http.StatusBadRequest && strings.Contains(apiErr.RawJSON(), "credit balance"):
+			// An empty account answers 400 invalid_request_error, the same
+			// shape a genuinely malformed request gets, so the body is what
+			// separates them. Matching on the API's own sentence is fragile
+			// by nature; when it changes this falls through to
+			// ErrModelUnavailable, which is wrong but safe.
+			return fmt.Errorf("%w: %w", ErrNoCredit, err)
 		case apiErr.StatusCode == http.StatusTooManyRequests:
 			return fmt.Errorf("%w: %w", ErrModelBusy, err)
 		case apiErr.StatusCode == http.StatusUnauthorized, apiErr.StatusCode == http.StatusForbidden:

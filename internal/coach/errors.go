@@ -19,6 +19,11 @@ var (
 	// ErrBadKey: the API key is missing, wrong or revoked. A deployment
 	// fault, not an outage, and it will not fix itself.
 	ErrBadKey = errors.New("coach: the model rejected this server's key")
+	// ErrNoCredit: the account behind the key has no money on it. It is
+	// separate from ErrBadKey because the remedy is completely different —
+	// nobody fixes this by rotating a credential — and separate from an
+	// outage because it will not fix itself.
+	ErrNoCredit = errors.New("coach: the account behind this server's key has no credit")
 	// ErrDeclined: the model refused the request. Nothing here is worth
 	// refusing, so this means something is wrong with what was sent.
 	ErrDeclined = errors.New("coach: the model declined to answer")

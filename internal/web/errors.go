@@ -72,6 +72,8 @@ func classify(err error) problem {
 		// This one is a defect in internal/coach, not a condition. Nothing
 		// was sent, which is the right outcome, and it must be loud.
 		return problem{http.StatusOK, "The findings below are in the analyser's own words.", slog.LevelError}
+	case errors.Is(err, coach.ErrNoCredit):
+		return problem{http.StatusOK, "The findings below are in the analyser's own words: the account that pays for the writing model is out of credit.", slog.LevelError}
 	case errors.Is(err, coach.ErrBadKey):
 		return problem{http.StatusOK, "The findings below are in the analyser's own words: this server's key for the writing model is missing or rejected.", slog.LevelError}
 	case errors.Is(err, coach.ErrModelBusy), errors.Is(err, coach.ErrModelUnavailable), errors.Is(err, coach.ErrDeclined):

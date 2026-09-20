@@ -49,7 +49,7 @@ func run() error {
 	report := flag.String("report", "", "a Warcraft Logs report URL or code")
 	fightID := flag.Int("fight", 0, "the fight id")
 	actorID := flag.Int("player", 0, "the actor id of the player to analyse")
-	runs := flag.Int("n", 5, "how many times to call the model")
+	runs := flag.Int("n", 5, "how many times to call the model; 0 lists the findings and spends nothing on it")
 	flag.Parse()
 
 	cfg, err := config.Load(".env")
@@ -116,6 +116,12 @@ func run() error {
 		}
 	}
 
+	if len(took) == 0 {
+		// -n 0 asks what a pull contains without spending anything on the
+		// model, which is how you find a pull worth measuring in the first
+		// place. Without this the summary below indexes an empty slice.
+		return nil
+	}
 	slices.Sort(took)
 	fmt.Printf("\n%d runs: min %s  p50 %s  p95 %s  max %s\n", len(took),
 		took[0].Round(time.Millisecond), percentile(took, 0.50).Round(time.Millisecond),
