@@ -6,7 +6,7 @@
         <div class="stat"><span class="value">{{compact .DPS}}</span><span class="label">DPS</span></div>
         <div class="stat"><span class="value">{{compact .Healing}}</span><span class="label">Healing</span></div>
         <div class="stat"><span class="value">{{compact .HPS}}</span><span class="label">HPS</span></div>
-        <div class="stat"><span class="value">{{printf "%.1f%%" .ActivePercent}}</span><span class="label">Active time</span></div>
+        <div class="stat tipped" tabindex="0"><span class="value">{{printf "%.1f%%" .DamageUptimePercent}}</span><span class="label">Damage uptime</span><span class="tip">How much of the pull your damage was landing, which is not how much of it you spent casting. Damage-over-time effects and pets keep it running while you stand still, so it sits near 100% for most specialisations.</span></div>
         <div class="stat"><span class="value">{{printf "%.1f%%" .OverhealPercent}}</span><span class="label">Overheal</span></div>
         <div class="stat"><span class="value">{{printf "%.0f" .ItemLevel}}</span><span class="label">Item level</span></div>
         <div class="stat"><span class="value">{{.Deaths}}</span><span class="label">Deaths</span></div>

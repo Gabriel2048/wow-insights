@@ -2,6 +2,7 @@ package warcraftlogs
 
 import (
 	"encoding/json"
+	"math"
 	"os"
 	"slices"
 	"testing"
@@ -28,12 +29,12 @@ func TestPlayerTitle(t *testing.T) {
 }
 
 func TestPlayerRates(t *testing.T) {
-	p := PlayerStats{Damage: 1000, Healing: 500, Overheal: 500, FightDuration: 10e9, ActiveTime: 5e9}
+	p := PlayerStats{Damage: 1000, Healing: 500, Overheal: 500, FightDuration: 10e9, DamageUptime: 5e9}
 	if got := p.DPS(); got != 100 {
 		t.Errorf("DPS() = %v, want 100", got)
 	}
-	if got := p.ActivePercent(); got != 50 {
-		t.Errorf("ActivePercent() = %v, want 50", got)
+	if got := p.DamageUptimePercent(); got != 50 {
+		t.Errorf("DamageUptimePercent() = %v, want 50", got)
 	}
 	if got := p.OverhealPercent(); got != 50 {
 		t.Errorf("OverhealPercent() = %v, want 50", got)
@@ -115,8 +116,8 @@ func TestBuildFightDetailMergesTheTables(t *testing.T) {
 
 	detail := buildFightDetail(report)
 	want := map[int]PlayerStats{
-		1: {ActorID: 1, Name: "Testmage", Class: "Mage", Spec: "Fire", ItemLevel: 300, Damage: 5000, ActiveTime: 80 * time.Second, FightDuration: 100 * time.Second},
-		2: {ActorID: 2, Name: "Testpriest", Class: "Priest", Spec: "Holy", ItemLevel: 290, Damage: 10, Healing: 8000, Overheal: 2000, Deaths: 2, ActiveTime: time.Second, FightDuration: 100 * time.Second},
+		1: {ActorID: 1, Name: "Testmage", Class: "Mage", Spec: "Fire", ItemLevel: 300, Damage: 5000, DamageUptime: 80 * time.Second, FightDuration: 100 * time.Second},
+		2: {ActorID: 2, Name: "Testpriest", Class: "Priest", Spec: "Holy", ItemLevel: 290, Damage: 10, Healing: 8000, Overheal: 2000, Deaths: 2, DamageUptime: time.Second, FightDuration: 100 * time.Second},
 		// In neither table: the class from the master data, no spec.
 		3: {ActorID: 3, Name: "Testrogue", Class: "Rogue", FightDuration: 100 * time.Second},
 	}
@@ -207,5 +208,35 @@ func TestPlayerStatsStaysComparable(t *testing.T) {
 	// comparable, which is the stronger half of the assertion.
 	if !map[PlayerStats]bool{a: true}[b] {
 		t.Error("PlayerStats does not work as a map key")
+	}
+}
+
+// Damage uptime is not casting uptime, and the name is the whole point of
+// this test existing. On the committed recording nearly every damage dealer
+// reads between 99.5% and 99.9% — impossible as time spent pressing buttons,
+// ordinary as time dealing damage, because a damage-over-time effect and a
+// pet both keep it running while their owner stands still.
+//
+// It matters because #52 reports tens of seconds of real pauses on the same
+// pull. Two numbers that are both right read as a contradiction when one of
+// them is misnamed.
+func TestDamageUptimeIsNotCastingUptime(t *testing.T) {
+	report := &fightDetailReport{}
+	report.Fights = []fightWire{{ID: 1, StartTime: 0, EndTime: 100000, FriendlyPlayers: []int{1}}}
+	report.MasterData.Actors = []Actor{{ID: 1, Name: "Testmage", Type: "Player", SubType: "Mage"}}
+	report.Damage.Data.Entries = []tableEntry{
+		{ID: 1, Type: "Mage", Icon: "Mage-Fire", Total: 5000, ActiveTime: 97100},
+	}
+
+	p, ok := buildFightDetail(report).Player(1)
+	if !ok {
+		t.Fatal("actor 1 is not in the roster")
+	}
+	if got := p.DamageUptimePercent(); math.Abs(got-97.1) > 0.001 {
+		t.Errorf("DamageUptimePercent() = %v, want 97.1", got)
+	}
+	// A pull nobody was in must not divide by zero.
+	if got := (PlayerStats{DamageUptime: time.Second}).DamageUptimePercent(); got != 0 {
+		t.Errorf("a zero-length pull reports %v uptime, want 0", got)
 	}
 }

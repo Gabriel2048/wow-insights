@@ -35,11 +35,15 @@ type PlayerStats struct {
 	Spec      string
 	ItemLevel float64
 
-	Damage        float64
-	Healing       float64
-	Overheal      float64
-	Deaths        int
-	ActiveTime    time.Duration // time spent casting
+	Damage   float64
+	Healing  float64
+	Overheal float64
+	Deaths   int
+	// DamageUptime is time the player was dealing damage, which is not the
+	// same as time they were casting. It comes from the DamageDone table,
+	// and a damage-over-time effect or a pet keeps it running while its
+	// owner stands still.
+	DamageUptime  time.Duration
 	FightDuration time.Duration
 
 	// DiedAt is when the player first died, relative to the pull. Meaningful
@@ -101,13 +105,26 @@ func (p PlayerStats) DPS() float64 { return perSecond(p.Damage, p.FightDuration)
 // HPS is effective healing per second over the length of the fight.
 func (p PlayerStats) HPS() float64 { return perSecond(p.Healing, p.FightDuration) }
 
-// ActivePercent is the share of the fight the player spent casting. It is the
-// crudest possible rotation metric, but it already exposes downtime.
-func (p PlayerStats) ActivePercent() float64 {
+// DamageUptimePercent is the share of the pull during which the player was
+// dealing damage.
+//
+// **It is not the share they spent casting**, which is what this used to say
+// and what the page used to call it. The figure comes from the DamageDone
+// table, and on the committed recording nearly every damage dealer sits
+// between 99.5% and 99.9% — impossible as time spent pressing buttons, and
+// entirely ordinary as time dealing damage, because Ignite and every
+// damage-over-time effect tick with no cast at all and a pet keeps swinging
+// while its owner stands still.
+//
+// The distinction matters more than a label: #52 models the global cooldown
+// so that idle time means something, and on the same pull that reports tens
+// of seconds of pauses. Two numbers that are both right look like a
+// contradiction when one of them is misnamed.
+func (p PlayerStats) DamageUptimePercent() float64 {
 	if p.FightDuration <= 0 {
 		return 0
 	}
-	return 100 * float64(p.ActiveTime) / float64(p.FightDuration)
+	return 100 * float64(p.DamageUptime) / float64(p.FightDuration)
 }
 
 // OverhealPercent is the share of raw healing that landed on full health bars.
@@ -296,7 +313,7 @@ func buildFightDetail(report *fightDetailReport) *FightDetail {
 	for _, e := range report.Damage.Data.Entries {
 		if p := enrich(e); p != nil {
 			p.Damage = e.Total
-			p.ActiveTime = time.Duration(e.ActiveTime) * time.Millisecond
+			p.DamageUptime = time.Duration(e.ActiveTime) * time.Millisecond
 		}
 	}
 	for _, e := range report.Healing.Data.Entries {
