@@ -42,6 +42,11 @@ func classify(err error) problem {
 			message = fmt.Sprintf("Warcraft Logs' hourly budget for this app is spent. Try again in about %d minutes.", int(apiErr.RetryAfter.Round(time.Minute).Minutes()))
 		}
 		return problem{http.StatusServiceUnavailable, message, slog.LevelWarn}
+	case errors.Is(err, errJobsBusy):
+		// Ours, not the upstream's. Without this it falls through to "Warcraft
+		// Logs did not answer properly", which blames someone else for this
+		// server's own queue.
+		return problem{http.StatusServiceUnavailable, "This server is already running as many analyses as it can. Try again in a moment.", slog.LevelWarn}
 	case errors.Is(err, warcraftlogs.ErrBudgetExhausted):
 		message := "Warcraft Logs' hourly budget for this app is nearly spent, so this page is on hold. Try again later."
 		var budgetErr *warcraftlogs.BudgetError

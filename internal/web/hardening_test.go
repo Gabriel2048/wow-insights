@@ -85,3 +85,63 @@ func TestTraceIDPrefersTraceparent(t *testing.T) {
 		t.Errorf("traceID = %q for a malformed traceparent, want empty", got)
 	}
 }
+
+// The POST that starts an analysis spends an upstream budget and will one day
+// spend money, so a browser must not be able to fire it from another site.
+// net/http's protection needs no token: it trusts Sec-Fetch-Site and falls
+// back to Origin against Host.
+func TestACrossOriginPostIsRefused(t *testing.T) {
+	wcl := fakeWCL{fightDetail: func(context.Context, string, int) (*warcraftlogs.FightDetail, error) {
+		return fightDetail(), nil
+	}}
+	const target = "/report/ExampleReport123/fight/12/analysis?player=7"
+
+	cases := map[string]struct {
+		header, value string
+		want          int
+	}{
+		"from another site":  {"Sec-Fetch-Site", "cross-site", http.StatusForbidden},
+		"from this site":     {"Sec-Fetch-Site", "same-origin", http.StatusSeeOther},
+		"typed into the bar": {"Sec-Fetch-Site", "none", http.StatusSeeOther},
+		"not a browser":      {"", "", http.StatusSeeOther},
+	}
+	for name, c := range cases {
+		srv := newTestServer(t, wcl)
+		req := httptest.NewRequest("POST", target, nil)
+		if c.header != "" {
+			req.Header.Set(c.header, c.value)
+		}
+		rec := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(rec, req)
+		if rec.Code != c.want {
+			t.Errorf("%s: status = %d, want %d", name, rec.Code, c.want)
+		}
+		srv.jobs.wg.Wait()
+	}
+}
+
+// And a GET is always allowed, which is only safe because a GET starts
+// nothing — the standard library's protection rests on that being true.
+func TestAGetIsNeverRefusedAndStartsNothing(t *testing.T) {
+	timelines := 0
+	srv := newTestServer(t, fakeWCL{
+		fightDetail: func(context.Context, string, int) (*warcraftlogs.FightDetail, error) {
+			return fightDetail(), nil
+		},
+		timeline: func(context.Context, string, warcraftlogs.Fight, int, knowledge.Knowledge) (*warcraftlogs.Timeline, error) {
+			timelines++
+			return fullTimeline(), nil
+		},
+	})
+	req := httptest.NewRequest("GET", "/report/ExampleReport123/fight/12/analysis?player=7", nil)
+	req.Header.Set("Sec-Fetch-Site", "cross-site")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("a cross-site GET was refused (%d); safe methods are always allowed", rec.Code)
+	}
+	if timelines != 0 {
+		t.Errorf("a GET did %d timeline fetches; the protection above is only sound because it does none", timelines)
+	}
+}

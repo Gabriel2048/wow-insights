@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -166,6 +167,7 @@ func analysisPage() fightPageData {
 // analysisWithFindings is the coaching page with something to say.
 func analysisWithFindings() fightPageData {
 	page := analysisPage()
+	page.Analysis = analysisDone
 	page.Findings = []warcraftlogs.Finding{
 		{
 			RuleID: "cooldown-late-first-use", Severity: warcraftlogs.Major,
@@ -237,4 +239,13 @@ func reportWithTwoPulls() *warcraftlogs.Report {
 	r.Owner.Name = "Testmage"
 	r.Zone.Name = "The Venomous Abyss"
 	return r
+}
+
+// serve drives one request through the whole chain of a server the test
+// holds on to, which is what a test needs when the interesting behaviour
+// spans two requests — a POST that starts work and a GET that observes it.
+func serve(s *Server, method, target string) *httptest.ResponseRecorder {
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, httptest.NewRequest(method, target, nil))
+	return rec
 }

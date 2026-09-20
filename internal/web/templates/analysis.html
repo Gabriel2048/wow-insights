@@ -32,33 +32,59 @@
 {{end}}
 
 {{with .Player}}
-{{if $.Findings}}
-<h2>What the log says</h2>
-<ol class="findings">
-    {{range $.Findings}}
-    <li class="finding {{.Severity}}">
-        <p class="claim">
-            <a href="/report/{{$.Detail.ReportCode}}/fight/{{$.Detail.Fight.ID}}?player={{$.SelectedID}}#t={{.AtMS}}"
-               class="at">{{.Timestamp}}</a>
-            <strong>{{.Title}}</strong>
-        </p>
-        <p class="detail">{{.Detail}}</p>
-        {{with .Evidence}}
-        <dl class="evidence">
-            {{range .}}<dt>{{.Label}}</dt><dd>{{.Value}}</dd>{{end}}
-        </dl>
+<div id="analysis" data-state="{{$.Analysis}}">
+{{if eq $.Analysis "done"}}
+    {{if $.Findings}}
+    <h2>What the log says</h2>
+    <ol class="findings">
+        {{range $.Findings}}
+        <li class="finding {{.Severity}}">
+            <p class="claim">
+                <a href="/report/{{$.Detail.ReportCode}}/fight/{{$.Detail.Fight.ID}}?player={{$.SelectedID}}#t={{.AtMS}}"
+                   class="at">{{.Timestamp}}</a>
+                <strong>{{.Title}}</strong>
+            </p>
+            <p class="detail">{{.Detail}}</p>
+            {{with .Evidence}}
+            <dl class="evidence">
+                {{range .}}<dt>{{.Label}}</dt><dd>{{.Value}}</dd>{{end}}
+            </dl>
+            {{end}}
+        </li>
         {{end}}
-    </li>
+    </ol>
+    <p class="hint">Each timestamp opens the timeline at that moment.</p>
+    {{else}}
+    <div class="empty">
+        <h2>Nothing to flag</h2>
+        <p>Every rule this page knows came back quiet for this pull. That is the answer, not a
+           missing one &mdash; on a pull played well most of them stay silent.</p>
+    </div>
     {{end}}
-</ol>
-<p class="hint">Each timestamp opens the timeline at that moment.</p>
+{{else if eq $.Analysis "running"}}
+    <div class="empty working">
+        <h2>Working on it</h2>
+        <p>Reading the pull and judging it. This page updates itself; if it does not,
+           <a href="">reload</a>.</p>
+    </div>
+{{else if eq $.Analysis "failed"}}
+    <div class="empty">
+        <h2>That did not finish</h2>
+        <p>The analysis stopped before it had an answer. What went wrong is above.</p>
+        <form method="post" class="analyse"><button type="submit">Try again</button></form>
+    </div>
 {{else}}
-<div class="empty">
-    <h2>Nothing to flag</h2>
-    <p>Every rule this page knows came back quiet for this pull. That is the answer, not a
-       missing one &mdash; on a pull played well most of them stay silent.</p>
-    <p class="hint">Today that means cooldown spacing. Idle time and wasted procs are next.</p>
+    <div class="empty">
+        <h2>Nothing analysed yet</h2>
+        <p>This reads your casts against what the log can prove &mdash; cooldowns that came back
+           and went unused, and more to come. It takes a moment and costs a Warcraft Logs
+           query, so it runs when you ask for it.</p>
+        <form method="post" class="analyse"><button type="submit">Analyse this pull</button></form>
+    </div>
+{{end}}
 </div>
 {{end}}
 {{end}}
+{{define "scripts"}}
+<script src="{{asset "analysis.js"}}" defer></script>
 {{end}}

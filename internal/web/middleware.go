@@ -25,12 +25,14 @@ func (s *Server) Handler() http.Handler {
 	var h http.Handler = mux
 	// Listed innermost first. The request id exists before anything logs;
 	// the deadline is inside recovery so a panic from a cancelled context is
-	// still caught; the headers go on everything, including a 500 from
-	// recovery. Compression, if it ever comes, goes between recovery and the
+	// still caught; cross-origin rejection sits inside the access log so a
+	// refused request still gets its line; the headers go on everything,
+	// including a 500 from recovery. Compression, if it ever comes, goes between recovery and the
 	// access log so the bytes counted are the bytes on the wire — see #7.
 	for _, wrap := range []middleware{
 		s.deadline,
 		s.recoverPanic,
+		s.crossOrigin,
 		s.accessLog(mux),
 		securityHeaders,
 		s.requestID,
@@ -133,6 +135,33 @@ func (s *Server) logger(r *http.Request) *slog.Logger {
 		return l
 	}
 	return s.log
+}
+
+// crossOrigin refuses a state-changing request that a browser made from
+// somewhere else. The only such request here is the POST that starts an
+// analysis, which spends an upstream budget and will one day spend money.
+//
+// net/http's own protection is enough and needs no token: it trusts
+// Sec-Fetch-Site, present in every browser since 2023, and falls back to
+// comparing Origin with Host. Requests carrying neither — curl, a health
+// check, this suite — are treated as same-origin and allowed, so nothing
+// that is not a browser is inconvenienced.
+//
+// It works only because every state-changing action here is a POST. The
+// standard library says so in as many words: "It's important that
+// applications do not perform any state changing actions due to requests
+// with safe methods." That is why the analysis page renders on GET and
+// starts work on POST, rather than starting work when it is opened.
+func (s *Server) crossOrigin(next http.Handler) http.Handler {
+	protection := http.NewCrossOriginProtection()
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := protection.Check(r); err != nil {
+			s.logger(r).Warn("cross-origin request refused", "method", r.Method, "origin", r.Header.Get("Origin"))
+			s.fail(w, r, problem{http.StatusForbidden, "That request did not come from this site.", slog.LevelWarn})
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // recoverPanic turns a panic in a handler into a clean 500 and one ERROR line

@@ -6,6 +6,7 @@ package web
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -32,6 +33,9 @@ type Server struct {
 	wcl logsClient
 	tpl *Templates
 	log *slog.Logger
+	// jobs owns the analyses running in the background. It is built by New
+	// so that its root context outlives every request.
+	jobs *registry
 	// handlerDeadline is a field rather than the constant so a test can
 	// shorten it; nothing else sets it.
 	handlerDeadline time.Duration
@@ -43,7 +47,9 @@ type Server struct {
 // shipped binary hands in JSON shaped for Cloud Logging, the dev binaries
 // hand in text.
 func New(wcl logsClient, tpl *Templates, logger *slog.Logger) *Server {
-	return &Server{wcl: wcl, tpl: tpl, log: logger, handlerDeadline: handlerDeadline}
+	s := &Server{wcl: wcl, tpl: tpl, log: logger, handlerDeadline: handlerDeadline}
+	s.jobs = newRegistry(s.analyse)
+	return s
 }
 
 // routes returns the mux the server listens on. It is the concrete type so
@@ -53,6 +59,7 @@ func (s *Server) routes() *http.ServeMux {
 	mux.HandleFunc("GET /{$}", s.index)
 	mux.HandleFunc("GET /report/{code}/fight/{id}", s.fight)
 	mux.HandleFunc("GET /report/{code}/fight/{id}/analysis", s.analysis)
+	mux.HandleFunc("POST /report/{code}/fight/{id}/analysis", s.startAnalysis)
 	mux.HandleFunc("GET /healthz", s.healthz)
 	mux.HandleFunc("GET /static/{hash}/{name}", s.tpl.assets.serve)
 	return mux
@@ -73,6 +80,9 @@ type fightPageData struct {
 	// Timeline is the analysis laid out for this page. The handler chooses
 	// the axis; today that is the pull's own.
 	Timeline *view.Timeline
+	// Analysis is what the coaching page shows about the background job for
+	// this pull: whether one has been asked for, is running, or is done.
+	Analysis analysisState
 	// Findings are what the analysis can say the player could have done
 	// differently. Empty is a real answer and the page says so: on a
 	// competent pull most rules are silent.
@@ -136,31 +146,139 @@ func (s *Server) fight(w http.ResponseWriter, r *http.Request) {
 	s.render(w, r, http.StatusOK, "fight.html", data)
 }
 
-// analysis renders the coaching view of the same pull. It is a sibling of the
-// fight page rather than a panel on it: the timeline page is already the
-// largest thing this app serves, and the two are read one after the other
-// rather than together.
-//
-// It fetches the timeline, which #54 said it would not. That was true while
-// the page had nothing to say: it drew no timeline, so paying for the most
-// expensive query the app makes would have been paying for nothing. The
-// findings are computed from the player's casts, so the page now needs
-// exactly the analysis it is named for. The cost of moving between the two
-// views is what #58's cache exists to remove.
+// analysisState is what the coaching page knows about the work behind it.
+// It is a string so the template can branch on it and the access log can say
+// it; the zero value is "nothing has been asked for yet", which is the state
+// a page is in the first time anyone opens it.
+type analysisState string
+
+const (
+	analysisIdle    analysisState = ""
+	analysisRunning analysisState = "running"
+	analysisDone    analysisState = "done"
+	analysisFailed  analysisState = "failed"
+)
+
+// analysis renders the coaching view of a pull. **It only ever renders.** It
+// starts no work, spends no Warcraft Logs points beyond the fight it needs to
+// draw the page, and costs no money — which is what makes it safe for a
+// browser to poll it every couple of seconds and for a crawler to follow it.
+// Starting work is the POST.
 func (s *Server) analysis(w http.ResponseWriter, r *http.Request) {
+	// The machine-readable form is answered from the registry alone. It must
+	// not go anywhere near pullPage: that fetches the fight to draw the page,
+	// which is seven points of a shared hourly budget, and a browser polling
+	// this every second would spend the whole hour in a few minutes.
+	if wantsJSON(r) {
+		s.pollState(w, r)
+		return
+	}
+
 	data, ok := s.pullPage(w, r, "analysis")
 	if !ok {
 		return
 	}
 	if data.Player != nil {
-		know, _ := knowledge.Lookup(data.Player.SpecID())
-		timeline, notices := s.playerTimeline(r, data.Detail, *data.Player, data.Fight)
-		data.Notices = append(data.Notices, notices...)
-		if timeline != nil {
-			data.Findings = warcraftlogs.Findings(timeline.Timeline, know, data.Player.ActedUntil())
+		if j, found := s.jobs.lookup(s.jobKeyFor(data)); found {
+			data.Analysis = analysisRunning
+			if j.finished() {
+				data.Analysis, data.Findings = analysisDone, j.result.findings
+				data.Notices = append(data.Notices, j.result.notices...)
+				if j.err != nil {
+					p := classify(j.err)
+					data.Analysis = analysisFailed
+					data.Notices = append(data.Notices, "The analysis did not finish. "+p.message)
+				}
+			}
 		}
 	}
 	s.render(w, r, http.StatusOK, "analysis.html", data)
+}
+
+// pollState says where the work has got to, and costs nothing to ask.
+func (s *Server) pollState(w http.ResponseWriter, r *http.Request) {
+	state := analysisIdle
+	if ref, ok := routeRef(r); ok {
+		if j, found := s.jobs.poll(ref); found {
+			state = analysisRunning
+			if j.finished() {
+				state = analysisDone
+				if j.err != nil {
+					state = analysisFailed
+				}
+			}
+		}
+	}
+	s.writeJSON(w, r, http.StatusOK, map[string]string{"state": string(state)})
+}
+
+// routeRef reads the work's identity out of the URL, with the same
+// validation the page itself applies, and without asking anyone anything.
+func routeRef(r *http.Request) (actorRef, bool) {
+	code, err := warcraftlogs.ParseReportCode(r.PathValue("code"))
+	if err != nil {
+		return actorRef{}, false
+	}
+	fightID, err := strconv.Atoi(r.PathValue("id"))
+	if err != nil {
+		return actorRef{}, false
+	}
+	actorID, err := strconv.Atoi(r.URL.Query().Get("player"))
+	if err != nil {
+		return actorRef{}, false
+	}
+	return actorRef{code: code, fightID: fightID, actorID: actorID}, true
+}
+
+// startAnalysis begins the work and sends the browser back to the page that
+// shows it. It answers a POST because it spends an upstream budget and, one
+// day, money: a GET that did this would be followed by every crawler and
+// fired by every refresh.
+//
+// It redirects rather than rendering so that the result of the POST is a URL
+// the browser can reload — the analysis page, which is where the answer will
+// appear whether or not the visitor has JavaScript.
+func (s *Server) startAnalysis(w http.ResponseWriter, r *http.Request) {
+	data, ok := s.pullPage(w, r, "analysis")
+	if !ok {
+		return
+	}
+	if data.Player != nil {
+		key := s.jobKeyFor(data)
+		if _, started, err := s.jobs.start(key, newRequestID(), s.logger(r)); err != nil {
+			p := classify(err)
+			s.logProblem(r, p, "start analysis", err, "fight", data.Detail.Fight.ID)
+			s.fail(w, r, p)
+			return
+		} else if started {
+			s.logger(r).Info("analysis started", "fight", data.Detail.Fight.ID, "player", data.SelectedID)
+		}
+	}
+	http.Redirect(w, r, r.URL.String(), http.StatusSeeOther)
+}
+
+// jobKeyFor names the work a page is about. Spec is part of it because the
+// analysis is spec-shaped: two timelines of one actor under different tables
+// are different answers.
+func (s *Server) jobKeyFor(data fightPageData) jobKey {
+	know, _ := knowledge.Lookup(data.Player.SpecID())
+	return jobKey{
+		subject: warcraftlogs.Subject{
+			ReportCode: data.Detail.ReportCode,
+			FightID:    data.Detail.Fight.ID,
+			ActorID:    data.Player.ActorID,
+			Spec:       data.Player.SpecID(),
+		},
+		knowledge: know.Version(),
+	}
+}
+
+// wantsJSON reports whether the caller asked for the machine-readable form of
+// a page. It is content negotiation rather than a second route because the
+// two are the same resource: one URL, one cache key, one thing to reason
+// about when #7 adds a Content-Security-Policy.
+func wantsJSON(r *http.Request) bool {
+	return strings.Contains(r.Header.Get("Accept"), "application/json")
 }
 
 // pullPage is everything the two views of a pull do identically: validate the
@@ -212,12 +330,24 @@ func (s *Server) pullPage(w http.ResponseWriter, r *http.Request, viewName strin
 	return data, true
 }
 
-// playerTimeline fetches and lays out one player's timeline, and says on the
-// page whatever kept it from being whole. The stats are still worth showing
-// without it, so nothing here fails the request: a timeline that could not
-// be loaded is a sentence where it would have been, logged as a warning,
-// rather than an empty area that looks like a player who cast nothing.
+// playerTimeline fetches and lays out one player's timeline for a request,
+// and says on the page whatever kept it from being whole. The stats are still
+// worth showing without it, so nothing here fails the request.
 func (s *Server) playerTimeline(r *http.Request, detail *warcraftlogs.FightDetail, player warcraftlogs.PlayerStats, fight view.Fight) (*view.Timeline, []string) {
+	timeline, notices := s.timelineFor(r.Context(), s.logger(r), detail, player)
+	if timeline == nil {
+		return nil, notices
+	}
+	return view.Layout(timeline, view.Options{WowheadDifficulty: fight.WowheadDifficulty()}), notices
+}
+
+// timelineFor is playerTimeline with no request in it: the analysis runs as a
+// background job, long after the request that asked for it has been answered
+// and its context cancelled, so the work cannot reach for either. It returns
+// the domain timeline rather than a laid-out one — a view.Timeline embeds
+// this and adds lanes, so storing one would keep both alive, and the job
+// stores its result.
+func (s *Server) timelineFor(ctx context.Context, log *slog.Logger, detail *warcraftlogs.FightDetail, player warcraftlogs.PlayerStats) (*warcraftlogs.Timeline, []string) {
 	var notices []string
 
 	// An unauthored spec still gets its timeline — casts, pauses, phases,
@@ -230,31 +360,55 @@ func (s *Server) playerTimeline(r *http.Request, detail *warcraftlogs.FightDetai
 		// The spec comes from the damage and healing tables; a player in
 		// neither — dead on the pull, or never engaged — has none, and "no
 		// knowledge for Mage" would be false.
-		s.logger(r).Info("player has no spec in the tables", "class", player.Class)
+		log.Info("player has no spec in the tables", "class", player.Class)
 		notices = append(notices, "This player did no damage or healing in this pull, so their specialisation is unknown: procs and personal cooldowns are not shown.")
 	case !known:
-		s.logger(r).Info("no knowledge for spec", "class", player.Class, "spec", player.Spec)
+		log.Info("no knowledge for spec", "class", player.Class, "spec", player.Spec)
 		notices = append(notices, "No rotation knowledge for "+player.Title()+" yet: procs and personal cooldowns are not shown.")
 	}
 
-	timeline, err := s.wcl.Timeline(r.Context(), detail.ReportCode, detail.Fight, player.ActorID, know)
+	timeline, err := s.wcl.Timeline(ctx, detail.ReportCode, detail.Fight, player.ActorID, know)
 	if err != nil {
 		p := classify(err)
 		if p.status != 0 {
 			p.level = min(p.level, slog.LevelWarn)
 		}
-		s.logProblem(r, p, "fetch timeline", err, "code", detail.ReportCode, "fight", detail.Fight.ID, "player", player.ActorID)
+		log.Log(ctx, p.level, "fetch timeline", "err", err, "code", detail.ReportCode, "fight", detail.Fight.ID, "player", player.ActorID)
 		return nil, append(notices, "The cast timeline could not be loaded. "+p.message)
 	}
 	if len(timeline.Incomplete) > 0 {
-		s.logger(r).Warn("timeline arrived incomplete", "missing", timeline.Incomplete)
+		log.Warn("timeline arrived incomplete", "missing", timeline.Incomplete)
 		notices = append(notices, "Part of the timeline was unavailable from Warcraft Logs: "+laneNames(timeline.Incomplete)+".")
 	}
 	if len(timeline.Truncated) > 0 {
-		s.logger(r).Warn("timeline stream cut short", "streams", timeline.Truncated)
+		log.Warn("timeline stream cut short", "streams", timeline.Truncated)
 		notices = append(notices, "This pull had more events than one page holds; the following lanes end early: "+laneNames(timeline.Truncated)+".")
 	}
-	return view.Layout(timeline, view.Options{WowheadDifficulty: fight.WowheadDifficulty()}), notices
+	return timeline, notices
+}
+
+// analyse is the background job: everything the coaching page needs, computed
+// with no request in scope. It re-fetches the fight rather than being handed
+// the one the page already has, because a job outlives the request that
+// started it and must not hold a pointer into it — #58's cache is what will
+// stop that being paid for twice.
+func (s *Server) analyse(ctx context.Context, log *slog.Logger, key jobKey) (result, error) {
+	detail, err := s.wcl.FightDetail(ctx, key.subject.ReportCode, key.subject.FightID)
+	if err != nil {
+		return result{}, err
+	}
+	player, ok := detail.Player(key.subject.ActorID)
+	if !ok {
+		return result{}, fmt.Errorf("web: actor %d is not in fight %d", key.subject.ActorID, key.subject.FightID)
+	}
+	know, _ := knowledge.Lookup(player.SpecID())
+
+	timeline, notices := s.timelineFor(ctx, log, detail, player)
+	out := result{notices: notices}
+	if timeline != nil {
+		out.findings = warcraftlogs.Findings(timeline, know, player.ActedUntil())
+	}
+	return out, nil
 }
 
 // laneNames turns the query's field aliases, which is how the client names

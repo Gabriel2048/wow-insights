@@ -21,7 +21,7 @@ flowchart LR
     api[("Warcraft Logs v2 GraphQL API<br/>/api/v2/client<br/>3,600 points per hour, shared by every user")]
     zam["wow.zamimg.com/js/tooltips.js<br/>unversioned, no SRI"]
 
-    user -->|"GET /?url=…<br/>GET /report/{code}/fight/{id}?player={actor}<br/>GET /report/{code}/fight/{id}/analysis?player={actor}<br/>GET /healthz"| app
+    user -->|"GET /?url=…<br/>GET /report/{code}/fight/{id}?player={actor}<br/>GET /report/{code}/fight/{id}/analysis?player={actor}<br/>POST the same, to start the analysis<br/>GET /healthz"| app
     app -->|"client-credentials token, cached until expiry,<br/>one fetch shared by concurrent callers"| oauth
     app -->|"one query per page section, every page view"| api
     user -.->|"loaded by every fight page"| zam
@@ -182,6 +182,26 @@ sequenceDiagram
     end
     S->>B: fight.html — 200 even when Timeline failed (stats render, with a notice)
 ```
+
+**The analysis runs as a background job.** The coaching view's `GET` only ever renders —
+it starts nothing, spends nothing beyond the fight it draws, and is therefore safe to poll
+and safe for a crawler; the `POST` starts the work and redirects back. That split is what
+`http.CrossOriginProtection` rests on, and the standard library says so: a protection that
+allows every safe method is only sound if safe methods change nothing.
+
+The registry lives in `internal/web` and is keyed on `warcraftlogs.Subject` plus a digest
+of the spec's knowledge tables, so a refresh, a second browser and a second tab all attach
+to one run rather than starting three. **Its context comes from a process-lifetime root
+made in `New`, never from a request** — `net/http` cancels an incoming request's context
+when `ServeHTTP` returns, so a job given one would die with the response still on the wire.
+That is the ceiling this exists to raise: the request deadline is a minute, and a model
+that has to read a guide and call a tool will want longer. Shutdown drains it after
+`srv.Shutdown`, inside the *same* eight-second budget rather than a second one.
+
+Polling is answered from the registry alone, addressed by what the URL already carries. The
+full key needs the player's spec and that spec's table digest, and finding those means
+fetching the fight — seven points of a shared hourly budget, every second, for an answer
+already in memory.
 
 **The pull has two views, not one page.** `GET …/fight/{id}` draws the timeline;
 `GET …/fight/{id}/analysis` is the coaching view #2 fills in. Both are rendered by one

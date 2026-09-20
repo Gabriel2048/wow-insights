@@ -405,15 +405,23 @@ func TestFightPageShowsTheRankingAndOmitsItWhenThereIsNone(t *testing.T) {
 func TestAnalysisPageDrawsNoTimelineAndLoadsNoScript(t *testing.T) {
 	page := render(t, "analysis.html", analysisPage())
 
-	for _, unwanted := range []string{"timeline.js", "zamimg.com", "<script"} {
+	for _, unwanted := range []string{"timeline.js", "zamimg.com"} {
 		if strings.Contains(page, unwanted) {
-			t.Errorf("the analysis page carries %q; it draws no timeline and needs no script", unwanted)
+			t.Errorf("the analysis page carries %q; it draws no timeline", unwanted)
 		}
 	}
+	// It has a script of its own — the poller — but it must be a hashed
+	// asset, never inline, because #7's policy will allow no inline script.
+	if !strings.Contains(page, "analysis.js") {
+		t.Error("the analysis page does not load its poller")
+	}
+	if regexp.MustCompile(`<script[^>]*>[^<\s]`).MatchString(page) {
+		t.Error("the analysis page carries an inline script")
+	}
 	for _, want := range []string{
-		"Testmage",        // the player, from the shared partial
-		"Percentile",      // the ranking tile came with it
-		"Nothing to flag", // and the page says plainly that every rule came back quiet
+		"Testmage",             // the player, from the shared partial
+		"Percentile",           // the ranking tile came with it
+		"Nothing analysed yet", // and the page offers to do the work rather than pretending it has
 	} {
 		if !strings.Contains(page, want) {
 			t.Errorf("the analysis page is missing %q", want)
@@ -468,8 +476,8 @@ func TestAnalysisPageWithNoPlayerInvitesRatherThanReportsNothing(t *testing.T) {
 	if !strings.Contains(page, "Pick a player") {
 		t.Error("the analysis page does not invite a player to be picked")
 	}
-	if strings.Contains(page, "Nothing to flag") {
-		t.Error("the analysis page reports on nobody; the findings box needs a player")
+	if strings.Contains(page, "Nothing analysed yet") {
+		t.Error("the analysis page offers to analyse nobody; the box needs a player")
 	}
 	// Still a whole page: the tab strip is how you get back.
 	if !strings.Contains(page, "viewtabs") {
