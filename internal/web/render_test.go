@@ -626,3 +626,22 @@ func TestAnUnmodelledPullSaysSoRatherThanDrawingAnEmptyLane(t *testing.T) {
 		}
 	}
 }
+
+// The largest unexplained band on a wipe is the player being dead. The page
+// says so, in the lane's tooltip and in the cast table, naming the moment —
+// otherwise it reports a corpse as idle and reads as a reproach.
+func TestAPauseThePlayerWasDeadForIsLabelledOnThePage(t *testing.T) {
+	page := render(t, "fight.html", pageWhereThePlayerDied())
+
+	if !strings.Contains(page, "dead from 4:50") {
+		t.Error("the page does not say the trailing pause was the player being dead")
+	}
+	// The pause before the death keeps its own explanation, or none.
+	if strings.Count(page, "dead from") > 2 {
+		t.Errorf("every pause is blamed on the death: %d mentions", strings.Count(page, "dead from"))
+	}
+	// And a pull with nobody dead says nothing about it.
+	if alive := render(t, "fight.html", fullFightPage()); strings.Contains(alive, "dead from") {
+		t.Error("a pull with no death still reports one")
+	}
+}

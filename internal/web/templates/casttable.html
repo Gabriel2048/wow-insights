@@ -34,7 +34,7 @@
                     {{with $.PauseBefore .}}
                         <tr class="pauserow">
                             <td colspan="4">paused {{short .Duration}}
-                                <span class="hint">{{.Timestamp}} &rarr; {{.EndLabel}}, global cooldown {{short .GCD}}{{with .Reason}} &middot; {{.}}{{end}}</span>
+                                <span class="hint">{{.Timestamp}} &rarr; {{.EndLabel}}, global cooldown {{short .GCD}}{{with $.PauseReason .}} &middot; {{.}}{{end}}</span>
                             </td>
                         </tr>
                     {{end}}

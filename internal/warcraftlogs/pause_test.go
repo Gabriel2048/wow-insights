@@ -264,3 +264,88 @@ func TestTheGapFieldIsUntouchedByThePauseModel(t *testing.T) {
 		t.Errorf("%d pauses against %d gaps: the model is not reducing anything", len(tl.Pauses), withGap)
 	}
 }
+
+// The largest unexplained band on the recorded wipe is the player being dead:
+// 36 s of the 52 s reported. Saying so is the difference between a page that
+// informs and one that accuses a corpse of standing still.
+func TestAPauseThePlayerWasDeadForSaysSo(t *testing.T) {
+	know := fireBases()
+	bar := 1250 * time.Millisecond
+	casts := []Cast{hardCast(0, 133, bar), hardCast(2*time.Second, 133, bar), hardCast(4*time.Second, 133, bar)}
+	tl := &Timeline{Duration: 60 * time.Second}
+	tl.Pauses, tl.GCD = buildPauses(casts, fightOf(60*time.Second), know)
+	if len(tl.Pauses) != 1 {
+		t.Fatalf("got %d pauses, want the one running to the end", len(tl.Pauses))
+	}
+	if tl.Pauses[0].Reason != PauseToFightEnd {
+		t.Fatalf("Reason = %q before attribution, want %q", tl.Pauses[0].Reason, PauseToFightEnd)
+	}
+
+	got := tl.Attributed(10 * time.Second)
+	if got[0].Reason != PauseDead {
+		t.Errorf("Reason = %q for a pause the player was dead through, want %q", got[0].Reason, PauseDead)
+	}
+	// And the analysis's own copy is untouched. The cache hands the same
+	// *Timeline to every request for a subject, so relabelling in place would
+	// be a race between two browsers and would outlive the request that did it.
+	if tl.Pauses[0].Reason != PauseToFightEnd {
+		t.Error("Attributed mutated the timeline's own pauses, which are shared through the cache")
+	}
+}
+
+// A pull nobody died in is unchanged, and a pause that ended before the death
+// is not blamed on it.
+func TestADeathExplainsOnlyWhatFollowedIt(t *testing.T) {
+	know := fireBases()
+	bar := 1250 * time.Millisecond
+	casts := []Cast{
+		hardCast(0, 133, bar), hardCast(2*time.Second, 133, bar), hardCast(4*time.Second, 133, bar),
+		hardCast(20*time.Second, 133, bar), // a pause before it
+	}
+	tl := &Timeline{Duration: 60 * time.Second}
+	tl.Pauses, tl.GCD = buildPauses(casts, fightOf(60*time.Second), know)
+	if len(tl.Pauses) != 2 {
+		t.Fatalf("got %d pauses, want the mid-fight one and the trailing one", len(tl.Pauses))
+	}
+
+	t.Run("no death leaves everything alone", func(t *testing.T) {
+		for i, p := range tl.Attributed(0) {
+			if p.Reason != tl.Pauses[i].Reason {
+				t.Errorf("pause %d was relabelled %q on a pull with no death", i, p.Reason)
+			}
+		}
+	})
+	t.Run("a late death explains only the late pause", func(t *testing.T) {
+		got := tl.Attributed(30 * time.Second)
+		if got[0].Reason == PauseDead {
+			t.Errorf("the pause at %s is blamed on a death 30s in", got[0].Timestamp())
+		}
+		if got[1].Reason != PauseDead {
+			t.Errorf("the pause at %s ran past the death and is not attributed to it", got[1].Timestamp())
+		}
+	})
+}
+
+// The recorded wipe end to end: the player died, and the pause that follows
+// must say so rather than reading as two-thirds of the pull spent idle.
+func TestTheRecordedWipeBlamesTheDeathAndNotThePlayer(t *testing.T) {
+	rep, fight := recordedWipe(t)
+	tl := buildTimeline(rep, rep.Casts.Data, fight, fire)
+	if len(tl.Pauses) == 0 {
+		t.Fatal("the recorded wipe reports no pauses at all")
+	}
+
+	last := tl.Pauses[len(tl.Pauses)-1]
+	if last.Reason != PauseToFightEnd {
+		t.Fatalf("the last pause reads %q; this test assumes it runs to the end", last.Reason)
+	}
+	// The death is what the fight query knows and the timeline does not, so
+	// the page supplies it. Attribute against the moment it happened.
+	got := tl.Attributed(last.Start)
+	if got[len(got)-1].Reason != PauseDead {
+		t.Errorf("the pause after the death reads %q, want %q", got[len(got)-1].Reason, PauseDead)
+	}
+	if share := float64(last.Duration) / float64(tl.TotalPaused()); share < 0.5 {
+		t.Errorf("the trailing pause is %.0f%% of the reported idle; this test is built on it being most of it", share*100)
+	}
+}
