@@ -1,6 +1,9 @@
 package knowledge
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 // A cache keyed on a version must be invalidated by any edit that changes an
 // analysis, and by nothing else.
@@ -12,6 +15,7 @@ func TestVersionChangesWithEveryTableThatChangesAnAnalysis(t *testing.T) {
 			Cooldowns:       map[int]string{190319: "Combustion"},
 			CastRules:       map[int]CastRule{11366: {Instant: []string{"Hyperthermia", "Hot Streak!"}, HardCast: []string{"Pyroclasm"}}},
 			JudgedCooldowns: map[int]JudgedCooldown{190319: {Name: "Combustion", Base: 120}},
+			BaseCasts:       map[int]BaseCast{133: {Base: 1750 * time.Millisecond}},
 		}
 	}
 	was := base().Version()
@@ -23,6 +27,13 @@ func TestVersionChangesWithEveryTableThatChangesAnAnalysis(t *testing.T) {
 		"a new cast rule":           func(k *Knowledge) { k.CastRules[133] = CastRule{HardCast: []string{"Pyroclasm"}} },
 		"a changed judged cooldown": func(k *Knowledge) { k.JudgedCooldowns[190319] = JudgedCooldown{Name: "Combustion", Base: 60} },
 		"a different spec entirely": func(k *Knowledge) { k.Spec = SpecID{Class: "Mage", Spec: "Frost"} },
+		"a new base cast time":      func(k *Knowledge) { k.BaseCasts[2948] = BaseCast{Base: 1500 * time.Millisecond} },
+		"a changed base cast time": func(k *Knowledge) {
+			k.BaseCasts[133] = BaseCast{Base: 2 * time.Second}
+		},
+		"a spell that turns out to be a channel": func(k *Knowledge) {
+			k.BaseCasts[133] = BaseCast{Base: 1750 * time.Millisecond, Channel: true}
+		},
 		"an aura moved to hard cast": func(k *Knowledge) {
 			k.CastRules[11366] = CastRule{Instant: []string{"Hyperthermia"}, HardCast: []string{"Hot Streak!", "Pyroclasm"}}
 		},

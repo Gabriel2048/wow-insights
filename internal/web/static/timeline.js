@@ -157,62 +157,12 @@ var whTooltips = {colorLinks: false, iconizeLinks: false, renameLinks: false};
     }, {passive: false});
 
 
-    // --- idle threshold -------------------------------------------------
-    // Every pause is already in the DOM; the threshold only decides which
-    // ones are shown. Filtering client-side keeps it instant and avoids
-    // re-querying Warcraft Logs on every adjustment.
-    var DEFAULT_IDLE_MS = 1500;
-    var STORAGE_KEY = 'wowinsight.idleMs';
-
-    var idleInput = document.getElementById('idleMs');
-    var idleSummary = document.getElementById('idleSummary');
-    var statPauses = document.getElementById('statPauses');
-    var statPausesLabel = document.getElementById('statPausesLabel');
-    var statIdle = document.getElementById('statIdle');
-    var idleRows = Array.prototype.slice.call(document.querySelectorAll('tr.idlerow'));
-    var idleBands = Array.prototype.slice.call(document.querySelectorAll('.track .gap'));
-
-    function humanMS(ms) {
-        if (ms < 1000) return ms + 'ms';
-        var s = ms / 1000;
-        if (s < 60) return s.toFixed(1) + 's';
-        return Math.floor(s / 60) + 'm ' + ('0' + Math.round(s % 60)).slice(-2) + 's';
-    }
-
-    function applyIdleThreshold(ms) {
-        var shown = 0, total = 0;
-        idleRows.forEach(function (row) {
-            var v = parseInt(row.dataset.ms, 10);
-            var visible = v >= ms;
-            row.style.display = visible ? '' : 'none';
-            if (visible) { shown++; total += v; }
-        });
-        idleBands.forEach(function (band) {
-            band.style.display = parseInt(band.dataset.ms, 10) >= ms ? '' : 'none';
-        });
-        statPauses.textContent = shown;
-        statPausesLabel.textContent = 'Pauses \u2265' + humanMS(ms);
-        statIdle.textContent = humanMS(total);
-        idleSummary.textContent = shown + ' of ' + idleRows.length + ' pauses shown';
-    }
-
-    function setIdleThreshold(ms, save) {
-        if (!isFinite(ms) || ms < 0) ms = DEFAULT_IDLE_MS;
-        applyIdleThreshold(ms);
-        if (save) {
-            try { localStorage.setItem(STORAGE_KEY, ms); } catch (e) { /* private mode */ }
-        }
-    }
-
-    if (idleInput) {
-        var saved = null;
-        try { saved = localStorage.getItem(STORAGE_KEY); } catch (e) { /* private mode */ }
-        if (saved !== null) idleInput.value = saved;
-        idleInput.addEventListener('input', function () {
-            setIdleThreshold(parseInt(idleInput.value, 10), true);
-        });
-        setIdleThreshold(parseInt(idleInput.value, 10), false);
-    }
+    // The idle threshold lived here. It filtered pauses client-side against
+    // a number the viewer typed, because the server could not tell an
+    // avoidable pause from a normal global cooldown. It can now — the pauses
+    // on the page are the ones worth showing, worked out from the player's
+    // own cast bars — so there is nothing left to filter and no slider.
+    // See docs/decisions/2026-09-20-model-the-global-cooldown.md.
 
     // --- hover readout --------------------------------------------------
     // The curve is evenly spaced, so a time maps straight to a bucket
