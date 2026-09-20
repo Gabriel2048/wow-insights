@@ -52,6 +52,7 @@ func (s *Server) routes() *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", s.index)
 	mux.HandleFunc("GET /report/{code}/fight/{id}", s.fight)
+	mux.HandleFunc("GET /report/{code}/fight/{id}/analysis", s.analysis)
 	mux.HandleFunc("GET /healthz", s.healthz)
 	mux.HandleFunc("GET /static/{hash}/{name}", s.tpl.assets.serve)
 	return mux
@@ -72,6 +73,10 @@ type fightPageData struct {
 	// Timeline is the analysis laid out for this page. The handler chooses
 	// the axis; today that is the pull's own.
 	Timeline *view.Timeline
+	// View is which of the two views of a pull this is, "timeline" or
+	// "analysis". The tab strip is rendered by both pages from one partial
+	// and needs to know which link to mark as current.
+	View string
 	// Notices are the things that went wrong without stopping the page: the
 	// timeline could not be fetched, a player could not be resolved, part of
 	// the document did not arrive. An empty area with nothing said is the
@@ -114,15 +119,57 @@ func (s *Server) index(w http.ResponseWriter, r *http.Request) {
 // fight renders one encounter and, when a player is selected, that player's
 // numbers for it.
 func (s *Server) fight(w http.ResponseWriter, r *http.Request) {
+	data, ok := s.pullPage(w, r, "timeline")
+	if !ok {
+		return
+	}
+	if data.Player != nil {
+		timeline, notices := s.playerTimeline(r, data.Detail, *data.Player, data.Fight)
+		// Appended, not assigned: the fight itself may already have put a
+		// notice here, and the timeline's must not replace it.
+		data.Timeline, data.Notices = timeline, append(data.Notices, notices...)
+	}
+	s.render(w, r, http.StatusOK, "fight.html", data)
+}
+
+// analysis renders the coaching view of the same pull. It is a sibling of the
+// fight page rather than a panel on it: the timeline page is already the
+// largest thing this app serves, and the two are read one after the other
+// rather than together.
+//
+// It deliberately fetches no timeline. Nothing here draws one, and a
+// Timeline is by far the most expensive query the app makes — roughly nine
+// points of an hourly budget shared by every user — so paying for one to
+// render a page that ignores it would make moving between the two views cost
+// more than reading either. What it costs is one FightDetail, which is what
+// gives it the player, the spec and the ranking. #58's cache is what will
+// stop even that being paid twice.
+func (s *Server) analysis(w http.ResponseWriter, r *http.Request) {
+	data, ok := s.pullPage(w, r, "analysis")
+	if !ok {
+		return
+	}
+	s.render(w, r, http.StatusOK, "analysis.html", data)
+}
+
+// pullPage is everything the two views of a pull do identically: validate the
+// route, fetch the fight, say what arrived incomplete, and resolve the player
+// in the query string. It reports false when it has already answered the
+// request, which is the only way a handler above it should end early.
+//
+// It exists because the two handlers were the same thirty lines twice, and
+// the duplication was the kind that drifts: a 400 reworded on one page and
+// not the other reads as a different app.
+func (s *Server) pullPage(w http.ResponseWriter, r *http.Request, viewName string) (fightPageData, bool) {
 	code, err := warcraftlogs.ParseReportCode(r.PathValue("code"))
 	if err != nil {
 		s.fail(w, r, problem{http.StatusBadRequest, "That is not a Warcraft Logs report code.", slog.LevelInfo})
-		return
+		return fightPageData{}, false
 	}
 	fightID, err := strconv.Atoi(r.PathValue("id"))
 	if err != nil {
 		s.fail(w, r, problem{http.StatusBadRequest, "That is not a fight number.", slog.LevelInfo})
-		return
+		return fightPageData{}, false
 	}
 
 	detail, err := s.wcl.FightDetail(r.Context(), code, fightID)
@@ -130,10 +177,10 @@ func (s *Server) fight(w http.ResponseWriter, r *http.Request) {
 		p := classify(err)
 		s.logProblem(r, p, "fetch fight", err, "code", code, "fight", fightID)
 		s.fail(w, r, p)
-		return
+		return fightPageData{}, false
 	}
 
-	data := fightPageData{Detail: detail, Fight: view.Fight{Fight: detail.Fight}}
+	data := fightPageData{Detail: detail, Fight: view.Fight{Fight: detail.Fight}, View: viewName}
 	if len(detail.Incomplete) > 0 {
 		s.logger(r).Warn("fight arrived incomplete", "missing", detail.Incomplete)
 		data.Notices = append(data.Notices, "Part of this fight was unavailable from Warcraft Logs: "+laneNames(detail.Incomplete)+".")
@@ -149,13 +196,9 @@ func (s *Server) fight(w http.ResponseWriter, r *http.Request) {
 		} else {
 			data.SelectedID = id
 			data.Player = &player
-			timeline, notices := s.playerTimeline(r, detail, player, data.Fight)
-			// Appended, not assigned: the fight itself may already have put a
-			// notice here, and the timeline's must not replace it.
-			data.Timeline, data.Notices = timeline, append(data.Notices, notices...)
 		}
 	}
-	s.render(w, r, http.StatusOK, "fight.html", data)
+	return data, true
 }
 
 // playerTimeline fetches and lays out one player's timeline, and says on the

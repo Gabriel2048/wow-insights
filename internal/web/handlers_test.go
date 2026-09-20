@@ -217,3 +217,46 @@ func TestAFightNoticeSurvivesSelectingAPlayer(t *testing.T) {
 		t.Error("the fight's own notice is gone once a player is selected")
 	}
 }
+
+// The analysis route is a sibling of the fight route and validates its
+// parameters identically — a report code that is not sixteen alphanumerics,
+// or a fight id that is not a number, is a 400 before any API call. The two
+// handlers share that preamble precisely so the two pages cannot drift into
+// answering the same bad request differently.
+func TestAnalysisRouteValidatesLikeTheFightRoute(t *testing.T) {
+	for _, target := range []string{
+		"/report/tooshort/fight/12/analysis",
+		"/report/ExampleReport123/fight/notanumber/analysis",
+	} {
+		if rec := get(t, fakeWCL{}, target); rec.Code != http.StatusBadRequest {
+			t.Errorf("%s: status = %d, want 400", target, rec.Code)
+		}
+	}
+}
+
+// The analysis page shows no timeline, so it must not fetch one: a Timeline
+// is the most expensive query this app makes, and paying for one to render a
+// page that ignores it would make moving between the two views cost more than
+// reading either.
+func TestAnalysisPageFetchesNoTimeline(t *testing.T) {
+	timelineCalls := 0
+	rec := get(t, fakeWCL{
+		fightDetail: func(context.Context, string, int) (*warcraftlogs.FightDetail, error) {
+			return fightDetail(), nil
+		},
+		timeline: func(context.Context, string, warcraftlogs.Fight, int, knowledge.Knowledge) (*warcraftlogs.Timeline, error) {
+			timelineCalls++
+			return nil, errNotStubbed
+		},
+	}, "/report/ExampleReport123/fight/12/analysis?player=7")
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if timelineCalls != 0 {
+		t.Errorf("the analysis page fetched %d timelines, want none", timelineCalls)
+	}
+	if !strings.Contains(rec.Body.String(), "No findings") {
+		t.Error("the analysis page does not say there are no findings yet")
+	}
+}

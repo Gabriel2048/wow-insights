@@ -1,0 +1,14 @@
+{{/* The two views of one pull, as links rather than a JavaScript tablist:
+     there is no scripted behaviour here to justify tab semantics, and #7's
+     Content-Security-Policy leaves no inline script to write it with. The
+     current view is marked with aria-current, which is what a screen reader
+     announces. Both links carry the selected player so moving between the
+     views never loses them. */}}
+{{define "viewtabs"}}
+<nav class="viewtabs" aria-label="Views of this pull">
+    <a href="/report/{{.Detail.ReportCode}}/fight/{{.Detail.Fight.ID}}{{with .SelectedID}}?player={{.}}{{end}}"
+       {{if eq .View "timeline"}}aria-current="page"{{end}}>Timeline</a>
+    <a href="/report/{{.Detail.ReportCode}}/fight/{{.Detail.Fight.ID}}/analysis{{with .SelectedID}}?player={{.}}{{end}}"
+       {{if eq .View "analysis"}}aria-current="page"{{end}}>Analysis</a>
+</nav>
+{{end}}
