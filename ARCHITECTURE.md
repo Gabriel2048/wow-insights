@@ -188,9 +188,12 @@ sequenceDiagram
 handler preamble (`pullPage`) that validates the route, fetches the fight and resolves
 the player, so the two cannot drift into answering the same bad request differently, and
 a shared `viewtabs` partial links them as ordinary links carrying the selected player.
-The analysis view deliberately fetches **no** `Timeline`: it draws none, and a `Timeline`
-is the most expensive query the app makes, so paying for one to render a page that
-ignores it would make moving between the two views cost more than reading either.
+The analysis view fetches the same `Timeline` the timeline view does, and computes
+`Findings` over it: the rules are arithmetic on the player's own casts, so the page needs
+exactly the analysis it is named for. It draws none of it — a finding carries a
+`time.Duration` and links into the timeline view by turning that into `#t=<ms>`, which
+`timeline.js` parses. Both views therefore pay for one `Timeline` each, which is what
+#2's cache is for.
 
 - The page degrades rather than fails: a `Timeline` error is logged with what the API
   said, the stats render without it, and a notice says so where the timeline would be.

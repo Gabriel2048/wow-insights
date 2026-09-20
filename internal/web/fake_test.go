@@ -163,6 +163,28 @@ func analysisPage() fightPageData {
 	return page
 }
 
+// analysisWithFindings is the coaching page with something to say.
+func analysisWithFindings() fightPageData {
+	page := analysisPage()
+	page.Findings = []warcraftlogs.Finding{
+		{
+			RuleID: "cooldown-late-first-use", Severity: warcraftlogs.Major,
+			Title:    "First Combustion came late",
+			Detail:   "Combustion was first used 38s into the pull.",
+			At:       37800 * time.Millisecond,
+			Evidence: []warcraftlogs.Evidence{{Label: "first use", Value: "0:38"}},
+		},
+		{
+			RuleID: "cooldown-drift", Severity: warcraftlogs.Minor,
+			Title:    "Combustion drifted later each use",
+			Detail:   "Combustion drifted 52s later across 7 uses.",
+			At:       229500 * time.Millisecond,
+			Evidence: []warcraftlogs.Evidence{{Label: "uses", Value: "7"}},
+		},
+	}
+	return page
+}
+
 // pageWith is fullFightPage with a different analysis drawn on it.
 func pageWith(t *warcraftlogs.Timeline) fightPageData {
 	page := fullFightPage()

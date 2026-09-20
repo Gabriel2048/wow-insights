@@ -411,9 +411,9 @@ func TestAnalysisPageDrawsNoTimelineAndLoadsNoScript(t *testing.T) {
 		}
 	}
 	for _, want := range []string{
-		"Testmage",    // the player, from the shared partial
-		"Percentile",  // the ranking tile came with it
-		"No findings", // and the page says plainly that there are none yet
+		"Testmage",        // the player, from the shared partial
+		"Percentile",      // the ranking tile came with it
+		"Nothing to flag", // and the page says plainly that every rule came back quiet
 	} {
 		if !strings.Contains(page, want) {
 			t.Errorf("the analysis page is missing %q", want)
@@ -468,11 +468,56 @@ func TestAnalysisPageWithNoPlayerInvitesRatherThanReportsNothing(t *testing.T) {
 	if !strings.Contains(page, "Pick a player") {
 		t.Error("the analysis page does not invite a player to be picked")
 	}
-	if strings.Contains(page, "No findings") {
-		t.Error("the analysis page reports no findings for nobody; the findings box needs a player")
+	if strings.Contains(page, "Nothing to flag") {
+		t.Error("the analysis page reports on nobody; the findings box needs a player")
 	}
 	// Still a whole page: the tab strip is how you get back.
 	if !strings.Contains(page, "viewtabs") {
 		t.Error("the analysis page lost its view strip when no player was selected")
+	}
+}
+
+// A finding is a claim, the moment it points at, and the arithmetic behind
+// it. The timestamp is a link into the timeline at that moment, and the
+// form of that link is a contract with timeline.js, which parses it with
+// /^#t=(\d+)$/ — so this test is what keeps the two from drifting apart.
+func TestFindingsRenderWithLinksTheTimelineScriptCanParse(t *testing.T) {
+	page := render(t, "analysis.html", analysisWithFindings())
+
+	for _, want := range []string{
+		"First Combustion came late",        // the claim
+		"Combustion was first used 38s",     // the sentence with its numbers
+		`class="finding major"`,             // severity as a class, for the stripe
+		`class="finding minor"`,             // and both severities present
+		"first use",                         // the evidence label
+		"Each timestamp opens the timeline", // how to use it
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("the findings list is missing %q", want)
+		}
+	}
+	if strings.Contains(page, "Nothing to flag") {
+		t.Error("the page shows the empty state while carrying findings")
+	}
+
+	// Every timestamp link must be one timeline.js will act on, and must
+	// carry the player so the timeline opens on the right one.
+	links := regexp.MustCompile(`href="([^"]*#t=[^"]*)"`).FindAllStringSubmatch(page, -1)
+	if len(links) != 2 {
+		t.Fatalf("got %d timestamp links, want one per finding: %v", len(links), links)
+	}
+	parses := regexp.MustCompile(`^#t=\d+$`)
+	for _, l := range links {
+		href := l[1]
+		hash := href[strings.Index(href, "#"):]
+		if !parses.MatchString(hash) {
+			t.Errorf("href %q ends in %q, which timeline.js's /^#t=(\\d+)$/ will not match", href, hash)
+		}
+		if !strings.Contains(href, "player=7") {
+			t.Errorf("href %q does not carry the player, so the timeline opens on nobody", href)
+		}
+		if strings.Contains(href, "/analysis") {
+			t.Errorf("href %q points at the analysis page; a finding links into the timeline", href)
+		}
 	}
 }

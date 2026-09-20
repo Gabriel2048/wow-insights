@@ -315,5 +315,23 @@ var whTooltips = {colorLinks: false, iconizeLinks: false, renameLinks: false};
             layoutLabels();
         });
     });
+    // A finding on the analysis page links here as #t=<milliseconds into the
+    // pull>. Zoom in far enough that a single moment is legible, then centre
+    // the view on it. Anything unparseable is ignored: a hash is a hint from
+    // a link, not input to trust.
+    function goToHash() {
+        var m = /^#t=(\d+)$/.exec(window.location.hash || '');
+        if (!m) return;
+        var sec = parseInt(m[1], 10) / 1000;
+        if (!isFinite(sec)) return;
+        setZoom(Math.max(zoom, 6), false);
+        // at() is a percentage across the whole axis, lead-in included, which
+        // is exactly what the scrollable inner width is measured in.
+        var x = inner.clientWidth * at(sec) / 100;
+        scroll.scrollLeft = Math.max(0, x - scroll.clientWidth / 2);
+    }
+
+    window.addEventListener('hashchange', goToHash);
     setZoom(1, false);
+    goToHash();
 })();
