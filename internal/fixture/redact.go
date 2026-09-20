@@ -48,9 +48,16 @@ func newRedactor(bodies [][]byte) (*redactor, error) {
 	var (
 		actors  []actor
 		servers []string
-		code    string
+		codes   []string
 		owner   string
 	)
+	// The recorder holds its exchanges in a map, so the order they arrive in
+	// is not the order they were recorded in. Sorting makes every rule below
+	// a function of the content alone: without it, which report code became
+	// ExampleReport123 in a two-report recording was decided by map iteration
+	// and differed between runs, so one recording could be clean and the next
+	// one leak.
+	bodies = slices.SortedFunc(slices.Values(bodies), bytes.Compare)
 	for _, body := range bodies {
 		tree, err := decode(body)
 		if err != nil {
@@ -60,8 +67,8 @@ func newRedactor(bodies [][]byte) (*redactor, error) {
 		if report == nil {
 			continue
 		}
-		if c, _ := report["code"].(string); c != "" {
-			code = c
+		if c, _ := report["code"].(string); c != "" && !slices.Contains(codes, c) {
+			codes = append(codes, c)
 		}
 		if o, _ := lookup(report, "owner", "name").(string); o != "" {
 			owner = o
@@ -83,9 +90,10 @@ func newRedactor(bodies [][]byte) (*redactor, error) {
 			}
 		}
 	}
-	if code == "" {
+	if len(codes) == 0 {
 		return nil, fmt.Errorf("fixture: no report code in any recorded response, so nothing can be redacted against it")
 	}
+	slices.Sort(codes)
 
 	r := &redactor{}
 	// Longest first, so that a name which is a prefix of another is never
@@ -123,7 +131,16 @@ func newRedactor(bodies [][]byte) (*redactor, error) {
 			r.rules = append(r.rules, rule{condensed, fake, "a server name"})
 		}
 	}
-	r.rules = append(r.rules, rule{code, FakeCode, "the report code"})
+	// Every code gets its own pseudonym, deterministically. A recording that
+	// reaches into a second report — which is what comparing a player against
+	// someone else's log needs — used to name only one of them.
+	for i, c := range codes {
+		fake := FakeCode
+		if i > 0 {
+			fake = fmt.Sprintf("ExampleReport%d", 123+i)
+		}
+		r.rules = append(r.rules, rule{c, fake, "a report code"})
+	}
 	if owner != "" && !slices.ContainsFunc(actors, func(a actor) bool { return strings.EqualFold(a.name, owner) }) {
 		r.rules = append(r.rules, rule{owner, FakeOwner, "the report owner"})
 	}
@@ -167,6 +184,14 @@ func (r *redactor) apply(body []byte) ([]byte, error) {
 		if _, n := replaceWord(text, rule.real, ""); n > 0 {
 			return nil, fmt.Errorf("fixture: %s survived redaction; refusing to write", rule.kind)
 		}
+	}
+	// The check above can only fail on a value there was already a rule for,
+	// which is the wrong way round: a payload nobody taught this package to
+	// read produces no rules, so nothing can survive, so it passes. verify
+	// asks the opposite question — is every field that carries a person
+	// holding a pseudonym, and is every shape here one we know how to scrub.
+	if err := r.verify(tree); err != nil {
+		return nil, err
 	}
 	return []byte(text), nil
 }
