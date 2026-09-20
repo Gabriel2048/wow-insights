@@ -80,40 +80,25 @@ func (f Finding) Timestamp() string { return formatOffset(f.At) }
 func (f Finding) AtMS() int64 { return f.At.Milliseconds() }
 
 // The rules, named so a finding can be traced to the code that made it.
+//
+// Cooldown *drift* — uses creeping later across a pull — is deliberately not
+// among them. It was written, measured against seven real pulls, and removed.
+// Drift as a raw number is mostly a player holding a cooldown on purpose: for
+// a phase, an add spawn, lust, an amplifier. Suppressing the holds that
+// happen to land on a phase boundary took 65% of the measured drift with them
+// and left 4-12s a pull, below any threshold worth reporting, so the rule
+// fired on none of the seven. Leaving the holds in meant telling a player who
+// held Combustion seven seconds into an intermission — which all six top
+// parses on that encounter also did — that they had drifted.
+//
+// The question is "was this hold deliberate?", and neither version of the
+// rule can answer it; the data can, by comparison with players who did the
+// same fight. It belongs to whatever can make that comparison, not to a
+// constant here.
 const (
-	ruleCooldownDrift = "cooldown-drift"
-	ruleCooldownLate  = "cooldown-late-first-use"
-	ruleCooldownTail  = "cooldown-unused-tail"
+	ruleCooldownLate = "cooldown-late-first-use"
+	ruleCooldownTail = "cooldown-unused-tail"
 )
-
-// driftFloor is how much cumulative drift is worth mentioning at all. Below
-// this the finding is measurement noise dressed up as advice: a global
-// cooldown of slack on each of six uses is not a mistake, it is playing.
-const driftFloor = 15 * time.Second
-
-// phaseHold is how soon after a phase begins a cooldown can land and still
-// read as having been saved for it. A player who holds a cooldown through the
-// end of one stage and spends it in the opening seconds of the next is doing
-// the single most valuable thing they can with it, and calling that drift is
-// the page accusing someone of playing well.
-//
-// PROVISIONAL, and it is worth being plain about why. Nothing here is
-// per-encounter — phases arrive with every fight and a new tier costs this
-// code nothing — but the twenty seconds is a judgement, and the rule only
-// sees holds that happen to coincide with a phase boundary. It does not see
-// a cooldown held for an add spawn, for lust, for a damage amplifier that
-// goes up mid-phase, or for a burn window somebody called on voice. Writing
-// a rule for each of those is the unmaintainable path.
-//
-// The general question — "was this hold deliberate?" — is one the data
-// answers without a rule. Checked against the six top Fire Mage parses on
-// the encounter this was built against, all six put a Combustion inside
-// twenty seconds of the same intermission, several of them after a longer
-// wait than usual. A comparison against peers would have concluded the hold
-// was correct with nothing hard-coded at all, and that is what should
-// eventually own this decision; the RuleID on every Finding exists so that
-// judgement can suppress one without being able to invent one.
-const phaseHold = 20 * time.Second
 
 // lateFirstUse is how long into a pull a judged cooldown can go unused before
 // it is worth saying so. A cooldown held past this at the start is almost
@@ -175,9 +160,6 @@ func cooldownFindings(t *Timeline, know knowledge.Knowledge, actedUntil time.Dur
 		if f, ok := lateOpener(rule, used[0]); ok {
 			found = append(found, f)
 		}
-		if f, ok := driftFinding(rule, used, actedUntil, t.Phases); ok {
-			found = append(found, f)
-		}
 		if len(used) >= 2 {
 			gaps := make([]time.Duration, 0, len(used)-1)
 			for i := 1; i < len(used); i++ {
@@ -208,100 +190,6 @@ func lateOpener(rule knowledge.JudgedCooldown, first time.Duration) (Finding, bo
 			{Label: "should have been", Value: "in the opener"},
 		},
 	}, true
-}
-
-// driftFinding reports a cooldown whose uses spread out over the pull.
-func driftFinding(rule knowledge.JudgedCooldown, used []time.Duration, fight time.Duration, phases []Phase) (Finding, bool) {
-	if len(used) < 3 {
-		// Two uses are one gap, and one gap is not a pattern: it is as
-		// likely to be the fight's shape as the player's.
-		return Finding{}, false
-	}
-	gaps := make([]time.Duration, 0, len(used)-1)
-	for i := 1; i < len(used); i++ {
-		gaps = append(gaps, used[i]-used[i-1])
-	}
-	floor := observedCooldown(rule, gaps)
-	if floor <= 0 {
-		return Finding{}, false
-	}
-
-	// A wait the player spent on purpose is not drift. Holding a cooldown
-	// through the end of a stage to open the next one with it — an
-	// intermission with a damage amplifier most of all — is correct play,
-	// and the phases the analysis already carries are enough to see it.
-	var drift time.Duration
-	var held int
-	worst, at := time.Duration(0), used[0]
-	for i, g := range gaps {
-		excess := g - floor
-		if excess <= 0 {
-			continue
-		}
-		if _, saved := heldForPhase(used[i]+floor, used[i+1], phases); saved {
-			held++
-			continue
-		}
-		drift += excess
-		if excess > worst {
-			worst, at = excess, used[i]
-		}
-	}
-	if drift < driftFloor {
-		return Finding{}, false
-	}
-
-	// Losing a whole cooldown's worth of time to drift is a different size of
-	// mistake from losing a few seconds on each use.
-	severity := Minor
-	if drift >= floor {
-		severity = Major
-	}
-	// The moment it came off cooldown and was not pressed. This is what the
-	// finding points at, because it is where a player should look to see what
-	// they were doing instead.
-	readyAt := at + floor
-	usedAt := at + worst + floor
-	return Finding{
-		RuleID:   ruleCooldownDrift,
-		Severity: severity,
-		Title:    fmt.Sprintf("%s sat ready for %s at %s", rule.Name, roundSeconds(worst), formatOffset(readyAt)),
-		Detail: fmt.Sprintf("After the %s at %s it was ready again around %s, and you used it at %s — %s of it sitting there ready. Across the pull that added up to %s. %s is your biggest damage window, so every second it spends ready and unpressed is damage you do not do.",
-			rule.Name, formatOffset(at), formatOffset(readyAt), formatOffset(usedAt),
-			roundSeconds(worst), roundSeconds(drift), rule.Name),
-		At: readyAt,
-		Evidence: []Evidence{
-			{Label: "ready at", Value: formatOffset(readyAt)},
-			{Label: "used at", Value: formatOffset(usedAt)},
-			{Label: "your usual gap", Value: roundSeconds(floor)},
-			{Label: "total time sitting ready", Value: roundSeconds(drift)},
-		},
-	}, true
-}
-
-// heldForPhase reports whether a cooldown that came back at ready and was
-// used at used was being saved for a phase that began in between. The phase
-// has to start during the wait and the cooldown has to land in its opening
-// seconds: a stage that began twenty seconds before the cooldown was even
-// ready explains nothing, and neither does one the player pressed into a
-// minute late.
-func heldForPhase(ready, used time.Duration, phases []Phase) (Phase, bool) {
-	var best Phase
-	found := false
-	for _, p := range phases {
-		if p.Start <= ready || p.Start > used {
-			continue
-		}
-		if used-p.Start > phaseHold {
-			continue
-		}
-		// An intermission is the strongest reason to hold, so prefer it when
-		// two phases somehow qualify.
-		if !found || (p.IsIntermission && !best.IsIntermission) {
-			best, found = p, true
-		}
-	}
-	return best, found
 }
 
 // unusedTail reports a pull that carried on well past the last use of a

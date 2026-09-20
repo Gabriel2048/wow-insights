@@ -33,47 +33,6 @@ func timelineOfUses(fight time.Duration, ability int, at ...time.Duration) *Time
 	return t
 }
 
-// The recorded kill, as it actually is. The player used Combustion seven
-// times with gaps of 78.5, 73.8, 76.0, 66.1, 62.2 and 61.0 seconds across a
-// 431 s pull. Their own fastest gap is 61 s, so the rule holds them to that
-// and reports 52 s of cumulative drift.
-//
-// It reports NO lost use, and that is the interesting part. Perfect play
-// from the same opener does fit an eighth Combustion — at 428.2 s, with 3.3 s
-// of pull left. A damage cooldown pressed three seconds before the boss dies
-// does nothing, so counting it would be a true sentence that misleads, and a
-// coaching page cannot afford those. The drift is real and is said; the lost
-// use is not claimed.
-func TestCooldownDriftOnTheRecordedKill(t *testing.T) {
-	at := []time.Duration{1200, 79700, 153500, 229500, 295600, 357800, 418800}
-	for i := range at {
-		at[i] *= time.Millisecond
-	}
-	found := Findings(timelineOfUses(431472*time.Millisecond, combustion, at...), judgedFire(), survived)
-
-	if len(found) != 1 {
-		t.Fatalf("got %d findings, want 1 — drift only. The first use was at 1.2s so it is not late, and the last was at 6:59 of a 7:11 pull so nothing was left unused: %+v", len(found), found)
-	}
-	f := found[0]
-	if f.RuleID != ruleCooldownDrift {
-		t.Errorf("RuleID = %q, want %q", f.RuleID, ruleCooldownDrift)
-	}
-	if f.Severity != Minor {
-		t.Errorf("Severity = %v, want minor: the drift is real but cost no use", f.Severity)
-	}
-	// What happened, why it is bad, what should have happened — in that order.
-	for _, want := range []string{
-		"it was ready again around", // what should have happened, and when
-		"and you used it at",        // what happened instead
-		"added up to 52s",           // what it cost across the pull
-		"damage you do not do",      // why it matters
-	} {
-		if !strings.Contains(f.Detail, want) {
-			t.Errorf("Detail = %q\n  missing %q", f.Detail, want)
-		}
-	}
-}
-
 // The recorded wipe. Three uses, barely any drift between them — but the
 // first came 37.8 s in, which is the actual fault and a different finding.
 func TestALateFirstUseIsItsOwnFinding(t *testing.T) {
@@ -96,40 +55,6 @@ func TestALateFirstUseIsItsOwnFinding(t *testing.T) {
 	}
 	if !strings.Contains(found[0].Detail, "should go out in the opener") {
 		t.Errorf("Detail = %q, want it to say what should have happened", found[0].Detail)
-	}
-}
-
-// THE PROPERTY THIS RULE RESTS ON. Measuring against the player's own
-// fastest gap means a player who is late on every single use looks like a
-// player whose cooldown is simply longer — so the rule under-reports rather
-// than inventing a mistake. It must stay silent here even though this player
-// really did drift, because nothing in the log can tell the two apart.
-func TestAPlayerLateEveryTimeIsNeverWronglyAccused(t *testing.T) {
-	// Every gap identical at 100 s: indistinguishable from a 100 s cooldown.
-	at := []time.Duration{0, 100 * time.Second, 200 * time.Second, 300 * time.Second}
-	found := Findings(timelineOfUses(400*time.Second, combustion, at...), judgedFire(), survived)
-	for _, f := range found {
-		if f.RuleID == ruleCooldownDrift {
-			t.Errorf("accused a player of drift on evenly spaced uses: %q", f.Detail)
-		}
-	}
-}
-
-// A reset or a second charge must not be read as a two-second cooldown. This
-// is the Blazing Barrier case from the recorded kill, where the shortest gap
-// between uses is 7.6 s: unbounded, that claims forty-one missed uses.
-func TestAResetIsNotATwoSecondCooldown(t *testing.T) {
-	at := []time.Duration{0, 8 * time.Second, 70 * time.Second, 140 * time.Second, 210 * time.Second}
-	found := Findings(timelineOfUses(300*time.Second, combustion, at...), judgedFire(), survived)
-	for _, f := range found {
-		if f.RuleID != ruleCooldownDrift {
-			continue
-		}
-		for _, e := range f.Evidence {
-			if e.Label == "room for" && !strings.HasPrefix(e.Value, "5 ") && !strings.HasPrefix(e.Value, "6 ") {
-				t.Errorf("room for %q on a 120s cooldown across 300s; an 8s gap was read as the cooldown", e.Value)
-			}
-		}
 	}
 }
 
@@ -167,101 +92,6 @@ func TestAFindingCarriesNoGeometry(t *testing.T) {
 func TestFindingsOfANilTimeline(t *testing.T) {
 	if found := Findings(nil, judgedFire(), survived); found != nil {
 		t.Errorf("got %+v for a pull that could not be loaded, want nil", found)
-	}
-}
-
-// Drift and an unused tail are separate findings with separate causes, and
-// a pull can carry both. Blaming uses that never came on uses that came late
-// explains neither — which is what the first version of this rule did, on a
-// real log, with 37s of drift and two minutes of unused cooldown at the end.
-func TestDriftAndAnUnusedTailAreSeparateFindings(t *testing.T) {
-	// Gaps of 70, 140 and 70 seconds — one bad wait in the middle — and then
-	// 320 seconds of pull after the last use.
-	at := []time.Duration{0, 70 * time.Second, 210 * time.Second, 280 * time.Second}
-	found := Findings(timelineOfUses(600*time.Second, combustion, at...), judgedFire(), survived)
-
-	byRule := map[string]Finding{}
-	for _, f := range found {
-		byRule[f.RuleID] = f
-	}
-	if len(found) != 2 || byRule[ruleCooldownDrift].RuleID == "" || byRule[ruleCooldownTail].RuleID == "" {
-		t.Fatalf("got %d findings, want drift and unused-tail separately: %+v", len(found), found)
-	}
-	if got := byRule[ruleCooldownDrift].Detail; !strings.Contains(got, "ready again around") {
-		t.Errorf("the drift finding does not say when it should have been used: %q", got)
-	}
-	if strings.Contains(byRule[ruleCooldownDrift].Detail, "left on the table") {
-		t.Error("the drift finding claims uses were lost; that is the tail finding's claim, and blaming one on the other explains neither")
-	}
-	tail := byRule[ruleCooldownTail]
-	if tail.Severity != Major {
-		t.Errorf("the unused tail is %v, want major", tail.Severity)
-	}
-	if !strings.Contains(tail.Detail, "4 full uses") {
-		t.Errorf("tail Detail = %q, want it to name the four uses left unspent", tail.Detail)
-	}
-	if !strings.Contains(tail.Detail, "never pressed again") {
-		t.Errorf("tail Detail = %q, want it to say plainly what happened", tail.Detail)
-	}
-}
-
-// Holding a cooldown through the end of a stage and opening the next one
-// with it is the single most valuable thing a player can do with it, and an
-// intermission carrying a damage amplifier is the clearest case of all.
-//
-// This is the real shape of a pull the page got wrong: Combustion came back
-// at 3:20, the Claimed Vessel intermission began at 3:44, and the player
-// pressed it at 3:51 — seven seconds into the amplified window. The first
-// version of this rule called that thirty-two seconds of drift, which is the
-// page accusing someone of playing well.
-func TestACooldownHeldForAnIntermissionIsNotDrift(t *testing.T) {
-	at := []time.Duration{11300, 76700, 138600, 231700, 292900}
-	for i := range at {
-		at[i] *= time.Millisecond
-	}
-	timeline := timelineOfUses(423000*time.Millisecond, combustion, at...)
-	timeline.Phases = []Phase{
-		{ID: 1, Name: "Stage One: Serpent's Bargain", Start: 0, End: 122700 * time.Millisecond},
-		{ID: 2, Name: "Stage Two: Usurper's Reprisal", Start: 122700 * time.Millisecond, End: 224500 * time.Millisecond},
-		{ID: 3, Name: "Intermission: The Claimed Vessel", IsIntermission: true, Start: 224500 * time.Millisecond, End: 262900 * time.Millisecond},
-		{ID: 4, Name: "Stage Three: Coiled Union", Start: 262900 * time.Millisecond, End: 423000 * time.Millisecond},
-	}
-
-	for _, f := range Findings(timeline, judgedFire(), survived) {
-		if f.RuleID == ruleCooldownDrift {
-			t.Errorf("called a cooldown held for the intermission drift: %q", f.Detail)
-		}
-	}
-
-	// Without the phases the same pull does read as drift, which is what
-	// makes the phases load-bearing rather than decorative.
-	timeline.Phases = nil
-	var sawDrift bool
-	for _, f := range Findings(timeline, judgedFire(), survived) {
-		sawDrift = sawDrift || f.RuleID == ruleCooldownDrift
-	}
-	if !sawDrift {
-		t.Error("with no phase data the wait is unexplained and should read as drift; this test would prove nothing otherwise")
-	}
-}
-
-// A phase that began before the cooldown was even ready explains nothing,
-// and neither does one the player pressed into a minute late.
-func TestOnlyAWaitThatEndsAtAPhaseIsExcused(t *testing.T) {
-	phases := []Phase{{ID: 2, Name: "Stage Two", Start: 100 * time.Second, End: 400 * time.Second}}
-
-	// Ready at 130s, used at 200s: the stage began 30s before it was ready.
-	if _, ok := heldForPhase(130*time.Second, 200*time.Second, phases); ok {
-		t.Error("a phase that started before the cooldown was ready was treated as the reason it was held")
-	}
-	// Ready at 60s, used at 180s: the stage began during the wait, but the
-	// cooldown landed 80s into it.
-	if _, ok := heldForPhase(60*time.Second, 180*time.Second, phases); ok {
-		t.Error("a cooldown pressed 80s into a stage was treated as saved for it")
-	}
-	// Ready at 60s, used at 108s: held through the boundary, spent 8s in.
-	if _, ok := heldForPhase(60*time.Second, 108*time.Second, phases); !ok {
-		t.Error("a cooldown held through a stage boundary and spent in its opening seconds was not excused")
 	}
 }
 
