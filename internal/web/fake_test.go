@@ -234,6 +234,17 @@ func laidOut(t *warcraftlogs.Timeline) *view.Timeline {
 	return view.Layout(t, view.Options{LeadIn: 2 * time.Second, WowheadDifficulty: 15})
 }
 
+// pageWhereThePlayerDied is the same pull with the player dying at 4:50, which
+// is inside the trailing pause. The deaths table is fetched with the fight and
+// not the timeline, so the page is where the two meet.
+func pageWhereThePlayerDied() fightPageData {
+	page := fullFightPage()
+	page.Timeline = view.Layout(fullTimeline(), view.Options{
+		LeadIn: 2 * time.Second, WowheadDifficulty: 15, DiedAt: 290 * time.Second,
+	})
+	return page
+}
+
 func fightDetail() *warcraftlogs.FightDetail {
 	kill, heroic := false, 4
 	return &warcraftlogs.FightDetail{

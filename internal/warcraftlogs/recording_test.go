@@ -75,8 +75,38 @@ func recordedFight(t *testing.T, id int) Fight {
 // -players takes.
 const (
 	recordedKillID   = 1
+	recordedWipeID   = 6
 	recordedFireMage = 21
 )
+
+// recordedWipe loads the committed recording of the pull the Fire Mage died
+// on, which is the one that makes death attribution worth doing: most of its
+// reported idle is the player being dead.
+func recordedWipe(t *testing.T) (*timelineReport, Fight) {
+	t.Helper()
+	raw, err := os.ReadFile("../../testdata/timeline-6-21-2665074.json")
+	if err != nil {
+		skipWithoutRecording(t, err)
+	}
+	var env struct{ Data timelineResponse }
+	if err := json.Unmarshal(raw, &env); err != nil {
+		t.Fatal(err)
+	}
+	report := env.Data.ReportData.Report
+	if report == nil {
+		t.Fatal("the recorded wipe holds no report")
+	}
+	raw, err = os.ReadFile("../../testdata/masterdata.json")
+	if err != nil {
+		t.Fatalf("the recording has no masterdata.json: %v", err)
+	}
+	var master struct{ Data masterDataResponse }
+	if err := json.Unmarshal(raw, &master); err != nil {
+		t.Fatal(err)
+	}
+	report.MasterData = master.Data.ReportData.Report.MasterData
+	return report, recordedFight(t, recordedWipeID)
+}
 
 func (r *timelineReport) names() map[int]string      { return r.MasterData.names() }
 func (r *timelineReport) actorNames() map[int]string { return r.MasterData.actorNames() }

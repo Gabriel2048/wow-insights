@@ -103,10 +103,15 @@ const (
 	PauseUnexplained PauseReason = ""
 	// PauseAfterCancelledCast follows a cast bar the player abandoned.
 	PauseAfterCancelledCast PauseReason = "after an abandoned cast"
-	// PauseToFightEnd runs to the end of the pull, which usually means the
-	// player was dead for it. On the recorded wipe this is 36 s of the 52 s
-	// reported, so a page that does not say it reads as an accusation.
+	// PauseToFightEnd runs to the end of the pull. Without a death to explain
+	// it that means the player stopped before the boss did — which is a real
+	// thing to know, and not the same as being dead.
 	PauseToFightEnd PauseReason = "to the end of the pull"
+	// PauseDead is a pause the player was dead for. It is the largest single
+	// unexplained band there is: on the recorded wipe, 36 s of the 52 s
+	// reported. A page that does not say it is accusing a corpse of standing
+	// still.
+	PauseDead PauseReason = "dead"
 )
 
 // Pause is one stretch of a pull where the player was not occupied.
@@ -316,6 +321,38 @@ func medianDuration(values []time.Duration) time.Duration {
 	}
 	slices.Sort(values)
 	return values[len(values)/2]
+}
+
+// Attributed returns the pauses with the ones a player's death explains
+// relabelled, given the moment they died — zero when they did not.
+//
+// **It returns a new slice and mutates nothing.** The pauses on a Timeline are
+// shared: internal/warcraftlogs.Cache hands the same *Timeline to every
+// request for the same subject, so relabelling one in place would be a race
+// between two browsers and would outlive the request that did it.
+//
+// It is a method taking the player's context rather than something buildPauses
+// does, because a death is a fact about the player and a Timeline is one
+// pull's — the same split Findings already has, where the analysis takes
+// actedUntil from whoever knows it. The deaths table is fetched by the Fight
+// query and not the Timeline one, so this is also the only shape that needs no
+// second query and no change to the client seam.
+func (t *Timeline) Attributed(diedAt time.Duration) []Pause {
+	if diedAt <= 0 || len(t.Pauses) == 0 {
+		return t.Pauses
+	}
+	out := make([]Pause, len(t.Pauses))
+	copy(out, t.Pauses)
+	for i := range out {
+		// The pause ran past the moment the player died, so being dead is at
+		// least part of why it happened. A pause that began before the death
+		// keeps the whole span — the page prints both times, and a reader can
+		// see which part of it the player was alive for.
+		if out[i].End > diedAt {
+			out[i].Reason = PauseDead
+		}
+	}
+	return out
 }
 
 // PauseBefore is the reported pause that ends where this cast begins, if there

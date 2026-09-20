@@ -2,6 +2,7 @@ package view
 
 import (
 	"math"
+	"strings"
 	"testing"
 	"time"
 
@@ -193,5 +194,42 @@ func TestLayoutPositionsEveryLane(t *testing.T) {
 	}
 	if v.DPS == nil || v.DPS.Line == "" || v.Taken != nil {
 		t.Errorf("DPS drawn=%v Taken=%v, want a curve for the one series and nothing for the missing one", v.DPS != nil, v.Taken)
+	}
+}
+
+// A pause the player was dead for says so, and names the moment — "dead" on
+// its own is not something a reader can check, and a pause that began before
+// the death keeps its whole span, so both numbers have to be on the page.
+func TestAPauseAfterADeathNamesTheMoment(t *testing.T) {
+	analysis := &warcraftlogs.Timeline{
+		Duration: 120 * time.Second,
+		GCD:      warcraftlogs.GCDModel{Modelled: true, Median: time.Second, Samples: 20},
+		Pauses: []warcraftlogs.Pause{
+			{Start: 30 * time.Second, End: 36 * time.Second, Duration: 6 * time.Second, GCD: time.Second},
+			{Start: 72 * time.Second, End: 120 * time.Second, Duration: 48 * time.Second, GCD: time.Second,
+				Reason: warcraftlogs.PauseToFightEnd},
+		},
+	}
+
+	dead := Layout(analysis, Options{Total: 120 * time.Second, DiedAt: 72 * time.Second})
+	titles := make([]string, len(dead.Pauses.Bars))
+	for i, b := range dead.Pauses.Bars {
+		titles[i] = b.Title
+	}
+	if !strings.Contains(titles[1], "dead from 1:12") {
+		t.Errorf("the pause after the death reads %q, want it to name the moment", titles[1])
+	}
+	if strings.Contains(titles[0], "dead") {
+		t.Errorf("the pause before the death reads %q", titles[0])
+	}
+
+	// And with nobody dead, nothing is relabelled.
+	alive := Layout(analysis, Options{Total: 120 * time.Second})
+	if strings.Contains(alive.Pauses.Bars[1].Title, "dead") {
+		t.Errorf("a pull with no death reads %q", alive.Pauses.Bars[1].Title)
+	}
+	// The analysis itself is never rewritten: it is shared through the cache.
+	if analysis.Pauses[1].Reason != warcraftlogs.PauseToFightEnd {
+		t.Error("laying a timeline out changed the analysis underneath it")
 	}
 }

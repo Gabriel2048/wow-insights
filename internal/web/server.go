@@ -376,7 +376,13 @@ func (s *Server) playerTimeline(r *http.Request, detail *warcraftlogs.FightDetai
 	if timeline == nil {
 		return nil, notices
 	}
-	return view.Layout(timeline, view.Options{WowheadDifficulty: fight.WowheadDifficulty()}), notices
+	// DiedAt is the one thing the timeline query does not fetch and the page
+	// needs: the deaths table comes with the fight, so this is where a pause
+	// and the death that explains it meet.
+	return view.Layout(timeline, view.Options{
+		WowheadDifficulty: fight.WowheadDifficulty(),
+		DiedAt:            player.DiedAt,
+	}), notices
 }
 
 // timelineFor is playerTimeline with no request in it: the analysis runs as a

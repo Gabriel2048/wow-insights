@@ -38,6 +38,12 @@ type Options struct {
 	// difficulty, so a boss marker can link to the right spell values; zero
 	// links to the spell without one.
 	WowheadDifficulty int
+	// DiedAt is when this player died, or zero if they did not. It arrives
+	// here rather than with the analysis because the deaths table is fetched
+	// by the fight query and not the timeline one, and because a Timeline is
+	// one pull's while a death is one player's — the page is where the two
+	// meet. It relabels the pauses a death explains; it moves nothing.
+	DiedAt time.Duration
 }
 
 // Timeline is an analysed timeline with a position for everything on it.
@@ -50,6 +56,14 @@ type Timeline struct {
 	LeadIn      time.Duration
 	Total       time.Duration
 	PullPercent float64
+
+	// pauses are the analysis's, with anything the player's death explains
+	// relabelled. They shadow the embedded Timeline's for the same reason
+	// Casts does: the page must read the attributed ones or it will tell a
+	// dead player they were idle.
+	pauses []warcraftlogs.Pause
+	// diedAt is when this player died, kept so a reason can name the moment.
+	diedAt time.Duration
 
 	Casts     []Cast
 	RaidCDs   Lane
@@ -121,7 +135,7 @@ type Graph struct {
 // windows and DPS curve cannot drift out of alignment.
 func Layout(t *warcraftlogs.Timeline, o Options) *Timeline {
 	v := &Timeline{
-		Timeline: t, LeadIn: o.LeadIn, Total: o.Total,
+		Timeline: t, LeadIn: o.LeadIn, Total: o.Total, diedAt: o.DiedAt,
 		RaidCDs:   Lane{Class: "rcdblock", Stacked: true, Labelled: true},
 		Cooldowns: Lane{Class: "cdblock", Stacked: true, Labelled: true},
 		Phases:    Lane{Class: "phase", Labelled: true},
@@ -179,14 +193,15 @@ func Layout(t *warcraftlogs.Timeline, o Options) *Timeline {
 			Title: fmt.Sprintf("%s — %s for %s", l.Label(), l.Timestamp(), short(l.Duration())),
 		})
 	}
-	for _, p := range t.Pauses {
+	v.pauses = t.Attributed(o.DiedAt)
+	for _, p := range v.pauses {
 		// The tooltip carries the global cooldown this pause was measured
 		// against, because that is the model's own number and printing it is
 		// what lets a sceptical reader check the whole thing. It replaces the
 		// threshold slider, which was the previous way to probe the model.
 		title := fmt.Sprintf("%s idle from %s — global cooldown %s", short(p.Duration), p.Timestamp(), short(p.GCD))
-		if p.Reason != "" {
-			title += ", " + string(p.Reason)
+		if reason := v.reasonFor(p, o.DiedAt); reason != "" {
+			title += ", " + reason
 		}
 		v.Pauses.Bars = append(v.Pauses.Bars, Bar{Start: p.Start, End: p.End, Title: title})
 	}
@@ -275,4 +290,48 @@ func (v *Timeline) HasLusts() bool { return len(v.Lusts.Bars) > 0 }
 // about the bars would render the second as the first.
 func (v *Timeline) HasPauses() bool {
 	return v.Timeline != nil && v.GCD.Modelled
+}
+
+// Pauses the page should read, with anything a death explains relabelled.
+// The lane above is the same list positioned; this is for the cast table,
+// which reads facts rather than geometry.
+func (v *Timeline) PauseList() []warcraftlogs.Pause { return v.pauses }
+
+// PauseBefore shadows the analysis's, so the cast table shows the attributed
+// reason rather than the bare one. Without it a row would say a dead player's
+// pause ran "to the end of the pull", which is true and reads as a reproach.
+func (v *Timeline) PauseBefore(c warcraftlogs.Cast) *warcraftlogs.Pause {
+	for _, p := range v.pauses {
+		if p.End == c.Offset {
+			return &p
+		}
+	}
+	return nil
+}
+
+// PauseReason is what to print next to a pause. A death carries the moment it
+// happened, because "dead" alone is not checkable and "dead from 8:32" is —
+// and because a pause that began before the death keeps its whole span, so the
+// reader needs both numbers to see which part of it they were alive for.
+func (v *Timeline) PauseReason(p warcraftlogs.Pause) string {
+	return v.reasonFor(p, v.diedAt)
+}
+
+func (v *Timeline) reasonFor(p warcraftlogs.Pause, diedAt time.Duration) string {
+	if p.Reason == warcraftlogs.PauseDead && diedAt > 0 {
+		return "dead from " + clock(diedAt)
+	}
+	return string(p.Reason)
+}
+
+// clock renders a moment as m:ss, the way every timestamp on the page reads.
+// internal/warcraftlogs spells its own the same way; this is here rather than
+// exported from there because a moment on a page is this package's business,
+// and there is nothing to share but four lines of Sprintf.
+func clock(d time.Duration) string {
+	if d < 0 {
+		d = 0
+	}
+	d = d.Round(time.Second)
+	return fmt.Sprintf("%d:%02d", int(d.Minutes()), int(d.Seconds())%60)
 }
