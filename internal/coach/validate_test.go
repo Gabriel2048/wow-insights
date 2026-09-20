@@ -48,7 +48,7 @@ func realFindings(t *testing.T) []warcraftlogs.Finding {
 			{AbilityID: 190319, Name: "Combustion", Offset: 2*time.Minute + 13*time.Second},
 		},
 	}
-	return warcraftlogs.Findings(timeline, know, timeline.Duration)
+	return warcraftlogs.Analyse(timeline, know, warcraftlogs.PlayerContext{ActedUntil: timeline.Duration}).Findings
 }
 
 // The scanner is where every numeric check begins, so what it reads out of a

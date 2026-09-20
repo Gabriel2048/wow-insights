@@ -190,10 +190,40 @@ func analysisPage() fightPageData {
 	return page
 }
 
+// checksRan is what the analysis reports having asked, whether or not any of
+// it produced a finding. A page with findings shows these too: one finding
+// and nothing else implies that finding is everything that was looked at.
+func checksRan() []warcraftlogs.Check {
+	return []warcraftlogs.Check{
+		{
+			RuleID: "cooldown-unused-tail", Question: "Cooldowns used again once they came back",
+			Measured: "7 uses of Combustion", Asked: true,
+			Evidence: []warcraftlogs.Evidence{{Label: "Combustion, used", Value: "7 times"}},
+		},
+		{
+			RuleID: "pauses", Question: "Time not casting, beyond the global cooldown",
+			Measured: "6 pauses, 32s not casting in a 7:11 pull", Asked: true,
+			At:       62 * time.Second,
+			Evidence: []warcraftlogs.Evidence{{Label: "global cooldown", Value: "1.09s"}},
+		},
+		{
+			RuleID: "procs", Question: "Procs, and what was spent on them",
+			Measured: "155 Hot Streak! (154 spent)", Asked: true,
+		},
+		{
+			// The one nobody could ask. It is printed, not hidden: a question
+			// that never ran must not read as one that came back clean.
+			RuleID: "proc-no-aura", Question: "Hard casts with nothing behind them",
+			Unasked: "nothing here knows which of this specialisation's casts need a proc behind them",
+		},
+	}
+}
+
 // analysisWithFindings is the coaching page with something to say.
 func analysisWithFindings() fightPageData {
 	page := analysisPage()
 	page.Analysis = analysisDone
+	page.Checks = checksRan()
 	page.Findings = coach.Deterministic([]warcraftlogs.Finding{
 		{
 			RuleID: "cooldown-late-first-use", Severity: warcraftlogs.Major,
@@ -219,6 +249,15 @@ func analysisWithSetAside() fightPageData {
 	page := analysisWithFindings()
 	page.Findings[1].SetAside = true
 	page.Findings[1].Why = "Combustion was held for the intermission, where damage is doubled."
+	return page
+}
+
+// analysisAllClean is the coaching page on a pull where nothing was found —
+// the common case, and the one that used to be unreadable.
+func analysisAllClean() fightPageData {
+	page := analysisPage()
+	page.Analysis = analysisDone
+	page.Checks = checksRan()
 	return page
 }
 

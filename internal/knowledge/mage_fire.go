@@ -64,5 +64,19 @@ var fireMage = Knowledge{
 			Instant:  []string{"Hyperthermia", "Hot Streak!"},
 			HardCast: []string{"Pyroclasm"},
 		},
+		// Flamestrike spends a Hot Streak exactly as Pyroblast does, and is
+		// what a Fire Mage spends it on when there is more than one target.
+		// Without this row every Flamestrike in an AoE burst reads as a cast
+		// with no proc behind it: on the recorded wipe, seven Hot Streaks
+		// counted as wasted in a stretch where all seven were spent
+		// correctly.
+		//
+		// HardCast is deliberately empty. No aura justifies hard casting it
+		// and none is needed — hard casting Flamestrike is simply how the
+		// spell works, which is why classifyProcs only marks a missing proc
+		// where a rule names one.
+		1254851: { // Flamestrike
+			Instant: []string{"Hyperthermia", "Hot Streak!"},
+		},
 	},
 }

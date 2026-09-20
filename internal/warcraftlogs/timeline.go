@@ -544,6 +544,9 @@ type Timeline struct {
 	// Taken is the damage the player received, on the same bucket grid as DPS.
 	Taken *DPSGraph
 
+	// Procs is what became of each tracked proc aura: how many came up and
+	// how many were spent. It counts no waste; see ProcLedger.
+	Procs []ProcLedger
 	// Pauses is every stretch the player was not occupied, once the global
 	// cooldown is accounted for. Empty when the cooldown could not be
 	// modelled, which GCD says.
@@ -765,7 +768,14 @@ func classifyProcs(casts []Cast, windows []auraWindow, know knowledge.Knowledge)
 		// A hard cast with nothing behind it should not have been made — unless
 		// it is the precast, which is hard cast on purpose so that it lands
 		// with the pull. It still gets its verdict above; it is not a mistake.
-		if casts[i].Proc == "" && casts[i].ProcExpired == "" && !casts[i].resolvedInstantly() && !casts[i].Precast {
+		//
+		// And unless the spec names no aura that would justify a hard cast at
+		// all. A rule with an empty HardCast list is saying "this spell is
+		// judged when it comes out instantly, and hard casting it is just how
+		// the spell works" — Flamestrike is that, and marking every AoE cast
+		// of it a mistake is the rule getting the spell wrong rather than the
+		// player.
+		if len(rule.HardCast) > 0 && casts[i].Proc == "" && casts[i].ProcExpired == "" && !casts[i].resolvedInstantly() && !casts[i].Precast {
 			casts[i].ProcMissing = true
 		}
 	}
@@ -1060,7 +1070,9 @@ func buildTimeline(report *timelineReport, casts []event, fight Fight, know know
 	timeline := &Timeline{Duration: fight.Duration(), Incomplete: report.incomplete, Truncated: report.truncated}
 	timeline.Lusts = lustWindows(report.Lust.Data, fight, names, actors)
 	timeline.Casts = buildCasts(casts, fight, names, timeline.Lusts, know)
-	classifyProcs(timeline.Casts, auraWindows(report.Procs.Data, fight, know), know)
+	procs := auraWindows(report.Procs.Data, fight, know)
+	classifyProcs(timeline.Casts, procs, know)
+	timeline.Procs = procLedgers(timeline.Casts, procs, know, fight)
 	timeline.Pauses, timeline.GCD = buildPauses(timeline.Casts, fight, know)
 	timeline.DPS = buildDPS(report.Damage, fight)
 	timeline.Taken = buildDPS(report.Taken, fight)
