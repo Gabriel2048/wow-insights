@@ -231,8 +231,17 @@ func (w *Writer) Write(ctx context.Context, in Input) (Findings, error) {
 // ask makes the one request and decodes the reply into blocks.
 func (w *Writer) ask(ctx context.Context, in Input, facts []byte) ([]block, error) {
 	refs := make([]string, len(in.Findings))
+	seen := make(map[string]bool, len(in.Findings))
 	for i, f := range in.Findings {
 		refs[i] = ref(f)
+		if seen[refs[i]] {
+			// Two findings this process cannot tell apart. validate() catches
+			// this as well, but only after a request whose answer could never
+			// have been used — and the clash reaches the wire as a duplicate
+			// inside an enum, which is this app shipping nonsense.
+			return nil, fmt.Errorf("%w: two findings share the reference %q", ErrUntrustworthy, refs[i])
+		}
+		seen[refs[i]] = true
 	}
 	schema, err := replySchema(refs)
 	if err != nil {

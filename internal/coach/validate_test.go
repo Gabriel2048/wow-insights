@@ -256,10 +256,13 @@ func TestTheSchemaNamesTheRefsAndOrdersTheFields(t *testing.T) {
 		}
 		at += i
 	}
-	// The API rejects minItems and maxItems on an array, so "one block per
-	// finding" cannot live here. If that ever changes, this is the test that
-	// should start failing.
-	for _, unsupported := range []string{"minItems", "maxItems"} {
+	// minItems is accepted at 0 or 1 and is set; maxItems and uniqueItems are
+	// refused by the API, so "one block per finding" cannot live here. If
+	// that ever changes, this is the test that should start failing.
+	if !strings.Contains(got, `"minItems":1`) {
+		t.Errorf("the schema does not forbid an empty reply:\n%s", got)
+	}
+	for _, unsupported := range []string{"maxItems", "uniqueItems"} {
 		if strings.Contains(got, unsupported) {
 			t.Errorf("the schema sends %s, which the API rejects for an array", unsupported)
 		}

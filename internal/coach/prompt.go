@@ -75,10 +75,12 @@ unsure whether you may say something, keep the wording you were given.`
 //     "detail" first and asked for the prose before the model had committed
 //     to which finding it was about.
 //
-// The array is deliberately unbounded: the API rejects minItems and maxItems
-// on an array ("For 'array' type, property 'maxItems' is not supported"), so
-// "one block per finding, no more and no fewer" is validate()'s to enforce
-// and cannot be pushed into the schema.
+// The array carries the one bound the API takes. "minItems": 1 is accepted —
+// only 0 and 1 are, anything higher is refused — so an empty reply is not a
+// reachable state. "maxItems" is refused outright ("For 'array' type,
+// property 'maxItems' is not supported") and so is "uniqueItems". So "one
+// block per finding, no more and no fewer" stays validate()'s to enforce,
+// because there is no way to say it here.
 //
 // validate() re-checks the refs too. A schema is a claim about what the
 // server will accept, and nothing on this page should rest on a claim made by
@@ -103,7 +105,8 @@ func replySchema(refs []string) (map[string]any, error) {
 		"type": "object",
 		"properties": map[string]any{
 			"findings": map[string]any{
-				"type": "array",
+				"type":     "array",
+				"minItems": 1,
 				"items": map[string]any{
 					"type":                 "object",
 					"properties":           item,
@@ -152,12 +155,16 @@ func orderedObject(pairs ...any) (json.RawMessage, error) {
 	return b.Bytes(), nil
 }
 
-// A field here must not be named for a word the writing rules use in another
-// sense. "why" was, and a real call came back with the answer to "why it
-// costs them" sitting in the field meant for why a finding was set aside,
-// with "detail" left empty. It is "set_aside_reason" now, and the rules say
-// "what it costs them". No test can catch the next one of these — the
-// collision is in meaning, not in spelling — so it is written down here.
+// "set_aside_reason" was called "why" while the writing rules said to answer
+// "why it costs them", and the first real replies put the answer to that
+// question in it. The rename is not what fixed them, though, and the file
+// should not pretend otherwise: twelve calls varying only the schema's
+// property order showed five failures out of five whenever "detail" came
+// before "ref", and seven clean out of seven whenever it did not —
+// including three that kept both the old field name and the colliding
+// wording. The collision decided only *where* the displaced text landed.
+// The rename stays as cheap insurance against the next reader making the
+// same guess.
 //
 // block is one finding as the model worded it.
 type block struct {

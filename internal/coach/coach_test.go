@@ -315,3 +315,24 @@ func TestAMalformedAnswerIsNotTrusted(t *testing.T) {
 		t.Fatalf("err = %v, want ErrUntrustworthy", err)
 	}
 }
+
+// Two findings this process cannot tell apart must not reach the wire. The
+// reply could never be attached to the right one, so the call is refused
+// before it is paid for — and a duplicate inside the schema's enum is this
+// app shipping nonsense to a third party.
+func TestTwoFindingsWithOneReferenceNeverReachTheModel(t *testing.T) {
+	in := fixtureInput(t)
+	in.Findings = append(in.Findings, tailFinding())
+
+	w := &wire{t: t, answer: goodReply()}
+	got, err := writerOver(w).Write(context.Background(), in)
+	if !errors.Is(err, ErrUntrustworthy) {
+		t.Fatalf("err = %v, want ErrUntrustworthy", err)
+	}
+	if w.calls != 0 {
+		t.Errorf("the model was called %d times; a reply that cannot be used is not worth buying", w.calls)
+	}
+	if len(got) != 2 {
+		t.Errorf("got %d findings, want the analyser's 2", len(got))
+	}
+}
