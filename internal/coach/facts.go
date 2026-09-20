@@ -139,6 +139,34 @@ type factGap struct {
 	from time.Duration
 }
 
+// Facts is exactly what would be put in front of the model for this pull,
+// pretty-printed. Nothing else is sent but the system prompt and the findings.
+//
+// It is exported for one reason: this package promises that nothing belonging
+// to a person leaves the process, and a promise nobody can check is worth
+// very little. cmd/dev/measure-insight prints this, so the claim can be read
+// rather than believed. It runs the same identity check the real path does
+// and returns its refusal, so inspecting a sheet can never be the thing that
+// leaks one.
+func Facts(in Input) ([]byte, error) {
+	sheet, err := buildFacts(in)
+	if err != nil {
+		return nil, err
+	}
+	body, err := sheet.marshal()
+	if err != nil {
+		return nil, err
+	}
+	if err := identityOf(in).check(body, in.Findings); err != nil {
+		return nil, err
+	}
+	var tree any
+	if err := json.Unmarshal(body, &tree); err != nil {
+		return nil, err
+	}
+	return json.MarshalIndent(tree, "", "  ")
+}
+
 // buildFacts compresses one pull.
 func buildFacts(in Input) (*facts, error) {
 	if in.Timeline == nil || in.Detail == nil {

@@ -50,6 +50,7 @@ func run() error {
 	fightID := flag.Int("fight", 0, "the fight id")
 	actorID := flag.Int("player", 0, "the actor id of the player to analyse")
 	runs := flag.Int("n", 5, "how many times to call the model; 0 lists the findings and spends nothing on it")
+	sheet := flag.Bool("sheet", false, "print everything the model would be told about this pull, and send nothing")
 	flag.Parse()
 
 	cfg, err := config.Load(".env")
@@ -80,6 +81,16 @@ func run() error {
 	fmt.Printf("\n%s — %s, %s, %s\n", in.Detail.Fight.Name, in.Detail.Fight.Outcome(),
 		in.Timeline.Duration.Round(time.Second), in.Know.Spec.Spec+" "+in.Know.Spec.Class)
 	fmt.Printf("findings: %d\n", len(in.Findings))
+	if *sheet {
+		// Printed before the findings gate below, because "what would the
+		// model have been told" is most worth asking about a pull where it
+		// was never asked anything.
+		body, err := coach.Facts(in)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("\nthe fact sheet, %d bytes on the wire:\n%s\n", len(body), body)
+	}
 	if len(in.Findings) == 0 {
 		// Not a failure, and worth saying plainly: the model is never called
 		// for a pull with nothing to say about it, so there is nothing here
