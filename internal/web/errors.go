@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"time"
 
+	"wowinsight/internal/coach"
 	"wowinsight/internal/warcraftlogs"
 )
 
@@ -54,6 +55,29 @@ func classify(err error) problem {
 			message = fmt.Sprintf("Warcraft Logs' hourly budget for this app is nearly spent, so this page is on hold. Try again in about %d minutes.", max(1, int(budgetErr.ResetIn.Round(time.Minute).Minutes())))
 		}
 		return problem{http.StatusServiceUnavailable, message, slog.LevelWarn}
+	// The coaching model's failures. They are rows here rather than handled
+	// where they happen for two reasons: the fallback below this switch names
+	// Warcraft Logs, so anything reaching it blames the wrong vendor for an
+	// Anthropic outage; and none of these is a page failure — the findings
+	// were computed before the model was asked, so every one of these
+	// sentences is a notice on a page that otherwise worked. The status is
+	// what the level is chosen against, and nothing renders it.
+	case errors.Is(err, coach.ErrUntrustworthy):
+		// Not an outage. The model said something the evidence does not
+		// support and was dropped, which is this page working as designed —
+		// but it is worth an Error line, because a model that keeps doing
+		// this means the prompt or the rules have drifted.
+		return problem{http.StatusOK, "The findings below are in the analyser's own words: what the model wrote did not match the evidence, so it was dropped.", slog.LevelError}
+	case errors.Is(err, coach.ErrWouldLeak):
+		// This one is a defect in internal/coach, not a condition. Nothing
+		// was sent, which is the right outcome, and it must be loud.
+		return problem{http.StatusOK, "The findings below are in the analyser's own words.", slog.LevelError}
+	case errors.Is(err, coach.ErrNoCredit):
+		return problem{http.StatusOK, "The findings below are in the analyser's own words: the account that pays for the writing model is out of credit.", slog.LevelError}
+	case errors.Is(err, coach.ErrBadKey):
+		return problem{http.StatusOK, "The findings below are in the analyser's own words: this server's key for the writing model is missing or rejected.", slog.LevelError}
+	case errors.Is(err, coach.ErrModelBusy), errors.Is(err, coach.ErrModelUnavailable), errors.Is(err, coach.ErrDeclined):
+		return problem{http.StatusOK, "The findings below are in the analyser's own words: the model that usually writes them up was not available.", slog.LevelWarn}
 	case errors.Is(err, warcraftlogs.ErrNoCredentials), errors.Is(err, warcraftlogs.ErrBadCredentials):
 		return problem{http.StatusServiceUnavailable, "This server cannot reach Warcraft Logs: its credentials are missing or rejected.", slog.LevelError}
 	case errors.Is(err, context.DeadlineExceeded):

@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"wowinsight/internal/coach"
 	"wowinsight/internal/config"
 	"wowinsight/internal/warcraftlogs"
 	"wowinsight/internal/web"
@@ -55,6 +56,19 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	// free, and a cache in front of it would hide a fixture that was never
 	// recorded behind an answer that was — which is precisely the failure
 	// the replay exists to make loud.
-	s := web.New(warcraftlogs.NewCache(warcraftlogs.New(cfg.ClientID, cfg.ClientSecret)), tpl, logger)
+	logs := warcraftlogs.NewCache(warcraftlogs.New(cfg.ClientID, cfg.ClientSecret))
+
+	// The one optional dependency. Without a key the coaching page still
+	// shows every finding, in the analyser's own words — so this is a
+	// missing improvement rather than a missing feature, and it is said
+	// once at startup instead of on every page.
+	var opts []web.Option
+	if cfg.AnthropicKey != "" {
+		opts = append(opts, web.WithWriter(coach.New(cfg.AnthropicKey, logger)))
+	} else {
+		logger.Info("no "+config.AnthropicKeyVar+" set; findings will be shown in the analyser's own words", "coach", false)
+	}
+
+	s := web.New(logs, tpl, logger, opts...)
 	return s.Run(ctx, cfg.Addr())
 }

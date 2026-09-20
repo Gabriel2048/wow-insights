@@ -24,6 +24,12 @@ const (
 	ClientIDVar     = "WARCRAFTLOGS_CLIENT_ID"
 	ClientSecretVar = "WARCRAFTLOGS_CLIENT_SECRET"
 	ProjectVar      = "GOOGLE_CLOUD_PROJECT"
+	// AnthropicKeyVar is the key for the model that words the findings. It
+	// is the only optional credential: without it the coaching page shows
+	// every finding in the analyser's own sentences, which is the whole
+	// product minus the prose. Validate deliberately does not require it —
+	// a deployment that forgets it should run, not refuse to start.
+	AnthropicKeyVar = "ANTHROPIC_API_KEY"
 
 	defaultPort = "8080"
 )
@@ -38,6 +44,8 @@ type Config struct {
 	// Project is the Google Cloud project, used only to spell trace ids the
 	// way Cloud Logging groups them. Optional; nothing fails without it.
 	Project string
+	// AnthropicKey words the findings. Optional; see AnthropicKeyVar.
+	AnthropicKey string
 }
 
 // Addr is the listen address for Port.
@@ -95,6 +103,7 @@ func Load(path string) (Config, error) {
 		ClientID:     get(ClientIDVar),
 		ClientSecret: get(ClientSecretVar),
 		Project:      get(ProjectVar),
+		AnthropicKey: get(AnthropicKeyVar),
 	}, nil
 }
 

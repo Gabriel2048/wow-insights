@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"wowinsight/internal/coach"
 	"wowinsight/internal/warcraftlogs"
 )
 
@@ -74,7 +75,7 @@ func (k jobKey) ref() actorRef {
 // that a second browser, or the same one after a refresh, gets the answer
 // without the work being done again.
 type result struct {
-	findings []warcraftlogs.Finding
+	findings coach.Findings
 	notices  []string
 }
 

@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"wowinsight/internal/coach"
 	"wowinsight/internal/knowledge"
 	"wowinsight/internal/view"
 	"wowinsight/internal/warcraftlogs"
@@ -28,6 +29,18 @@ type logsClient interface {
 	Timeline(ctx context.Context, code string, fight warcraftlogs.Fight, sourceID int, know knowledge.Knowledge) (*warcraftlogs.Timeline, error)
 }
 
+// writer is the slice of the coaching model this package uses. Declared here,
+// in the consumer, like logsClient above it: *coach.Writer satisfies it
+// structurally and needs no interface of its own.
+//
+// It is optional in a way logsClient is not. A Server with no writer is the
+// whole product minus the prose — every finding still appears, in the words
+// the analyser chose — which is why this is a nil-able field and a functional
+// option rather than an argument to New.
+type writer interface {
+	Write(ctx context.Context, in coach.Input) (coach.Findings, error)
+}
+
 // Server holds the dependencies shared by the HTTP handlers.
 type Server struct {
 	wcl logsClient
@@ -39,6 +52,28 @@ type Server struct {
 	// handlerDeadline is a field rather than the constant so a test can
 	// shorten it; nothing else sets it.
 	handlerDeadline time.Duration
+	// coach words the findings, when one is configured. Nil is the ordinary
+	// state: no API key, the dev binaries, and every test that is not about
+	// the prose.
+	coach writer
+}
+
+// Option configures a Server. Same shape as the client's, for the same
+// reason: Go has no optional parameters.
+type Option func(*Server)
+
+// WithWriter gives the Server a model to word the findings with. Without it
+// the coaching page shows the analyser's own sentences, which is the default
+// and is never wrong — only plainer.
+func WithWriter(w writer) Option {
+	return func(s *Server) {
+		// A nil interface handed in explicitly would satisfy the field and
+		// panic on the first call, which is a worse failure than the one it
+		// is trying to configure away.
+		if w != nil {
+			s.coach = w
+		}
+	}
 }
 
 // New wires a Server. wcl is whatever satisfies logsClient — in production
@@ -46,8 +81,11 @@ type Server struct {
 // replay transport, in tests a fake. The logger decides the format: the
 // shipped binary hands in JSON shaped for Cloud Logging, the dev binaries
 // hand in text.
-func New(wcl logsClient, tpl *Templates, logger *slog.Logger) *Server {
+func New(wcl logsClient, tpl *Templates, logger *slog.Logger, opts ...Option) *Server {
 	s := &Server{wcl: wcl, tpl: tpl, log: logger, handlerDeadline: handlerDeadline}
+	for _, opt := range opts {
+		opt(s)
+	}
 	s.jobs = newRegistry(s.analyse)
 	return s
 }
@@ -84,9 +122,9 @@ type fightPageData struct {
 	// this pull: whether one has been asked for, is running, or is done.
 	Analysis analysisState
 	// Findings are what the analysis can say the player could have done
-	// differently. Empty is a real answer and the page says so: on a
-	// competent pull most rules are silent.
-	Findings []warcraftlogs.Finding
+	// differently, in whichever words were chosen for them. Empty is a real
+	// answer and the page says so: on a competent pull most rules are silent.
+	Findings coach.Findings
 	// View is which of the two views of a pull this is, "timeline" or
 	// "analysis". The tab strip is rendered by both pages from one partial
 	// and needs to know which link to mark as current.
@@ -405,8 +443,31 @@ func (s *Server) analyse(ctx context.Context, log *slog.Logger, key jobKey) (res
 
 	timeline, notices := s.timelineFor(ctx, log, detail, player)
 	out := result{notices: notices}
-	if timeline != nil {
-		out.findings = warcraftlogs.Findings(timeline, know, player.ActedUntil())
+	if timeline == nil {
+		return out, nil
+	}
+	found := warcraftlogs.Findings(timeline, know, player.ActedUntil())
+	out.findings = coach.Deterministic(found)
+	if s.coach == nil || len(found) == 0 {
+		return out, nil
+	}
+
+	// From here on nothing may fail the job. The findings are computed and
+	// true; the model is only being asked to word them, and a page in the
+	// analyser's own sentences is the thing this degrades to rather than an
+	// error anybody sees.
+	written, err := s.coach.Write(ctx, coach.Input{
+		Detail:   detail,
+		Player:   player,
+		Timeline: timeline,
+		Know:     know,
+		Findings: found,
+	})
+	out.findings = written
+	if err != nil {
+		p := classify(err)
+		log.Log(ctx, p.level, "wording the findings", "err", err, "fight", key.subject.FightID)
+		out.notices = append(out.notices, p.message)
 	}
 	return out, nil
 }

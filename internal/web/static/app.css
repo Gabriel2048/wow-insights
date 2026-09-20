@@ -1299,6 +1299,30 @@ body.analysis .finding .evidence dd {
     font-variant-numeric: tabular-nums;
 }
 
+/* A finding the model judged the player had a reason for. It is set back
+   rather than hidden: the claim and its arithmetic are still there to be
+   disagreed with, and the stripe drops to the neutral colour because the
+   severity is no longer what the player should read off it. */
+body.analysis .finding.aside {
+    border-left-color: var(--muted-2);
+    background: none;
+}
+
+body.analysis .finding.aside .claim strong,
+body.analysis .finding.aside .detail {
+    color: var(--muted);
+}
+
+/* The reason is the most interesting sentence on the page when the judgement
+   is right, so it is the one part of a set-aside finding at full strength. */
+body.analysis .finding.aside .why {
+    margin: 0.4rem 0 0;
+    padding-left: 0.7rem;
+    border-left: 2px solid var(--cast);
+    color: var(--text-soft);
+    max-width: 70ch;
+}
+
 /* The analysis page's own states: a button to start, and something honest to
    look at while it runs. */
 body.analysis form.analyse {

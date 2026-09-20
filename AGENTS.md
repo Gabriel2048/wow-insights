@@ -63,18 +63,30 @@ re-record, name the fight id and the actor ids. See
 second is the repository owner's call, always. Your work ends at `gh pr create`.
 
 **No real player data, anywhere.** No real character names, guild names, servers or
-Warcraft Logs report codes in tests, fixtures, doc comments or user-facing strings. Use
-`ExampleReport123` and `Testmage`. `testdata/` is the one place real API responses live, and the recorder that
-writes it (`cmd/dev/record`) redacts every name, server, owner and code before writing, and
-refuses to write if one survives. Never edit a recording by hand, and never commit one
-the recorder did not produce.
+Warcraft Logs report codes in tests, fixtures, doc comments, user-facing strings, or **an
+outbound request body**. Use `ExampleReport123` and `Testmage`. `testdata/` is the one
+place real API responses live, and the recorder that writes it (`cmd/dev/record`) redacts
+every name, server, owner and code before writing, and refuses to write if one survives.
+Never edit a recording by hand, and never commit one the recorder did not produce.
 
-**Adding a dependency is a decision, not a step.** The module has no `require` block
-today and that is worth keeping — but it is a preference, not a law. A dependency that is
-the idiomatic answer in the Go ecosystem, or that a production Go service would normally
-carry, is a legitimate thing to add. Propose it in the pull request, saying what it
-replaces and why the standard library is not enough, and let the owner decide before it
-lands. Never add one silently inside a larger change.
+The fifth destination is the newest and the worst of them. The other four are in the
+repository, where a reviewer sees them and a grep finds them; a request body leaves the
+process, reaches a third party, and is beyond recall. Today there is exactly one such
+destination — the Anthropic API, from `internal/coach` — and the rules it is held to are
+the ones anything else would have to meet: the payload is assembled field by field into
+types declared beside the check, never by marshalling a `warcraftlogs` value, so a field
+added upstream cannot ride along unnoticed; and the bytes are searched for this very
+fight's roster before they go, with a refusal that sends nothing. **Never put a
+`warcraftlogs` or `view` struct straight onto a wire that leaves this process.**
+
+**Adding a dependency is a decision, not a step.** The module has exactly one direct
+`require` — `github.com/anthropics/anthropic-sdk-go`, agreed on #61 for the model that
+words the findings — and keeping the list that short is worth doing, but it is a
+preference and not a law. A dependency that is the idiomatic answer in the Go ecosystem,
+or that a production Go service would normally carry, is a legitimate thing to add.
+Propose it in the pull request, saying what it replaces and why the standard library is
+not enough, and let the owner decide before it lands. Never add one silently inside a
+larger change.
 
 **Templates live under `internal/web/templates/`, static files under `internal/web/static/`.**
 Both are embedded at compile time: a static file anywhere else is a 404 at runtime, and a
@@ -188,6 +200,29 @@ red on an honest change and protects nothing.
 the middleware writes the one access line per request, so a handler logs only what went
 wrong, at the level `classify` in `internal/web/errors.go` assigns. The shipped binary
 writes JSON spelt for Cloud Logging; the dev binaries write text.
+
+## Spending money
+
+`internal/coach` is the only thing here that costs money to run, one Anthropic request
+per analysis that found something. Three properties keep that honest and none of them is
+optional:
+
+- **A pull with no findings never reaches the model.** Both committed recordings are such
+  pulls, so this is the common case rather than an edge one.
+- **`ANTHROPIC_API_KEY` is optional.** Without it the binary starts, says so once, and
+  every finding appears in the analyser's own sentences. The gate passes with no key and
+  no network, and must keep doing so: the coach tests drive a fake wire, and no test may
+  ever require a key.
+- **Nothing the model says may fail a page.** Every failure of it — outage, rate limit,
+  refusal, a rejected key, prose that does not survive validation — is a `Notice` on a
+  page that otherwise worked. `classify` has a row per sentinel for exactly this: without
+  one they fall through to the bottom row, which blames Warcraft Logs.
+
+And the rule the whole package exists for: **the model may reword a finding, order it,
+and set it aside with a reason. It may never add one.** Anything that widens what it is
+allowed to say — a tool that returns facts, a free-text summary, an allow-set drawn from
+anywhere but the evidence shown to the player — takes that guarantee with it. See the
+package doc comment before changing any of it.
 
 ## The one third-party thing that actually executes
 

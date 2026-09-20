@@ -35,9 +35,10 @@
 <div id="analysis" data-state="{{$.Analysis}}">
 {{if eq $.Analysis "done"}}
     {{if $.Findings}}
+    {{with $.Findings.Standing}}
     <h2>What the log says</h2>
     <ol class="findings">
-        {{range $.Findings}}
+        {{range .}}
         <li class="finding {{.Severity}}">
             <p class="claim">
                 <a href="/report/{{$.Detail.ReportCode}}/fight/{{$.Detail.Fight.ID}}?player={{$.SelectedID}}#t={{.AtMS}}"
@@ -54,11 +55,36 @@
         {{end}}
     </ol>
     <p class="hint">Each timestamp opens the timeline at that moment.</p>
+    {{end}}
+    {{with $.Findings.SetAside}}
+    <h2>Set aside</h2>
+    <p class="hint">These came up, and the pull gives a reason for them. The numbers are still
+       here so you can disagree.</p>
+    <ol class="findings aside">
+        {{range .}}
+        <li class="finding {{.Severity}} aside">
+            <p class="claim">
+                <a href="/report/{{$.Detail.ReportCode}}/fight/{{$.Detail.Fight.ID}}?player={{$.SelectedID}}#t={{.AtMS}}"
+                   class="at">{{.Timestamp}}</a>
+                <strong>{{.Title}}</strong>
+            </p>
+            <p class="detail">{{.Detail}}</p>
+            <p class="why">{{.Why}}</p>
+            {{with .Evidence}}
+            <dl class="evidence">
+                {{range .}}<dt>{{.Label}}</dt><dd>{{.Value}}</dd>{{end}}
+            </dl>
+            {{end}}
+        </li>
+        {{end}}
+    </ol>
+    {{end}}
     {{else}}
     <div class="empty">
         <h2>Nothing to flag</h2>
-        <p>Every rule this page knows came back quiet for this pull. That is the answer, not a
-           missing one &mdash; on a pull played well most of them stay silent.</p>
+        <p>Every rule this page has came back quiet for this pull. That is a real answer and not
+           a missing one &mdash; but it is a narrow one. A quiet page means the rules that exist
+           found nothing, which is not the same as there having been nothing to find.</p>
     </div>
     {{end}}
 {{else if eq $.Analysis "running"}}

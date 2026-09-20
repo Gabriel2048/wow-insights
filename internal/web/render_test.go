@@ -529,3 +529,47 @@ func TestFindingsRenderWithLinksTheTimelineScriptCanParse(t *testing.T) {
 		}
 	}
 }
+
+// A finding the model set aside is still on the page, below the rest, with
+// its reason and its arithmetic. Hiding it would leave the player with a
+// judgement they cannot check — and the judgement is the part most worth
+// checking, because it is the only thing on the page a rule did not decide.
+func TestASetAsideFindingKeepsItsEvidenceAndItsReason(t *testing.T) {
+	page := render(t, "analysis.html", analysisWithSetAside())
+
+	for _, want := range []string{
+		"Set aside",
+		"held for the intermission",         // the reason
+		`class="finding minor aside"`,       // set back, not removed
+		"Combustion drifted later each use", // the claim it was made about
+		"uses",                              // its evidence label
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("the set-aside section is missing %q", want)
+		}
+	}
+	// The one that was not set aside stays in the main list.
+	if !strings.Contains(page, "What the log says") {
+		t.Error("the standing findings lost their heading")
+	}
+	if i, j := strings.Index(page, "What the log says"), strings.Index(page, "Set aside"); i > j {
+		t.Error("the set-aside findings are drawn above the ones the player should act on")
+	}
+}
+
+// Every finding set aside leaves the main list empty, and the page must not
+// then read as though the rules were silent — they were not; they were
+// answered.
+func TestAllFindingsSetAsideStillShowsThem(t *testing.T) {
+	page := analysisWithSetAside()
+	page.Findings[0].SetAside = true
+	page.Findings[0].Why = "You were dead from 4:10, so it was never yours to press."
+
+	out := render(t, "analysis.html", page)
+	if strings.Contains(out, "Nothing to flag") {
+		t.Error("the page claims nothing came up, while carrying two findings that did")
+	}
+	if !strings.Contains(out, "Set aside") {
+		t.Error("the findings vanished entirely")
+	}
+}
