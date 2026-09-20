@@ -119,23 +119,78 @@ const (
 //
 // A spec with no judged cooldowns produces none, which is the zero value's
 // behaviour and is why an unauthored spec is safe to analyse.
-func Findings(t *Timeline, know knowledge.Knowledge, actedUntil time.Duration) []Finding {
+func Analyse(t *Timeline, know knowledge.Knowledge, who PlayerContext) Analysis {
 	if t == nil {
-		return nil
+		return Analysis{}
 	}
 	// Nothing may be asked of a player after the pull stopped being theirs to
 	// play: a cooldown that came back while they were dead is not one they
 	// declined to press.
+	actedUntil := who.ActedUntil
 	if actedUntil <= 0 || actedUntil > t.Duration {
 		actedUntil = t.Duration
 	}
-	found := cooldownFindings(t, know, actedUntil)
+
+	// **Every rule returns a Check alongside its findings, and that is what
+	// the signature is for.** A rule cannot be added that does not appear in
+	// the list of what was asked, because there is no way to return findings
+	// without one — which is the only version of "say what was checked" that
+	// does not drift out of step with the rules the moment somebody adds one.
+	var out Analysis
+	for _, rule := range []func() (Check, []Finding){
+		func() (Check, []Finding) { return cooldownCheck(t, know, actedUntil) },
+		func() (Check, []Finding) { return pauseCheck(t, who) },
+		func() (Check, []Finding) { return procCheck(t, know) },
+		func() (Check, []Finding) { return hardCastCheck(t, know) },
+	} {
+		check, found := rule()
+		check.Found = len(found)
+		out.Checks = append(out.Checks, check)
+		out.Findings = append(out.Findings, found...)
+	}
+
 	// Worst first, then earliest, so the order is total and two runs over
 	// one pull cannot disagree.
-	slices.SortStableFunc(found, func(a, b Finding) int {
+	slices.SortStableFunc(out.Findings, func(a, b Finding) int {
 		return cmp.Or(cmp.Compare(a.Severity, b.Severity), cmp.Compare(a.At, b.At))
 	})
-	return found
+	return out
+}
+
+// cooldownCheck asks whether the cooldowns this spec is held to were used,
+// and produces the one finding that survives measurement.
+func cooldownCheck(t *Timeline, know knowledge.Knowledge, actedUntil time.Duration) (Check, []Finding) {
+	c := Check{RuleID: ruleCooldownTail, Question: "Cooldowns used again once they came back"}
+	if len(know.JudgedCooldowns) == 0 {
+		c.Unasked = "nothing here knows which of this specialisation's cooldowns are worth judging yet"
+		return c, nil
+	}
+
+	var used []string
+	for _, ability := range slices.Sorted(maps.Keys(know.JudgedCooldowns)) {
+		rule, _ := know.Judged(ability)
+		var at []time.Duration
+		for _, cast := range t.Casts {
+			if cast.AbilityID == ability && !cast.Cancelled {
+				at = append(at, cast.Offset)
+			}
+		}
+		if len(at) == 0 {
+			continue
+		}
+		c.Asked = true
+		used = append(used, fmt.Sprintf("%s %s", plural(len(at), "use"), "of "+rule.Name))
+		c.Evidence = append(c.Evidence, Evidence{Label: rule.Name + ", used", Value: fmt.Sprintf("%d times", len(at))})
+		if floor, ok := ObservedCooldown(rule, at); ok {
+			c.Evidence = append(c.Evidence, Evidence{Label: rule.Name + ", your own fastest", Value: roundSeconds(floor)})
+		}
+	}
+	if !c.Asked {
+		c.Unasked = "none of the cooldowns this specialisation is judged on were used in this pull"
+		return c, nil
+	}
+	c.Measured = joinWords(used)
+	return c, cooldownFindings(t, know, actedUntil)
 }
 
 // cooldownFindings judges how well the player spaced the cooldowns their spec
@@ -255,6 +310,13 @@ func ObservedCooldown(rule knowledge.JudgedCooldown, used []time.Duration) (time
 		floor = base / 2
 	}
 	return min(floor, base), true
+}
+
+// preciseSeconds renders a short duration at the precision that makes it
+// worth printing. roundSeconds is right for a pause a player felt; it is
+// wrong for a global cooldown, where the second decimal is the whole point.
+func preciseSeconds(d time.Duration) string {
+	return fmt.Sprintf("%.2fs", d.Seconds())
 }
 
 // roundSeconds renders a duration the way a player would say it.

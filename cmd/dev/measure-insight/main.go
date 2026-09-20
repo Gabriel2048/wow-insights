@@ -166,7 +166,10 @@ func pull(ctx context.Context, client *warcraftlogs.Client, code string, fightID
 		Player:   player,
 		Timeline: timeline,
 		Know:     know,
-		Findings: warcraftlogs.Findings(timeline, know, player.ActedUntil()),
+		Findings: warcraftlogs.Analyse(timeline, know, warcraftlogs.PlayerContext{
+			ActedUntil: player.ActedUntil(),
+			DiedAt:     player.DiedAt,
+		}).Findings,
 	}, nil
 }
 

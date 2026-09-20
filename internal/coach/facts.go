@@ -44,11 +44,6 @@ const (
 	mechanicTotalCap = 4
 )
 
-// worstGapsKept is how many idle gaps are listed. The aggregate row already
-// says where the player was quiet; this says how bad the worst of it was, and
-// past the eighth they are all rotation.
-const worstGapsKept = 8
-
 // A moment in the pull is written the way the page writes it — "3:44" — and
 // never as a count of seconds. The findings' own evidence is in that form, the
 // timeline the player clicks through to is labelled in that form, and a sheet
@@ -78,7 +73,7 @@ type facts struct {
 	Cooldowns []factWindow   `json:"your_cooldown_windows,omitempty"`
 	Judged    []factJudged   `json:"judged_cooldowns,omitempty"`
 	Rotation  []factBucket   `json:"per_10s,omitempty"`
-	WorstGaps []factGap      `json:"worst_idle_gaps,omitempty"`
+	Pauses    []factPause    `json:"pauses,omitempty"`
 
 	// Tables is the digest of the spec tables this analysis used, so a
 	// recorded exchange says which knowledge produced it.
@@ -130,13 +125,21 @@ type factBucket struct {
 	DPSK int `json:"dps_k,omitempty"`
 }
 
-type factGap struct {
+// factPause is one stretch the player was not occupied, as the timeline page
+// reports it.
+//
+// **It replaced a list built from Cast.Gap, which was wrong and loudly so.**
+// Raw gaps include the global cooldown, so the sheet was telling the model the
+// player spent 4m25s of a 7m11s pull idle — 61% — on the same page as a damage
+// uptime of 97.1%. The timeline page has said 6 pauses and 32s since the
+// cooldown was modelled. Handing a model two numbers that differ by a factor
+// of eight, on the one page whose whole claim is that it says nothing the log
+// cannot prove, is the sheet arguing with the product.
+type factPause struct {
 	From   string `json:"from"`
 	LenS   int    `json:"length_s"`
-	NextUp string `json:"ended_by"`
-	// from is what the list is put back into pull order by, kept off the wire
-	// because From already says it in the notation the page uses.
-	from time.Duration
+	GCDS   string `json:"global_cooldown_s"`
+	Reason string `json:"reason,omitempty"`
 }
 
 // Facts is exactly what would be put in front of the model for this pull,
@@ -205,7 +208,7 @@ func buildFacts(in Input) (*facts, error) {
 	f.Mechanics = mechanics(t.BossCasts)
 	f.Judged = judgedUses(in)
 	f.Rotation = rotation(t)
-	f.WorstGaps = worstGaps(t)
+	f.Pauses = pauses(t, in.Player.DiedAt)
 	return f, nil
 }
 
@@ -298,23 +301,23 @@ func rotation(t *warcraftlogs.Timeline) []factBucket {
 	return rows
 }
 
-// worstGaps lists the longest silences and what ended each of them.
-func worstGaps(t *warcraftlogs.Timeline) []factGap {
-	gaps := make([]factGap, 0, len(t.Casts))
-	for _, c := range t.Casts {
-		if c.Gap <= 0 {
-			continue
-		}
-		gaps = append(gaps, factGap{from: c.Offset - c.Gap, From: clock(c.Offset - c.Gap), LenS: secs(c.Gap), NextUp: c.Name})
+// pauses is what the timeline page reports, so the two agree. A pause here
+// already has the global cooldown taken off it, which is what makes it a
+// stretch the player could have used rather than a wait the game imposed.
+func pauses(t *warcraftlogs.Timeline, diedAt time.Duration) []factPause {
+	if !t.GCD.Modelled {
+		return nil
 	}
-	slices.SortFunc(gaps, func(a, b factGap) int { return b.LenS - a.LenS })
-	if len(gaps) > worstGapsKept {
-		gaps = gaps[:worstGapsKept]
+	var out []factPause
+	for _, p := range t.Attributed(diedAt) {
+		out = append(out, factPause{
+			From:   clock(p.Start),
+			LenS:   secs(p.Duration),
+			GCDS:   fmt.Sprintf("%.2f", p.GCD.Seconds()),
+			Reason: string(p.Reason),
+		})
 	}
-	// Back into pull order: a reader scanning for a moment wants them where
-	// the moment is, not ranked.
-	slices.SortFunc(gaps, func(a, b factGap) int { return int(a.from - b.from) })
-	return gaps
+	return out
 }
 
 // marshal renders the sheet. Every map is sorted into a slice before it gets
@@ -356,9 +359,7 @@ func (f *facts) lexicon(in Input) map[string]bool {
 	for _, j := range f.Judged {
 		add(j.Name)
 	}
-	for _, g := range f.WorstGaps {
-		add(g.NextUp)
-	}
+
 	// The spec's own tables, so an aura the player has but did not use in
 	// this pull is still a word that may be said about it.
 	for _, n := range in.Know.ProcAuras {
@@ -476,9 +477,9 @@ func (f *facts) numerals() []numeral {
 		length(b.IdleS)
 		count(b.DPSK)
 	}
-	for _, g := range f.WorstGaps {
-		at(g.From)
-		length(g.LenS)
+	for _, p := range f.Pauses {
+		at(p.From)
+		length(p.LenS)
 	}
 	return out
 }

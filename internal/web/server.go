@@ -125,6 +125,11 @@ type fightPageData struct {
 	// differently, in whichever words were chosen for them. Empty is a real
 	// answer and the page says so: on a competent pull most rules are silent.
 	Findings coach.Findings
+	// Checks are the questions the analysis asked, whether or not any of them
+	// produced a finding. They render on every completed analysis, not only
+	// an empty one: a page showing one finding and nothing else implies that
+	// finding is everything that was looked at.
+	Checks []warcraftlogs.Check
 	// View is which of the two views of a pull this is, "timeline" or
 	// "analysis". The tab strip is rendered by both pages from one partial
 	// and needs to know which link to mark as current.
@@ -221,6 +226,7 @@ func (s *Server) analysis(w http.ResponseWriter, r *http.Request) {
 			data.Analysis = analysisRunning
 			if j.finished() {
 				data.Analysis, data.Findings = analysisDone, j.result.findings
+				data.Checks = j.result.checks
 				data.Notices = append(data.Notices, j.result.notices...)
 				if j.err != nil {
 					p := classify(j.err)
@@ -452,7 +458,12 @@ func (s *Server) analyse(ctx context.Context, log *slog.Logger, key jobKey) (res
 	if timeline == nil {
 		return out, nil
 	}
-	found := warcraftlogs.Findings(timeline, know, player.ActedUntil())
+	analysis := warcraftlogs.Analyse(timeline, know, warcraftlogs.PlayerContext{
+		ActedUntil: player.ActedUntil(),
+		DiedAt:     player.DiedAt,
+	})
+	found := analysis.Findings
+	out.checks = analysis.Checks
 	out.findings = coach.Deterministic(found)
 	if s.coach == nil || len(found) == 0 {
 		return out, nil
