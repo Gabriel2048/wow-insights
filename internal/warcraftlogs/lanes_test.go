@@ -278,16 +278,8 @@ func TestABuffUpBeforeThePullIsOpenedAtTheStart(t *testing.T) {
 func TestBuildDPSDropsASeriesOnAnotherGrid(t *testing.T) {
 	var resp dpsGraphResponse
 	resp.Data.Series = append(resp.Data.Series,
-		struct {
-			PointStart    float64   `json:"pointStart"`
-			PointInterval float64   `json:"pointInterval"`
-			Data          []float64 `json:"data"`
-		}{1000, 1000, []float64{100, 100}},
-		struct {
-			PointStart    float64   `json:"pointStart"`
-			PointInterval float64   `json:"pointInterval"`
-			Data          []float64 `json:"data"`
-		}{1000, 500, []float64{900, 900, 900, 900}},
+		series("Fireball", 1000, 1000, 100, 100),
+		series("Ignite", 1000, 500, 900, 900, 900, 900),
 	)
 	graph := buildDPS(resp, Fight{StartTime: 1000, EndTime: 3000})
 	if graph == nil || graph.Peak != 100 {
