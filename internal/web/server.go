@@ -157,7 +157,7 @@ func (s *Server) analysis(w http.ResponseWriter, r *http.Request) {
 		timeline, notices := s.playerTimeline(r, data.Detail, *data.Player, data.Fight)
 		data.Notices = append(data.Notices, notices...)
 		if timeline != nil {
-			data.Findings = warcraftlogs.Findings(timeline.Timeline, know)
+			data.Findings = warcraftlogs.Findings(timeline.Timeline, know, data.Player.ActedUntil())
 		}
 	}
 	s.render(w, r, http.StatusOK, "analysis.html", data)

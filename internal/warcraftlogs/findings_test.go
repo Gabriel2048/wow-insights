@@ -11,6 +11,10 @@ import (
 // combustion is the one Fire Mage cooldown whose spacing is judged.
 const combustion = 190319
 
+// survived means the player was able to act for the whole pull, which is
+// what every test below assumes unless it is about a death.
+const survived = time.Duration(0)
+
 func judgedFire() knowledge.Knowledge {
 	return knowledge.Knowledge{
 		JudgedCooldowns: map[int]knowledge.JudgedCooldown{
@@ -45,7 +49,7 @@ func TestCooldownDriftOnTheRecordedKill(t *testing.T) {
 	for i := range at {
 		at[i] *= time.Millisecond
 	}
-	found := Findings(timelineOfUses(431472*time.Millisecond, combustion, at...), judgedFire())
+	found := Findings(timelineOfUses(431472*time.Millisecond, combustion, at...), judgedFire(), survived)
 
 	if len(found) != 1 {
 		t.Fatalf("got %d findings, want 1 — drift only. The first use was at 1.2s so it is not late, and the last was at 6:59 of a 7:11 pull so nothing was left unused: %+v", len(found), found)
@@ -77,7 +81,7 @@ func TestALateFirstUseIsItsOwnFinding(t *testing.T) {
 	for i := range at {
 		at[i] *= time.Millisecond
 	}
-	found := Findings(timelineOfUses(239727*time.Millisecond, combustion, at...), judgedFire())
+	found := Findings(timelineOfUses(239727*time.Millisecond, combustion, at...), judgedFire(), survived)
 
 	if len(found) != 1 {
 		t.Fatalf("got %d findings, want 1 (the late opener; 3.5s of drift is below the floor): %+v", len(found), found)
@@ -103,7 +107,7 @@ func TestALateFirstUseIsItsOwnFinding(t *testing.T) {
 func TestAPlayerLateEveryTimeIsNeverWronglyAccused(t *testing.T) {
 	// Every gap identical at 100 s: indistinguishable from a 100 s cooldown.
 	at := []time.Duration{0, 100 * time.Second, 200 * time.Second, 300 * time.Second}
-	found := Findings(timelineOfUses(400*time.Second, combustion, at...), judgedFire())
+	found := Findings(timelineOfUses(400*time.Second, combustion, at...), judgedFire(), survived)
 	for _, f := range found {
 		if f.RuleID == ruleCooldownDrift {
 			t.Errorf("accused a player of drift on evenly spaced uses: %q", f.Detail)
@@ -116,7 +120,7 @@ func TestAPlayerLateEveryTimeIsNeverWronglyAccused(t *testing.T) {
 // between uses is 7.6 s: unbounded, that claims forty-one missed uses.
 func TestAResetIsNotATwoSecondCooldown(t *testing.T) {
 	at := []time.Duration{0, 8 * time.Second, 70 * time.Second, 140 * time.Second, 210 * time.Second}
-	found := Findings(timelineOfUses(300*time.Second, combustion, at...), judgedFire())
+	found := Findings(timelineOfUses(300*time.Second, combustion, at...), judgedFire(), survived)
 	for _, f := range found {
 		if f.RuleID != ruleCooldownDrift {
 			continue
@@ -133,7 +137,7 @@ func TestAResetIsNotATwoSecondCooldown(t *testing.T) {
 // value safe to analyse with.
 func TestAnUnauthoredSpecProducesNoFindings(t *testing.T) {
 	at := []time.Duration{40 * time.Second, 200 * time.Second, 400 * time.Second}
-	if found := Findings(timelineOfUses(500*time.Second, combustion, at...), knowledge.Knowledge{}); len(found) != 0 {
+	if found := Findings(timelineOfUses(500*time.Second, combustion, at...), knowledge.Knowledge{}, survived); len(found) != 0 {
 		t.Errorf("got %d findings for a spec with no judged cooldowns, want none: %+v", len(found), found)
 	}
 }
@@ -142,7 +146,7 @@ func TestAnUnauthoredSpecProducesNoFindings(t *testing.T) {
 // rather than look broken.
 func TestACleanPullProducesNoFindings(t *testing.T) {
 	at := []time.Duration{2 * time.Second, 63 * time.Second, 124 * time.Second, 185 * time.Second}
-	if found := Findings(timelineOfUses(240*time.Second, combustion, at...), judgedFire()); len(found) != 0 {
+	if found := Findings(timelineOfUses(240*time.Second, combustion, at...), judgedFire(), survived); len(found) != 0 {
 		t.Errorf("got %d findings on a pull with no drift, want none: %+v", len(found), found)
 	}
 }
@@ -161,7 +165,7 @@ func TestAFindingCarriesNoGeometry(t *testing.T) {
 }
 
 func TestFindingsOfANilTimeline(t *testing.T) {
-	if found := Findings(nil, judgedFire()); found != nil {
+	if found := Findings(nil, judgedFire(), survived); found != nil {
 		t.Errorf("got %+v for a pull that could not be loaded, want nil", found)
 	}
 }
@@ -174,7 +178,7 @@ func TestDriftAndAnUnusedTailAreSeparateFindings(t *testing.T) {
 	// Gaps of 70, 140 and 70 seconds — one bad wait in the middle — and then
 	// 320 seconds of pull after the last use.
 	at := []time.Duration{0, 70 * time.Second, 210 * time.Second, 280 * time.Second}
-	found := Findings(timelineOfUses(600*time.Second, combustion, at...), judgedFire())
+	found := Findings(timelineOfUses(600*time.Second, combustion, at...), judgedFire(), survived)
 
 	byRule := map[string]Finding{}
 	for _, f := range found {
@@ -198,5 +202,112 @@ func TestDriftAndAnUnusedTailAreSeparateFindings(t *testing.T) {
 	}
 	if !strings.Contains(tail.Detail, "never pressed again") {
 		t.Errorf("tail Detail = %q, want it to say plainly what happened", tail.Detail)
+	}
+}
+
+// Holding a cooldown through the end of a stage and opening the next one
+// with it is the single most valuable thing a player can do with it, and an
+// intermission carrying a damage amplifier is the clearest case of all.
+//
+// This is the real shape of a pull the page got wrong: Combustion came back
+// at 3:20, the Claimed Vessel intermission began at 3:44, and the player
+// pressed it at 3:51 — seven seconds into the amplified window. The first
+// version of this rule called that thirty-two seconds of drift, which is the
+// page accusing someone of playing well.
+func TestACooldownHeldForAnIntermissionIsNotDrift(t *testing.T) {
+	at := []time.Duration{11300, 76700, 138600, 231700, 292900}
+	for i := range at {
+		at[i] *= time.Millisecond
+	}
+	timeline := timelineOfUses(423000*time.Millisecond, combustion, at...)
+	timeline.Phases = []Phase{
+		{ID: 1, Name: "Stage One: Serpent's Bargain", Start: 0, End: 122700 * time.Millisecond},
+		{ID: 2, Name: "Stage Two: Usurper's Reprisal", Start: 122700 * time.Millisecond, End: 224500 * time.Millisecond},
+		{ID: 3, Name: "Intermission: The Claimed Vessel", IsIntermission: true, Start: 224500 * time.Millisecond, End: 262900 * time.Millisecond},
+		{ID: 4, Name: "Stage Three: Coiled Union", Start: 262900 * time.Millisecond, End: 423000 * time.Millisecond},
+	}
+
+	for _, f := range Findings(timeline, judgedFire(), survived) {
+		if f.RuleID == ruleCooldownDrift {
+			t.Errorf("called a cooldown held for the intermission drift: %q", f.Detail)
+		}
+	}
+
+	// Without the phases the same pull does read as drift, which is what
+	// makes the phases load-bearing rather than decorative.
+	timeline.Phases = nil
+	var sawDrift bool
+	for _, f := range Findings(timeline, judgedFire(), survived) {
+		sawDrift = sawDrift || f.RuleID == ruleCooldownDrift
+	}
+	if !sawDrift {
+		t.Error("with no phase data the wait is unexplained and should read as drift; this test would prove nothing otherwise")
+	}
+}
+
+// A phase that began before the cooldown was even ready explains nothing,
+// and neither does one the player pressed into a minute late.
+func TestOnlyAWaitThatEndsAtAPhaseIsExcused(t *testing.T) {
+	phases := []Phase{{ID: 2, Name: "Stage Two", Start: 100 * time.Second, End: 400 * time.Second}}
+
+	// Ready at 130s, used at 200s: the stage began 30s before it was ready.
+	if _, ok := heldForPhase(130*time.Second, 200*time.Second, phases); ok {
+		t.Error("a phase that started before the cooldown was ready was treated as the reason it was held")
+	}
+	// Ready at 60s, used at 180s: the stage began during the wait, but the
+	// cooldown landed 80s into it.
+	if _, ok := heldForPhase(60*time.Second, 180*time.Second, phases); ok {
+		t.Error("a cooldown pressed 80s into a stage was treated as saved for it")
+	}
+	// Ready at 60s, used at 108s: held through the boundary, spent 8s in.
+	if _, ok := heldForPhase(60*time.Second, 108*time.Second, phases); !ok {
+		t.Error("a cooldown held through a stage boundary and spent in its opening seconds was not excused")
+	}
+}
+
+// A cooldown that came back after the player was dead is not one they
+// declined to press. This is the second half of the same pull the phase test
+// is about: the player died at 5:15, and Combustion came back at 5:54 — 39
+// seconds into being dead. The page called that a full use left on the
+// table.
+func TestNothingIsAskedOfAPlayerAfterTheyDied(t *testing.T) {
+	at := []time.Duration{11300, 76700, 138600, 231700, 292900}
+	for i := range at {
+		at[i] *= time.Millisecond
+	}
+	timeline := timelineOfUses(423000*time.Millisecond, combustion, at...)
+
+	died := 315 * time.Second // 5:15
+	for _, f := range Findings(timeline, judgedFire(), died) {
+		if f.RuleID == ruleCooldownTail {
+			t.Errorf("held a dead player to a cooldown that came back after they died: %q", f.Detail)
+		}
+	}
+
+	// Alive to the end, the same pull really does leave one unused.
+	var sawTail bool
+	for _, f := range Findings(timeline, judgedFire(), survived) {
+		sawTail = sawTail || f.RuleID == ruleCooldownTail
+	}
+	if !sawTail {
+		t.Error("with the player alive to the end the unused tail is real and should be reported")
+	}
+}
+
+// ActedUntil is the bound, and a player who lived has none beyond the pull.
+func TestActedUntilIsTheDeathOrTheWholePull(t *testing.T) {
+	lived := PlayerStats{FightDuration: 400 * time.Second}
+	if got := lived.ActedUntil(); got != 400*time.Second {
+		t.Errorf("ActedUntil() = %v for a survivor, want the whole pull", got)
+	}
+	died := PlayerStats{FightDuration: 400 * time.Second, Deaths: 1, DiedAt: 315 * time.Second}
+	if got := died.ActedUntil(); got != 315*time.Second {
+		t.Errorf("ActedUntil() = %v, want the death at 5:15", got)
+	}
+	// A death the table gave no usable timestamp for must not silently
+	// shorten the pull to nothing.
+	odd := PlayerStats{FightDuration: 400 * time.Second, Deaths: 1}
+	if got := odd.ActedUntil(); got != 400*time.Second {
+		t.Errorf("ActedUntil() = %v with no death time, want the whole pull", got)
 	}
 }

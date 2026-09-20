@@ -91,6 +91,30 @@ const (
 // cooldown of slack on each of six uses is not a mistake, it is playing.
 const driftFloor = 15 * time.Second
 
+// phaseHold is how soon after a phase begins a cooldown can land and still
+// read as having been saved for it. A player who holds a cooldown through the
+// end of one stage and spends it in the opening seconds of the next is doing
+// the single most valuable thing they can with it, and calling that drift is
+// the page accusing someone of playing well.
+//
+// PROVISIONAL, and it is worth being plain about why. Nothing here is
+// per-encounter — phases arrive with every fight and a new tier costs this
+// code nothing — but the twenty seconds is a judgement, and the rule only
+// sees holds that happen to coincide with a phase boundary. It does not see
+// a cooldown held for an add spawn, for lust, for a damage amplifier that
+// goes up mid-phase, or for a burn window somebody called on voice. Writing
+// a rule for each of those is the unmaintainable path.
+//
+// The general question — "was this hold deliberate?" — is one the data
+// answers without a rule. Checked against the six top Fire Mage parses on
+// the encounter this was built against, all six put a Combustion inside
+// twenty seconds of the same intermission, several of them after a longer
+// wait than usual. A comparison against peers would have concluded the hold
+// was correct with nothing hard-coded at all, and that is what should
+// eventually own this decision; the RuleID on every Finding exists so that
+// judgement can suppress one without being able to invent one.
+const phaseHold = 20 * time.Second
+
 // lateFirstUse is how long into a pull a judged cooldown can go unused before
 // it is worth saying so. A cooldown held past this at the start is almost
 // always a cooldown that was forgotten rather than saved.
@@ -101,11 +125,17 @@ const lateFirstUse = 20 * time.Second
 //
 // A spec with no judged cooldowns produces none, which is the zero value's
 // behaviour and is why an unauthored spec is safe to analyse.
-func Findings(t *Timeline, know knowledge.Knowledge) []Finding {
+func Findings(t *Timeline, know knowledge.Knowledge, actedUntil time.Duration) []Finding {
 	if t == nil {
 		return nil
 	}
-	found := cooldownFindings(t, know)
+	// Nothing may be asked of a player after the pull stopped being theirs to
+	// play: a cooldown that came back while they were dead is not one they
+	// declined to press.
+	if actedUntil <= 0 || actedUntil > t.Duration {
+		actedUntil = t.Duration
+	}
+	found := cooldownFindings(t, know, actedUntil)
 	// Worst first, then earliest, so the order is total and two runs over
 	// one pull cannot disagree.
 	slices.SortStableFunc(found, func(a, b Finding) int {
@@ -129,7 +159,7 @@ func Findings(t *Timeline, know knowledge.Knowledge) []Finding {
 // safe: it is a lower bound on their real cooldown, so the rule can only ever
 // *under*-report drift. It will miss a player who is late every time. It will
 // never tell one who is not that they were.
-func cooldownFindings(t *Timeline, know knowledge.Knowledge) []Finding {
+func cooldownFindings(t *Timeline, know knowledge.Knowledge, actedUntil time.Duration) []Finding {
 	var found []Finding
 	for _, ability := range slices.Sorted(maps.Keys(know.JudgedCooldowns)) {
 		rule, _ := know.Judged(ability)
@@ -145,7 +175,7 @@ func cooldownFindings(t *Timeline, know knowledge.Knowledge) []Finding {
 		if f, ok := lateOpener(rule, used[0]); ok {
 			found = append(found, f)
 		}
-		if f, ok := driftFinding(rule, used, t.Duration); ok {
+		if f, ok := driftFinding(rule, used, actedUntil, t.Phases); ok {
 			found = append(found, f)
 		}
 		if len(used) >= 2 {
@@ -153,7 +183,7 @@ func cooldownFindings(t *Timeline, know knowledge.Knowledge) []Finding {
 			for i := 1; i < len(used); i++ {
 				gaps = append(gaps, used[i]-used[i-1])
 			}
-			if f, ok := unusedTail(rule, used, observedCooldown(rule, gaps), t.Duration); ok {
+			if f, ok := unusedTail(rule, used, observedCooldown(rule, gaps), actedUntil); ok {
 				found = append(found, f)
 			}
 		}
@@ -181,7 +211,7 @@ func lateOpener(rule knowledge.JudgedCooldown, first time.Duration) (Finding, bo
 }
 
 // driftFinding reports a cooldown whose uses spread out over the pull.
-func driftFinding(rule knowledge.JudgedCooldown, used []time.Duration, fight time.Duration) (Finding, bool) {
+func driftFinding(rule knowledge.JudgedCooldown, used []time.Duration, fight time.Duration, phases []Phase) (Finding, bool) {
 	if len(used) < 3 {
 		// Two uses are one gap, and one gap is not a pattern: it is as
 		// likely to be the fight's shape as the player's.
@@ -196,12 +226,25 @@ func driftFinding(rule knowledge.JudgedCooldown, used []time.Duration, fight tim
 		return Finding{}, false
 	}
 
+	// A wait the player spent on purpose is not drift. Holding a cooldown
+	// through the end of a stage to open the next one with it — an
+	// intermission with a damage amplifier most of all — is correct play,
+	// and the phases the analysis already carries are enough to see it.
 	var drift time.Duration
+	var held int
 	worst, at := time.Duration(0), used[0]
 	for i, g := range gaps {
-		drift += g - floor
-		if g-floor > worst {
-			worst, at = g-floor, used[i]
+		excess := g - floor
+		if excess <= 0 {
+			continue
+		}
+		if _, saved := heldForPhase(used[i]+floor, used[i+1], phases); saved {
+			held++
+			continue
+		}
+		drift += excess
+		if excess > worst {
+			worst, at = excess, used[i]
 		}
 	}
 	if drift < driftFloor {
@@ -234,6 +277,31 @@ func driftFinding(rule knowledge.JudgedCooldown, used []time.Duration, fight tim
 			{Label: "total time sitting ready", Value: roundSeconds(drift)},
 		},
 	}, true
+}
+
+// heldForPhase reports whether a cooldown that came back at ready and was
+// used at used was being saved for a phase that began in between. The phase
+// has to start during the wait and the cooldown has to land in its opening
+// seconds: a stage that began twenty seconds before the cooldown was even
+// ready explains nothing, and neither does one the player pressed into a
+// minute late.
+func heldForPhase(ready, used time.Duration, phases []Phase) (Phase, bool) {
+	var best Phase
+	found := false
+	for _, p := range phases {
+		if p.Start <= ready || p.Start > used {
+			continue
+		}
+		if used-p.Start > phaseHold {
+			continue
+		}
+		// An intermission is the strongest reason to hold, so prefer it when
+		// two phases somehow qualify.
+		if !found || (p.IsIntermission && !best.IsIntermission) {
+			best, found = p, true
+		}
+	}
+	return best, found
 }
 
 // unusedTail reports a pull that carried on well past the last use of a
