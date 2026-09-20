@@ -212,11 +212,11 @@ func fightDetail() *warcraftlogs.FightDetail {
 		Players: []warcraftlogs.PlayerStats{
 			{ActorID: 7, Name: "Testmage", Server: "Testrealm", Class: "Mage", Spec: "Fire",
 				ItemLevel: 678, Damage: 240_000_000, Healing: 0, Deaths: 0,
-				ActiveTime: 250 * time.Second, FightDuration: 300 * time.Second,
+				DamageUptime: 250 * time.Second, FightDuration: 300 * time.Second,
 				Ranking: warcraftlogs.Ranking{RankPercent: 55.4, BracketPercent: 61.2, TotalParses: 440, ItemLevel: 675}},
 			{ActorID: 11, Name: "Testpriest", Server: "Testrealm", Class: "Priest", Spec: "Holy",
 				ItemLevel: 675, Damage: 4_000_000, Healing: 90_000_000, Overheal: 30_000_000,
-				Deaths: 1, ActiveTime: 200 * time.Second, FightDuration: 300 * time.Second},
+				Deaths: 1, DamageUptime: 200 * time.Second, FightDuration: 300 * time.Second},
 		},
 	}
 }
