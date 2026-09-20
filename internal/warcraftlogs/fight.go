@@ -3,6 +3,7 @@ package warcraftlogs
 import (
 	"cmp"
 	"context"
+	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
@@ -40,7 +41,22 @@ type PlayerStats struct {
 	Deaths        int
 	ActiveTime    time.Duration // time spent casting
 	FightDuration time.Duration
+
+	// Ranking is how Warcraft Logs rated this pull. It is a value rather than
+	// a pointer so that PlayerStats stays comparable field-wise: Fight already
+	// holds pointers and cannot be used as a map key because of it, and
+	// AGENTS.md asks that new work not deepen that. Ranked says whether it
+	// holds anything.
+	Ranking Ranking
 }
+
+// Ranked reports whether Warcraft Logs rated this pull. It is false for a
+// wipe, an unranked difficulty, a player nobody ranked, and a recording made
+// before the fight query asked for rankings — the page shows nothing in every
+// one of those cases, which is the honest answer. A real ranking is always
+// measured against at least one parse, so the count is what distinguishes the
+// zero value.
+func (p PlayerStats) Ranked() bool { return p.Ranking.TotalParses > 0 }
 
 // SpecID names the player's specialisation for a knowledge lookup. Spec is
 // empty when the tables carried no icon for the player, and no lookup matches
@@ -107,6 +123,10 @@ type FightDetail struct {
 	ReportTitle string
 	Fight       Fight
 	Players     []PlayerStats
+	// Incomplete names the parts of the response that arrived but could not
+	// be used, in the shape Timeline.Incomplete already has. A page must say
+	// why an area is empty rather than let it read as "nothing happened".
+	Incomplete []string
 }
 
 // Player returns the stats for one actor ID.
@@ -156,6 +176,9 @@ type fightDetailReport struct {
 			Entries []tableEntry `json:"entries"`
 		} `json:"data"`
 	} `json:"deaths"`
+	// Rankings is decoded separately and leniently, so a shape this
+	// package guessed wrong costs a tile rather than the page.
+	Rankings json.RawMessage `json:"rankings"`
 }
 
 // fightDetailResponse is the envelope the fight query returns.
@@ -264,6 +287,17 @@ func buildFightDetail(report *fightDetailReport) *FightDetail {
 		if p, ok := byID[e.ID]; ok {
 			p.Deaths++
 		}
+	}
+
+	// Rankings are keyed by character name: the id on a ranked row is the
+	// character's global Warcraft Logs id, not this report's actor id, so
+	// there is nothing else to join on.
+	rankings, ok := rankingsByName(report.Rankings, fight.ID)
+	if !ok {
+		detail.Incomplete = append(detail.Incomplete, "rankings")
+	}
+	for _, p := range byID {
+		p.Ranking = rankings[p.Name]
 	}
 
 	detail.Players = make([]PlayerStats, 0, len(byID))

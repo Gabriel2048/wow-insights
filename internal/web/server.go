@@ -134,6 +134,10 @@ func (s *Server) fight(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := fightPageData{Detail: detail, Fight: view.Fight{Fight: detail.Fight}}
+	if len(detail.Incomplete) > 0 {
+		s.logger(r).Warn("fight arrived incomplete", "missing", detail.Incomplete)
+		data.Notices = append(data.Notices, "Part of this fight was unavailable from Warcraft Logs: "+laneNames(detail.Incomplete)+".")
+	}
 	if raw := r.URL.Query().Get("player"); raw != "" {
 		id, err := strconv.Atoi(raw)
 		if err != nil {
@@ -145,7 +149,10 @@ func (s *Server) fight(w http.ResponseWriter, r *http.Request) {
 		} else {
 			data.SelectedID = id
 			data.Player = &player
-			data.Timeline, data.Notices = s.playerTimeline(r, detail, player, data.Fight)
+			timeline, notices := s.playerTimeline(r, detail, player, data.Fight)
+			// Appended, not assigned: the fight itself may already have put a
+			// notice here, and the timeline's must not replace it.
+			data.Timeline, data.Notices = timeline, append(data.Notices, notices...)
 		}
 	}
 	s.render(w, r, http.StatusOK, "fight.html", data)
@@ -204,7 +211,7 @@ func laneNames(aliases []string) string {
 		"casts": "casts", "lust": "bloodlust", "procs": "procs", "cooldowns": "your cooldowns",
 		"raidCDs": "raid cooldowns", "bossCasts": "boss casts", "phases": "phases",
 		"damage": "damage done", "taken": "damage taken", "npcs": "enemy names",
-		"abilities": "ability names", "actors": "player names",
+		"abilities": "ability names", "actors": "player names", "rankings": "rankings",
 	}
 	out := make([]string, len(aliases))
 	for i, a := range aliases {

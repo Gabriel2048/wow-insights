@@ -199,3 +199,21 @@ func TestAPlayerWithNoSpecGetsItsOwnNotice(t *testing.T) {
 		t.Error("the page blames the class, or says nothing, for a player with no spec")
 	}
 }
+
+// A notice about the fight itself must survive selecting a player. The
+// timeline's notices used to be assigned over the top of them, so anything
+// the fight had already reported vanished the moment a player was picked —
+// which is exactly when a reader is most likely to be looking.
+func TestAFightNoticeSurvivesSelectingAPlayer(t *testing.T) {
+	detail := fightDetail()
+	detail.Incomplete = []string{"rankings"}
+	rec := get(t, fakeWCL{
+		fightDetail: func(context.Context, string, int) (*warcraftlogs.FightDetail, error) {
+			return detail, nil
+		},
+	}, "/report/ExampleReport123/fight/12?player=7")
+
+	if body := rec.Body.String(); !strings.Contains(body, "rankings") {
+		t.Error("the fight's own notice is gone once a player is selected")
+	}
+}

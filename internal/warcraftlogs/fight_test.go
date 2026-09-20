@@ -160,3 +160,52 @@ func TestRecordedRosterSpecsAreCatalogued(t *testing.T) {
 		t.Errorf("only %d distinct specs in the recorded roster; the check is too thin to mean much", len(specs))
 	}
 }
+
+// A ranked pull reaches the roster. The join is on name because the id on a
+// ranked row is the character's global Warcraft Logs id, not this report's
+// actor id — see rankings.go. A player the rankings do not mention keeps the
+// zero value, and Ranked() is what tells the page which is which.
+func TestBuildFightDetailAttachesRankingsByName(t *testing.T) {
+	report := &fightDetailReport{}
+	report.Fights = []fightWire{{ID: 4, StartTime: 0, EndTime: 100000, FriendlyPlayers: []int{1, 2}}}
+	report.MasterData.Actors = []Actor{
+		{ID: 1, Name: "Testmage", Type: "Player", SubType: "Mage"},
+		{ID: 2, Name: "Testrogue", Type: "Player", SubType: "Rogue"},
+	}
+	// The id on a ranked row is deliberately nothing like actor 1: joining on
+	// it would match nobody. This is also the real wire shape, rank included.
+	report.Rankings = []byte(`{"data":[{"fightID":4,"roles":{"dps":{"characters":[
+		{"id":14133569,"name":"Testmage","rank":"~412","rankPercent":55.4,"bracketPercent":61.2,"totalParses":440,"bracketData":326}]}}}]}`)
+
+	detail := buildFightDetail(report)
+	mage, ok := detail.Player(1)
+	if !ok {
+		t.Fatal("actor 1 is not in the roster")
+	}
+	if !mage.Ranked() {
+		t.Fatalf("Testmage is unranked, want ranked: %+v", mage.Ranking)
+	}
+	if mage.Ranking.TotalParses != 440 || mage.Ranking.Percentile() != "61st" {
+		t.Errorf("got %s of %d parses, want 61st of 440", mage.Ranking.Percentile(), mage.Ranking.TotalParses)
+	}
+	rogue, _ := detail.Player(2)
+	if rogue.Ranked() {
+		t.Errorf("Testrogue is ranked, want unranked: the rankings do not mention them")
+	}
+}
+
+// PlayerStats is compared field-wise by the table test above, so it must stay
+// free of pointer fields — Fight already holds them and cannot be a map key
+// because of it. AGENTS.md asks that new work not deepen that.
+func TestPlayerStatsStaysComparable(t *testing.T) {
+	a := PlayerStats{ActorID: 1, Name: "Testmage", Ranking: Ranking{TotalParses: 440, BracketPercent: 61.2}}
+	b := PlayerStats{ActorID: 1, Name: "Testmage", Ranking: Ranking{TotalParses: 440, BracketPercent: 61.2}}
+	if a != b {
+		t.Error("two PlayerStats with the same fields are not equal; a pointer field has crept in")
+	}
+	// This line does not compile at all if PlayerStats stops being
+	// comparable, which is the stronger half of the assertion.
+	if !map[PlayerStats]bool{a: true}[b] {
+		t.Error("PlayerStats does not work as a map key")
+	}
+}
