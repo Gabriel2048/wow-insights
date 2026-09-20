@@ -10,9 +10,11 @@ import (
 	"wowinsight/internal/knowledge"
 )
 
-// How long each kind of answer is worth keeping. They differ because the
-// things they describe change at different rates, not because the numbers
-// were tuned.
+// How long each kind of answer is worth keeping, and how much of it. They
+// differ because the things they describe change at different rates, not
+// because the numbers were tuned. They are defaults rather than constants so
+// a test can prove expiry without sleeping through it — the shape
+// Server.handlerDeadline and Client.backoffBase already take.
 const (
 	// reportTTL is short because a report grows. A raid night appends pulls
 	// to the same report for hours, and the index page listing them is the
@@ -29,10 +31,22 @@ const (
 	// uploaded a moment later is found.
 	missTTL = 30 * time.Second
 
-	// maxEntries bounds each store. A Timeline is the large one: casts are
-	// capped at 50,000 events, so a pathological pull is a few megabytes and
-	// a typical one a few hundred kilobytes.
-	maxEntries = 32
+	// fetchDeadline bounds a fetch that has been detached from the caller
+	// who started it. Longer than the request deadline of one minute,
+	// because cast paging can legitimately exceed that; finite, because once
+	// detached nothing else would ever stop it.
+	fetchDeadline = 2 * time.Minute
+
+	// The stores are bounded by count, so the count has to be chosen from
+	// the bytes. A measured *Timeline built from the committed recording is
+	// 34-80 KiB, but casts are capped at 50,000 events and every other
+	// stream at 10,000, so a pathological pull is about 6.5 MB. Twelve of
+	// those is ~78 MB, which fits inside the 512 MiB of the smallest
+	// instance this is meant to run on; thirty-two would be ~208 MB, which
+	// is most of it. Reports and fights are small enough not to need the
+	// same care.
+	maxTimelines = 12
+	maxEntries   = 32
 )
 
 // source is the slice of the client the cache decorates, declared here by
@@ -69,6 +83,11 @@ type source interface {
 type Cache struct {
 	src source
 
+	// The lifetimes, as fields rather than the constants, so a test can
+	// prove that an entry expires without sleeping through a minute of it.
+	// Nothing else sets them.
+	reportTTL, fightTTL, timelineTTL time.Duration
+
 	reports   *store[string, *Report]
 	fights    *store[fightKey, *FightDetail]
 	timelines *store[timelineKey, *Timeline]
@@ -95,10 +114,14 @@ type timelineKey struct {
 // satisfies the same three methods, so whatever held a *Client can hold this.
 func NewCache(src source) *Cache {
 	return &Cache{
-		src:       src,
-		reports:   newStore[string, *Report](),
-		fights:    newStore[fightKey, *FightDetail](),
-		timelines: newStore[timelineKey, *Timeline](),
+		src:         src,
+		reportTTL:   reportTTL,
+		fightTTL:    fightTTL,
+		timelineTTL: timelineTTL,
+
+		reports:   newStore[string, *Report](maxEntries),
+		fights:    newStore[fightKey, *FightDetail](maxEntries),
+		timelines: newStore[timelineKey, *Timeline](maxTimelines),
 	}
 }
 
@@ -136,9 +159,9 @@ func (c *Cache) note(hit bool) {
 
 // Report lists a report's fights, for a minute.
 func (c *Cache) Report(ctx context.Context, code string) (*Report, error) {
-	v, hit, err := c.reports.do(ctx, code, reportTTL, func(ctx context.Context) (*Report, time.Duration, error) {
+	v, hit, err := c.reports.do(ctx, code, func(ctx context.Context) (*Report, time.Duration, error) {
 		r, err := c.src.Report(ctx, code)
-		return r, reportTTL, err
+		return r, c.reportTTL, err
 	})
 	c.note(hit)
 	return v, err
@@ -147,7 +170,7 @@ func (c *Cache) Report(ctx context.Context, code string) (*Report, error) {
 // FightDetail is one pull's roster and tables.
 func (c *Cache) FightDetail(ctx context.Context, code string, fightID int) (*FightDetail, error) {
 	key := fightKey{code: code, fightID: fightID}
-	v, hit, err := c.fights.do(ctx, key, fightTTL, func(ctx context.Context) (*FightDetail, time.Duration, error) {
+	v, hit, err := c.fights.do(ctx, key, func(ctx context.Context) (*FightDetail, time.Duration, error) {
 		d, err := c.src.FightDetail(ctx, code, fightID)
 		if err == nil && len(d.Incomplete) > 0 {
 			// Part of the document did not arrive. Keep the value for this
@@ -155,7 +178,7 @@ func (c *Cache) FightDetail(ctx context.Context, code string, fightID int) (*Fig
 			// it for the next one.
 			return d, 0, nil
 		}
-		return d, fightTTL, err
+		return d, c.fightTTL, err
 	})
 	c.note(hit)
 	return v, err
@@ -169,7 +192,7 @@ func (c *Cache) Timeline(ctx context.Context, code string, fight Fight, sourceID
 		subject:   Subject{ReportCode: code, FightID: fight.ID, ActorID: sourceID, Spec: know.Spec},
 		knowledge: know.Version(),
 	}
-	v, hit, err := c.timelines.do(ctx, key, timelineTTL, func(ctx context.Context) (*Timeline, time.Duration, error) {
+	v, hit, err := c.timelines.do(ctx, key, func(ctx context.Context) (*Timeline, time.Duration, error) {
 		t, err := c.src.Timeline(ctx, code, fight, sourceID, know)
 		if err == nil && len(t.Incomplete) > 0 {
 			// The same rule, and the reason it is written twice: Incomplete
@@ -178,7 +201,7 @@ func (c *Cache) Timeline(ctx context.Context, code string, fight Fight, sourceID
 			// goes and would be cut identically next time, so it is kept.
 			return t, 0, nil
 		}
-		return t, timelineTTL, err
+		return t, c.timelineTTL, err
 	})
 	c.note(hit)
 	return v, err
@@ -202,40 +225,75 @@ type entry[V any] struct {
 	expires time.Time
 }
 
+// usable reports whether an entry may be handed to a caller: one still being
+// fetched, or one whose answer has not expired yet.
+//
+// expires is written before done is closed, so reading it after observing
+// that close is safe — and reading it before would be a race. That ordering
+// is why an entry still in flight is usable without consulting it at all:
+// whoever wants it can wait, and there is nothing yet to compare.
+func (e *entry[V]) usable(now time.Time) bool {
+	select {
+	case <-e.done:
+		return now.Before(e.expires)
+	default:
+		return true
+	}
+}
+
 // store is a small single-flight cache. Two callers asking for one uncached
 // thing make one request and both get its answer — the shape this repository
 // already uses for the coalesced token refresh and for the analysis registry.
 type store[K comparable, V any] struct {
+	// max is how many entries this store holds. It is per-store because a
+	// Timeline is two orders of magnitude larger than a Report.
+	max int
+
 	mu      sync.Mutex
 	entries map[K]*entry[V]
 	order   []K
 }
 
-func newStore[K comparable, V any]() *store[K, V] {
-	return &store[K, V]{entries: map[K]*entry[V]{}}
+func newStore[K comparable, V any](max int) *store[K, V] {
+	return &store[K, V]{max: max, entries: map[K]*entry[V]{}}
 }
 
 // do returns the cached value, or waits for the fetch already running for
 // this key, or starts one. hit reports whether the work was avoided.
-func (s *store[K, V]) do(ctx context.Context, key K, _ time.Duration, fetch func(context.Context) (V, time.Duration, error)) (V, bool, error) {
+func (s *store[K, V]) do(ctx context.Context, key K, fetch func(context.Context) (V, time.Duration, error)) (V, bool, error) {
 	s.mu.Lock()
 	if e, ok := s.entries[key]; ok {
-		s.mu.Unlock()
-		select {
-		case <-e.done:
-		case <-ctx.Done():
-			var zero V
-			return zero, false, ctx.Err()
+		if e.usable(time.Now()) {
+			s.mu.Unlock()
+			select {
+			case <-e.done:
+			case <-ctx.Done():
+				var zero V
+				return zero, false, ctx.Err()
+			}
+			return e.val, true, e.err
 		}
-		// An entry that expired while it was being waited on is still the
-		// freshest thing anyone has; the next caller will replace it.
-		return e.val, true, e.err
+		// Past its time. Dropping it here is the whole of the fix: expiry
+		// used to be applied only while evicting, which runs at the end of a
+		// miss — so an entry that kept being hit was never reconsidered and
+		// its lifetime meant nothing. A report grows through a raid night,
+		// and the fight list is where that showed.
+		s.dropLocked(key)
 	}
 	e := &entry[V]{done: make(chan struct{})}
 	s.entries[key] = e
 	s.mu.Unlock()
 
-	val, ttl, err := fetch(ctx)
+	// The work is detached from whoever happened to ask for it first. The
+	// client does the same for a token refresh, and says why: "a client that
+	// disconnects mid-refresh cannot fail it for everyone behind it". Here it
+	// is worse than unfair — the request has already gone and its points are
+	// already spent, so failing the waiters throws away an answer that was
+	// paid for and makes the next caller buy it again.
+	fetchCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), fetchDeadline)
+	defer cancel()
+
+	val, ttl, err := fetch(fetchCtx)
 	e.val, e.err = val, err
 	e.expires = time.Now().Add(ttl)
 	close(e.done)
@@ -258,6 +316,14 @@ func (s *store[K, V]) do(ctx context.Context, key K, _ time.Duration, fetch func
 	return val, false, err
 }
 
+// dropLocked forgets one entry, from both the map and the eviction order.
+func (s *store[K, V]) dropLocked(key K) {
+	delete(s.entries, key)
+	if i := slices.Index(s.order, key); i >= 0 {
+		s.order = slices.Delete(s.order, i, i+1)
+	}
+}
+
 // evictLocked drops the oldest entries, and expired ones wherever they are.
 func (s *store[K, V]) evictLocked() {
 	now := time.Now()
@@ -274,7 +340,7 @@ func (s *store[K, V]) evictLocked() {
 	clear(s.order[len(kept):])
 	s.order = kept
 
-	for len(s.order) > maxEntries {
+	for len(s.order) > s.max {
 		delete(s.entries, s.order[0])
 		s.order[0] = *new(K)
 		s.order = s.order[1:]
