@@ -234,11 +234,13 @@ func TestAnalysisRouteValidatesLikeTheFightRoute(t *testing.T) {
 	}
 }
 
-// The analysis page shows no timeline, so it must not fetch one: a Timeline
-// is the most expensive query this app makes, and paying for one to render a
-// page that ignores it would make moving between the two views cost more than
-// reading either.
-func TestAnalysisPageFetchesNoTimeline(t *testing.T) {
+// The analysis page fetches the timeline, which the change that introduced
+// the page said it would not. That claim was true while the page had nothing
+// to say — it draws no timeline, so the most expensive query the app makes
+// would have bought nothing. The findings are computed from the player's
+// casts, so it now needs exactly the analysis it is named for, and #58's
+// cache is what stops moving between the two views paying for it twice.
+func TestAnalysisPageComputesFindingsFromTheTimeline(t *testing.T) {
 	timelineCalls := 0
 	rec := get(t, fakeWCL{
 		fightDetail: func(context.Context, string, int) (*warcraftlogs.FightDetail, error) {
@@ -246,17 +248,32 @@ func TestAnalysisPageFetchesNoTimeline(t *testing.T) {
 		},
 		timeline: func(context.Context, string, warcraftlogs.Fight, int, knowledge.Knowledge) (*warcraftlogs.Timeline, error) {
 			timelineCalls++
-			return nil, errNotStubbed
+			return fullTimeline(), nil
 		},
 	}, "/report/ExampleReport123/fight/12/analysis?player=7")
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
-	if timelineCalls != 0 {
-		t.Errorf("the analysis page fetched %d timelines, want none", timelineCalls)
+	if timelineCalls != 1 {
+		t.Errorf("fetched %d timelines, want exactly 1", timelineCalls)
 	}
-	if !strings.Contains(rec.Body.String(), "No findings") {
-		t.Error("the analysis page does not say there are no findings yet")
+}
+
+// A timeline that could not be loaded costs the findings, not the page: the
+// ranking, the roster and the header are still worth showing, and the notice
+// says what went missing.
+func TestAnalysisPageSurvivesATimelineFailure(t *testing.T) {
+	rec := get(t, fakeWCL{
+		fightDetail: func(context.Context, string, int) (*warcraftlogs.FightDetail, error) {
+			return fightDetail(), nil
+		},
+	}, "/report/ExampleReport123/fight/12/analysis?player=7")
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: a missing timeline must not fail the page", rec.Code)
+	}
+	if body := rec.Body.String(); !strings.Contains(body, "could not be loaded") {
+		t.Error("the page does not say the timeline was unavailable")
 	}
 }

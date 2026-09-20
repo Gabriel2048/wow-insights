@@ -42,6 +42,12 @@ type PlayerStats struct {
 	ActiveTime    time.Duration // time spent casting
 	FightDuration time.Duration
 
+	// DiedAt is when the player first died, relative to the pull. Meaningful
+	// only when Deaths is non-zero. It bounds what the analysis may hold them
+	// to: a cooldown that came back after a player was dead is not one they
+	// declined to press.
+	DiedAt time.Duration
+
 	// Ranking is how Warcraft Logs rated this pull. It is a value rather than
 	// a pointer so that PlayerStats stays comparable field-wise: Fight already
 	// holds pointers and cannot be used as a map key because of it, and
@@ -54,6 +60,16 @@ type PlayerStats struct {
 // ranking is against. Empty when there is no ranking, so a template can ask
 // without checking first.
 func (p PlayerStats) RankingExplained() string { return p.Ranking.Explain(p.Title()) }
+
+// ActedUntil is the last moment the player could do anything about the pull:
+// its end, or when they died. Nothing the analysis says may hold them to
+// time after this.
+func (p PlayerStats) ActedUntil() time.Duration {
+	if p.Deaths > 0 && p.DiedAt > 0 {
+		return p.DiedAt
+	}
+	return p.FightDuration
+}
 
 // Ranked reports whether Warcraft Logs rated this pull. It is false for a
 // wipe, an unranked difficulty, a player nobody ranked, and a recording made
@@ -154,6 +170,7 @@ type tableEntry struct {
 	ItemLevel  float64 `json:"itemLevel"`
 	Total      float64 `json:"total"`
 	ActiveTime float64 `json:"activeTime"`
+	Timestamp  float64 `json:"timestamp"`
 	Overheal   float64 `json:"overheal"`
 }
 
@@ -289,8 +306,17 @@ func buildFightDetail(report *fightDetailReport) *FightDetail {
 		}
 	}
 	for _, e := range report.Deaths.Data.Entries {
-		if p, ok := byID[e.ID]; ok {
-			p.Deaths++
+		p, ok := byID[e.ID]
+		if !ok {
+			continue
+		}
+		p.Deaths++
+		// The earliest death is the one that bounds the pull for them. A
+		// battle resurrection may have put them back, which this does not
+		// model — erring towards holding them to less, never more.
+		at := time.Duration(e.Timestamp-fight.StartTime) * time.Millisecond
+		if at > 0 && (p.DiedAt == 0 || at < p.DiedAt) {
+			p.DiedAt = at
 		}
 	}
 

@@ -32,13 +32,33 @@
 {{end}}
 
 {{with .Player}}
+{{if $.Findings}}
+<h2>What the log says</h2>
+<ol class="findings">
+    {{range $.Findings}}
+    <li class="finding {{.Severity}}">
+        <p class="claim">
+            <a href="/report/{{$.Detail.ReportCode}}/fight/{{$.Detail.Fight.ID}}?player={{$.SelectedID}}#t={{.AtMS}}"
+               class="at">{{.Timestamp}}</a>
+            <strong>{{.Title}}</strong>
+        </p>
+        <p class="detail">{{.Detail}}</p>
+        {{with .Evidence}}
+        <dl class="evidence">
+            {{range .}}<dt>{{.Label}}</dt><dd>{{.Value}}</dd>{{end}}
+        </dl>
+        {{end}}
+    </li>
+    {{end}}
+</ol>
+<p class="hint">Each timestamp opens the timeline at that moment.</p>
+{{else}}
 <div class="empty">
-    <h2>No findings yet</h2>
-    <p>This page will carry what the log says you could have done differently &mdash; pauses
-       longer than a global cooldown, cooldowns drifting later each use, procs that went
-       unspent. None of it is computed yet.</p>
-    <p class="hint">The timeline next door already shows the raw casts, pauses and cooldown
-       windows this will be judged from.</p>
+    <h2>Nothing to flag</h2>
+    <p>Every rule this page knows came back quiet for this pull. That is the answer, not a
+       missing one &mdash; on a pull played well most of them stay silent.</p>
+    <p class="hint">Today that means cooldown spacing. Idle time and wasted procs are next.</p>
 </div>
+{{end}}
 {{end}}
 {{end}}

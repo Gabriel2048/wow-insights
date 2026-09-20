@@ -48,6 +48,31 @@ type Knowledge struct {
 	// by spell id. A spell with no rule is not judged: for it, an aura being
 	// up says nothing about why it was cast.
 	CastRules map[int]CastRule
+	// JudgedCooldowns are the cooldowns whose *spacing* is worth judging —
+	// the ones a player is expected to use on cooldown for damage. It is
+	// deliberately a smaller set than Cooldowns, which is everything worth
+	// picking out of the rotation: judging a defensive produces nonsense.
+	// On the recorded kill Blazing Barrier's shortest gap between uses is
+	// 7.6 seconds, which would claim forty-one missed uses.
+	JudgedCooldowns map[int]JudgedCooldown
+}
+
+// JudgedCooldown is one cooldown the analysis holds a player to.
+type JudgedCooldown struct {
+	Name string
+	// Base is the cooldown the game gives the ability with no talents, in
+	// seconds. It is a bound, not the answer: talents shorten cooldowns and
+	// the log does not say which the player took, so the analysis measures
+	// the player's own shortest gap between uses and trusts that instead —
+	// Base only stops a reset or a double-charge from being read as a
+	// two-second cooldown.
+	Base int
+}
+
+// Judged reports the cooldown rule for an ability, if its spacing is judged.
+func (k Knowledge) Judged(ability int) (JudgedCooldown, bool) {
+	cd, ok := k.JudgedCooldowns[ability]
+	return cd, ok
 }
 
 // ProcAura reports whether an aura is tracked, and its name if it is.

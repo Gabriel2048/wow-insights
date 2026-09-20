@@ -24,6 +24,16 @@ var fireMage = Knowledge{
 		414658:  "Ice Cold",
 	},
 
+	// Combustion is the only Fire Mage cooldown whose spacing is worth
+	// judging. Blazing Barrier and Ice Cold are defensives — a player holding
+	// one for the mechanic that is coming is playing correctly, and calling
+	// that drift would be wrong. 120 seconds is the untalented cooldown;
+	// Kindling shortens it, which is why the analysis measures rather than
+	// assumes (on the recorded kill this player's own shortest gap is 61 s).
+	JudgedCooldowns: map[int]JudgedCooldown{
+		190319: {Name: "Combustion", Base: 120},
+	},
+
 	// Several auras can be up at once, and which ones matter depends on the
 	// cast. An instant Pyroblast is spent from Hot Streak, and Hyperthermia
 	// also makes it instant while ramping its damage; when both are up Hot

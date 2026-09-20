@@ -73,6 +73,10 @@ type fightPageData struct {
 	// Timeline is the analysis laid out for this page. The handler chooses
 	// the axis; today that is the pull's own.
 	Timeline *view.Timeline
+	// Findings are what the analysis can say the player could have done
+	// differently. Empty is a real answer and the page says so: on a
+	// competent pull most rules are silent.
+	Findings []warcraftlogs.Finding
 	// View is which of the two views of a pull this is, "timeline" or
 	// "analysis". The tab strip is rendered by both pages from one partial
 	// and needs to know which link to mark as current.
@@ -137,17 +141,24 @@ func (s *Server) fight(w http.ResponseWriter, r *http.Request) {
 // largest thing this app serves, and the two are read one after the other
 // rather than together.
 //
-// It deliberately fetches no timeline. Nothing here draws one, and a
-// Timeline is by far the most expensive query the app makes — roughly nine
-// points of an hourly budget shared by every user — so paying for one to
-// render a page that ignores it would make moving between the two views cost
-// more than reading either. What it costs is one FightDetail, which is what
-// gives it the player, the spec and the ranking. #58's cache is what will
-// stop even that being paid twice.
+// It fetches the timeline, which #54 said it would not. That was true while
+// the page had nothing to say: it drew no timeline, so paying for the most
+// expensive query the app makes would have been paying for nothing. The
+// findings are computed from the player's casts, so the page now needs
+// exactly the analysis it is named for. The cost of moving between the two
+// views is what #58's cache exists to remove.
 func (s *Server) analysis(w http.ResponseWriter, r *http.Request) {
 	data, ok := s.pullPage(w, r, "analysis")
 	if !ok {
 		return
+	}
+	if data.Player != nil {
+		know, _ := knowledge.Lookup(data.Player.SpecID())
+		timeline, notices := s.playerTimeline(r, data.Detail, *data.Player, data.Fight)
+		data.Notices = append(data.Notices, notices...)
+		if timeline != nil {
+			data.Findings = warcraftlogs.Findings(timeline.Timeline, know, data.Player.ActedUntil())
+		}
 	}
 	s.render(w, r, http.StatusOK, "analysis.html", data)
 }

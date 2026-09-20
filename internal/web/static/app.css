@@ -1224,3 +1224,77 @@ body.analysis .empty p {
 body.analysis .empty p:last-child {
     margin-bottom: 0;
 }
+
+/* The findings list. A finding is a claim, the timestamp it points at, and
+   the arithmetic behind it — in that order, because a reader decides whether
+   to believe it before they decide whether to act on it. */
+body.analysis .findings {
+    list-style: none;
+    margin: 0 0 1rem;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+body.analysis .finding {
+    padding: 1rem 1rem 1rem 0.85rem;
+    border: 1px solid var(--border-soft);
+    border-left: 3px solid var(--muted-2);
+    border-radius: 0.4rem;
+    background: var(--surface);
+}
+
+/* Severity is a stripe rather than a colour on the text: the claim has to
+   stay readable, and a page of red sentences reads as a page of failures. */
+body.analysis .finding.major {
+    border-left-color: var(--warn);
+}
+
+body.analysis .finding .claim {
+    margin: 0;
+    display: flex;
+    gap: 0.6rem;
+    align-items: baseline;
+    flex-wrap: wrap;
+}
+
+body.analysis .finding .at {
+    font-variant-numeric: tabular-nums;
+    color: var(--cast);
+    text-decoration: none;
+    border-bottom: 1px dotted var(--cast);
+}
+
+body.analysis .finding .at:hover {
+    border-bottom-style: solid;
+}
+
+body.analysis .finding .detail {
+    margin: 0.4rem 0 0;
+    color: var(--text-soft);
+    max-width: 70ch;
+}
+
+body.analysis .finding .evidence {
+    margin: 0.6rem 0 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem 1.25rem;
+    font-size: 0.8rem;
+    color: var(--muted);
+}
+
+body.analysis .finding .evidence dt {
+    margin: 0;
+}
+
+body.analysis .finding .evidence dt::after {
+    content: ":";
+}
+
+body.analysis .finding .evidence dd {
+    margin: 0 0 0 0.3rem;
+    color: var(--text-soft);
+    font-variant-numeric: tabular-nums;
+}
