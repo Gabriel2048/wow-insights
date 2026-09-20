@@ -162,7 +162,7 @@ sequenceDiagram
     else serve-recorded
         T->>F: read fight-{id}.json
     end
-    C->>C: buildFightDetail — roster, tables, deaths
+    C->>C: buildFightDetail — roster, tables, deaths, rankings
     alt player resolves to an actor in this fight
         S->>S: knowledge.Lookup(player.SpecID()) — zero tables for an unauthored spec
         S->>C: Timeline(code, fight, actor, knowledge)

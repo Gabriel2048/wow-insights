@@ -128,6 +128,59 @@ body.fight .stat .label {
     letter-spacing: 0.05em;
 }
 
+/* A stat whose number does not explain itself. The tip is real DOM rather
+   than a content: attr(), so a screen reader reads it as part of the tile;
+   it is revealed on hover and on keyboard focus, and nothing here needs a
+   script — #7's Content-Security-Policy allows no inline one. */
+body.fight .stat.tipped {
+    position: relative;
+    cursor: help;
+}
+
+body.fight .stat.tipped .label {
+    display: inline-block;
+    border-bottom: 1px dotted var(--muted-2);
+}
+
+body.fight .stat .tip {
+    position: absolute;
+    left: 0;
+    bottom: calc(100% + 0.4rem);
+    z-index: 5;
+    width: max-content;
+    max-width: min(20rem, 70vw);
+    padding: 0.55rem 0.7rem;
+    border: 1px solid var(--border);
+    border-radius: 0.4rem;
+    background: var(--surface-2);
+    color: var(--text-soft);
+    font-size: 0.75rem;
+    line-height: 1.45;
+    font-weight: 400;
+    text-transform: none;
+    letter-spacing: normal;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.12s ease;
+}
+
+body.fight .stat.tipped:hover .tip,
+body.fight .stat.tipped:focus .tip,
+body.fight .stat.tipped:focus-within .tip {
+    opacity: 1;
+}
+
+body.fight .stat.tipped:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    body.fight .stat .tip {
+        transition: none;
+    }
+}
+
 body.fight .hint {
     color: var(--muted);
 }

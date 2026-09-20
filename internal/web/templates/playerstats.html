@@ -10,6 +10,12 @@
         <div class="stat"><span class="value">{{printf "%.1f%%" .OverhealPercent}}</span><span class="label">Overheal</span></div>
         <div class="stat"><span class="value">{{printf "%.0f" .ItemLevel}}</span><span class="label">Item level</span></div>
         <div class="stat"><span class="value">{{.Deaths}}</span><span class="label">Deaths</span></div>
+        {{if .Ranked}}
+        {{/* tabindex so the explanation is reachable by keyboard and not only by hover.
+             The text is real DOM rather than a CSS content: attribute, so a screen
+             reader reads it too. */}}
+        <div class="stat tipped" tabindex="0"><span class="value">{{.Ranking.Percentile}}</span><span class="label">Percentile</span><span class="tip">{{.RankingExplained}}</span></div>
+        {{end}}
     </div>
 {{else}}
     <p class="hint">Pick a player above to see their numbers for this pull.</p>

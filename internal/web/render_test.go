@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"wowinsight/internal/view"
+	"wowinsight/internal/warcraftlogs"
 )
 
 // render executes one template and fails the test if it errors, returning the
@@ -335,5 +336,37 @@ func TestEachPageSetsItsBodyClass(t *testing.T) {
 		if !strings.Contains(render(t, page, data), `<body class="`+class+`">`) {
 			t.Errorf("%s does not set body.%s", page, class)
 		}
+	}
+}
+
+// Warcraft Logs rates the pull; the page shows the bracket percentile, which
+// compares the player only with parses at their item level. A player it did
+// not rate shows nothing at all — a confident "0th percentile" would be a lie,
+// and it is what a naive decode of an absent payload produces.
+func TestFightPageShowsTheRankingAndOmitsItWhenThereIsNone(t *testing.T) {
+	page := render(t, "fight.html", fullFightPage())
+	for _, want := range []string{
+		"61st",       // the bracket percentile, as an ordinal
+		"Percentile", // the tile's label
+		"Better than 61% of ranked Fire Mage parses", // the tip says which way is good
+		"out of 440 of them",                         // what the percentile is measured against
+		"better than 55%",                            // the all-parses figure
+		`class="stat tipped" tabindex="0"`,           // reachable by keyboard, not hover alone
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("ranked page is missing %q", want)
+		}
+	}
+
+	data := fullFightPage()
+	unranked := *data.Player
+	unranked.Ranking = warcraftlogs.Ranking{}
+	data.Player = &unranked
+	page = render(t, "fight.html", data)
+	if strings.Contains(page, "Percentile") {
+		t.Error("an unranked player still gets a percentile tile; an absent ranking must show nothing")
+	}
+	if strings.Contains(page, "0th") {
+		t.Error("an unranked player renders as 0th percentile, which is a lie about their parse")
 	}
 }

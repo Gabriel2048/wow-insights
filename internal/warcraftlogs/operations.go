@@ -67,6 +67,7 @@ var (
       damage: table(dataType: DamageDone, fightIDs: [$id])
       healing: table(dataType: Healing, fightIDs: [$id])
       deaths: table(dataType: Deaths, fightIDs: [$id])
+      rankings(fightIDs: [$id])
     }
   }
 }`}
