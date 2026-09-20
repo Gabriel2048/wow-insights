@@ -97,5 +97,10 @@ func announce(logger *slog.Logger, replay *fixture.Replay, wcl *warcraftlogs.Cli
 		for _, player := range f.Players {
 			logger.Info(fmt.Sprintf("%s/report/%s/fight/%d?player=%d", base, replay.Code(), f.ID, player))
 		}
+		// The coaching view of the same pull. Listed once per fight rather
+		// than once per player: it carries the same picker the fight page
+		// does, so one link reaches every player, and doubling this listing
+		// would bury the timeline URLs it sits among.
+		logger.Info(fmt.Sprintf("%s/report/%s/fight/%d/analysis", base, replay.Code(), f.ID))
 	}
 }

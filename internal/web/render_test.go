@@ -295,7 +295,7 @@ func TestStaticAssetsAreHashedAndCacheable(t *testing.T) {
 
 func assertAssetsAreHashedAndCacheable(t *testing.T, page string) {
 	t.Helper()
-	links := regexp.MustCompile(`/static/([0-9a-f]{12})/(app\.css|timeline\.js)`).FindAllStringSubmatch(page, -1)
+	links := regexp.MustCompile(`/static/([0-9a-f]{12})/([A-Za-z0-9._-]+)`).FindAllStringSubmatch(page, -1)
 	if len(links) == 0 {
 		t.Fatal("the page links no hashed asset, so it has no stylesheet")
 	}
@@ -454,5 +454,25 @@ func TestTheViewStripMarksTheCurrentViewAndKeepsThePlayer(t *testing.T) {
 	noPlayer.Player, noPlayer.SelectedID = nil, 0
 	if page := render(t, "analysis.html", noPlayer); strings.Contains(page, "?player=") {
 		t.Error("the strip carries ?player= with no player selected")
+	}
+}
+
+// With nobody picked the analysis page is an invitation, not an empty
+// findings box about no one in particular. It shares playerstats.html's
+// {{else}} branch with the fight page so the two cannot word it differently.
+func TestAnalysisPageWithNoPlayerInvitesRatherThanReportsNothing(t *testing.T) {
+	data := analysisPage()
+	data.Player, data.SelectedID = nil, 0
+	page := render(t, "analysis.html", data)
+
+	if !strings.Contains(page, "Pick a player") {
+		t.Error("the analysis page does not invite a player to be picked")
+	}
+	if strings.Contains(page, "No findings") {
+		t.Error("the analysis page reports no findings for nobody; the findings box needs a player")
+	}
+	// Still a whole page: the tab strip is how you get back.
+	if !strings.Contains(page, "viewtabs") {
+		t.Error("the analysis page lost its view strip when no player was selected")
 	}
 }
