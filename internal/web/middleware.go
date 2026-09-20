@@ -86,6 +86,14 @@ type budgeted interface {
 	Budget() (warcraftlogs.RateLimit, bool)
 }
 
+// cached is what a cache offers beyond logsClient. Asked for by type for the
+// same reason as budgeted: the recorded binary runs without one, and a hit
+// rate is the only number that says whether the cache is working at all —
+// which this app has no metrics system to tell it otherwise.
+type cached interface {
+	Stats() (hits, misses int)
+}
+
 // requestID gives every request an id, returns it in a response header so a
 // user's report can be matched to a log line, and attaches a logger carrying
 // it to the context, so every line written while handling this request can be
@@ -232,6 +240,10 @@ func (s *Server) accessLog(mux *http.ServeMux) middleware {
 						"points_reset_in_s", snapshot.PointsResetIn,
 					)
 				}
+			}
+			if c, ok := s.wcl.(cached); ok {
+				hits, misses := c.Stats()
+				attrs = append(attrs, "cache_hits", hits, "cache_misses", misses)
 			}
 			s.logger(r).Info("request", attrs...)
 		})

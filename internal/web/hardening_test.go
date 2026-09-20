@@ -145,3 +145,22 @@ func TestAGetIsNeverRefusedAndStartsNothing(t *testing.T) {
 		t.Errorf("a GET did %d timeline fetches; the protection above is only sound because it does none", timelines)
 	}
 }
+
+// The access line reads the points budget by asking the client whether it
+// can answer. Wrapping the client in a cache would silently end that, taking
+// the one number that says how close the deployment is to its hourly ceiling
+// out of every log line — so a decorator has to carry what it covers.
+func TestTheCacheStillAnswersWhatTheAccessLineAsks(t *testing.T) {
+	var cache logsClient = warcraftlogs.NewCache(warcraftlogs.New("id", "secret"))
+
+	b, ok := cache.(budgeted)
+	if !ok {
+		t.Fatal("a cached client cannot report the points budget; every access line would lose it")
+	}
+	if _, known := b.Budget(); known {
+		t.Error("a client that has made no request reports a known budget")
+	}
+	if _, ok := cache.(cached); !ok {
+		t.Error("a cached client reports no hit rate, so nothing says whether the cache works")
+	}
+}

@@ -50,6 +50,11 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("parse templates: %w", err)
 	}
-	s := web.New(warcraftlogs.New(cfg.ClientID, cfg.ClientSecret), tpl, logger)
+	// The cache goes on in the shipped binary only. cmd/dev/serve-recorded
+	// deliberately does without it: a recording answers instantly and for
+	// free, and a cache in front of it would hide a fixture that was never
+	// recorded behind an answer that was — which is precisely the failure
+	// the replay exists to make loud.
+	s := web.New(warcraftlogs.NewCache(warcraftlogs.New(cfg.ClientID, cfg.ClientSecret)), tpl, logger)
 	return s.Run(ctx, cfg.Addr())
 }

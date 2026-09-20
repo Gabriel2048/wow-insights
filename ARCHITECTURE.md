@@ -16,7 +16,7 @@ Who the system is for, and what it depends on outside the repository.
 ```mermaid
 flowchart LR
     user["A raider with a browser"]
-    app["wowinsight<br/>one static Go binary<br/>no database, no cache"]
+    app["wowinsight<br/>one static Go binary<br/>no database; an in-memory cache<br/>that dies with the process"]
     oauth["Warcraft Logs OAuth<br/>/oauth/token"]
     api[("Warcraft Logs v2 GraphQL API<br/>/api/v2/client<br/>3,600 points per hour, shared by every user")]
     zam["wow.zamimg.com/js/tooltips.js<br/>unversioned, no SRI"]
@@ -28,9 +28,12 @@ flowchart LR
     app -->|"GET /static/{hash}/…<br/>the stylesheet and the script, cached for a year"| user
 ```
 
-- The binary is the whole deployment. Nothing is stored between requests, so every page
-  view re-queries the API against one hourly budget. #2 owns the cache; do not invent
-  one.
+- The binary is the whole deployment. Nothing is persisted, and the cache in front of the
+  client is in memory, bounded and gone on restart — so a cold process still pays full
+  price for the first look at a pull. It caches the *analysis* this code built, never a
+  response body: the API answers `cache-control: no-cache, private`, and the terms forbid
+  keeping cached copies of their content longer than that allows. A document the API
+  reported errors on is never cached at all.
 - The tooltips script is the only third-party code that executes, and it runs with full
   origin privileges in the browser. It constrains any Content-Security-Policy work (#7).
 - The wire retries a 429, a 5xx or a network failure, a few attempts with doubling backoff
@@ -119,7 +122,7 @@ says so. Adding a spec is one file and one row in the table.
 
 | Seam | Declared in | What hangs on it |
 | --- | --- | --- |
-| `logsClient` — the three methods the handlers call | `internal/web/server.go`, by the consumer | `fakeWCL` in tests; the cache decorator #2 will add |
+| `logsClient` — the three methods the handlers call | `internal/web/server.go`, by the consumer | `fakeWCL` in tests; `warcraftlogs.Cache` in the shipped binary |
 | `http.RoundTripper` under the client, via `WithTransport` | `internal/warcraftlogs/client.go` | the recorder and the replay in `internal/fixture` |
 
 The replay sits *under* the client rather than beside it on purpose: a fake client would
