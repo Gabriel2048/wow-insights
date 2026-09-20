@@ -21,7 +21,7 @@ flowchart LR
     api[("Warcraft Logs v2 GraphQL API<br/>/api/v2/client<br/>3,600 points per hour, shared by every user")]
     zam["wow.zamimg.com/js/tooltips.js<br/>unversioned, no SRI"]
 
-    user -->|"GET /?url=…<br/>GET /report/{code}/fight/{id}?player={actor}<br/>GET /healthz"| app
+    user -->|"GET /?url=…<br/>GET /report/{code}/fight/{id}?player={actor}<br/>GET /report/{code}/fight/{id}/analysis?player={actor}<br/>GET /healthz"| app
     app -->|"client-credentials token, cached until expiry,<br/>one fetch shared by concurrent callers"| oauth
     app -->|"one query per page section, every page view"| api
     user -.->|"loaded by every fight page"| zam
@@ -182,6 +182,15 @@ sequenceDiagram
     end
     S->>B: fight.html — 200 even when Timeline failed (stats render, with a notice)
 ```
+
+**The pull has two views, not one page.** `GET …/fight/{id}` draws the timeline;
+`GET …/fight/{id}/analysis` is the coaching view #2 fills in. Both are rendered by one
+handler preamble (`pullPage`) that validates the route, fetches the fight and resolves
+the player, so the two cannot drift into answering the same bad request differently, and
+a shared `viewtabs` partial links them as ordinary links carrying the selected player.
+The analysis view deliberately fetches **no** `Timeline`: it draws none, and a `Timeline`
+is the most expensive query the app makes, so paying for one to render a page that
+ignores it would make moving between the two views cost more than reading either.
 
 - The page degrades rather than fails: a `Timeline` error is logged with what the API
   said, the stats render without it, and a notice says so where the timeline would be.

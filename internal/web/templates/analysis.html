@@ -1,5 +1,5 @@
-{{define "page"}}fight{{end}}
-{{define "title"}}{{.Fight.Name}} &middot; wowinsight{{end}}
+{{define "page"}}analysis{{end}}
+{{define "title"}}{{.Fight.Name}} &middot; analysis &middot; wowinsight{{end}}
 {{define "content"}}
 <p><a href="/?url=https://www.warcraftlogs.com/reports/{{.Detail.ReportCode}}">&larr; {{.Detail.ReportTitle}}</a></p>
 
@@ -7,11 +7,7 @@
 <p class="meta">
     {{with .Fight.DifficultyName}}{{.}} &middot; {{end}}
     <span class="{{if eq .Fight.Outcome "Kill"}}kill{{else}}wipe{{end}}">{{.Fight.Outcome}}</span>
-    {{if and (eq .Fight.Outcome "Wipe") .Fight.BossPercentage}}
-        ({{printf "%.1f" .Fight.BossPercentage}}% remaining)
-    {{end}}
     &middot; {{duration .Fight.Duration}}
-    &middot; {{len .Detail.Players}} players
 </p>
 
 {{template "viewtabs" .}}
@@ -35,12 +31,14 @@
     <p class="notice">{{.}}</p>
 {{end}}
 
-{{with .Timeline}}
-{{template "track" .}}
-{{template "casttable" .}}
+{{with .Player}}
+<div class="empty">
+    <h2>No findings yet</h2>
+    <p>This page will carry what the log says you could have done differently &mdash; pauses
+       longer than a global cooldown, cooldowns drifting later each use, procs that went
+       unspent. None of it is computed yet.</p>
+    <p class="hint">The timeline next door already shows the raw casts, pauses and cooldown
+       windows this will be judged from.</p>
+</div>
 {{end}}
-{{end}}
-{{define "scripts"}}
-<script src="{{asset "timeline.js"}}" defer></script>
-<script src="https://wow.zamimg.com/js/tooltips.js" defer></script>
 {{end}}

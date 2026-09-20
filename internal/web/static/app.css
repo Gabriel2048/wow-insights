@@ -4,8 +4,22 @@
    Each page's rules are scoped by the class the layout puts on <body>, so a page gets
    exactly the stylesheet it had when the rules were inline and nothing from another
    page: the fight page is full width, the index and error pages are narrow centered
-   forms, and the first cut of this file let one leak into the other. Only :root is
-   shared. */
+   forms, and the first cut of this file let one leak into the other.
+
+   :root was the only thing shared until #54, which gave the fight page a sibling
+   analysis page showing the same player header and stat tiles. Those rules are now
+   written against both scopes at once — "body.fight .stat, body.analysis .stat" — and
+   NOT promoted to a bare ".stat". That distinction is the whole safety property: the
+   index page already carries its own .value and .label spans under .summary, so class
+   names here are demonstrably not unique across pages, and a bare selector would be a
+   leak waiting for the next page rather than a real one today. Sharing between two
+   named scopes keeps "nothing reaches a page that did not ask for it" mechanical.
+
+   One class is deliberately unscoped: .viewtabs. It is emitted only by the shared
+   viewtabs partial, so it is on exactly the pages that include it and cannot reach one
+   that does not — and scoping it would be a list to forget to extend the day a third
+   page renders the strip. The rule is: a class a shared PARTIAL owns is global; a rule
+   a PAGE shares is written against both scopes. */
 
 :root {
     color-scheme: dark;
@@ -44,29 +58,29 @@ body.fight {
     color: var(--text);
 }
 
-body.fight a {
+body.fight a, body.analysis a {
     color: var(--cast);
 }
 
-body.fight h1 {
+body.fight h1, body.analysis h1 {
     margin: 0.5rem 0 0.25rem;
     font-size: 1.6rem;
 }
 
-body.fight .meta {
+body.fight .meta, body.analysis .meta {
     margin: 0 0 1.5rem;
     color: var(--muted);
 }
 
-body.fight .kill {
+body.fight .kill, body.analysis .kill {
     color: var(--kill);
 }
 
-body.fight .wipe {
+body.fight .wipe, body.analysis .wipe {
     color: var(--wipe);
 }
 
-body.fight .picker {
+body.fight .picker, body.analysis .picker {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
@@ -78,7 +92,7 @@ body.fight .picker {
     background: var(--surface);
 }
 
-body.fight select {
+body.fight select, body.analysis select {
     flex: 1;
     min-width: 0;
     max-width: 100%;
@@ -90,7 +104,7 @@ body.fight select {
     color: inherit;
 }
 
-body.fight button {
+body.fight button, body.analysis button {
     padding: 0.6rem 1.25rem;
     font-size: 1rem;
     border: 0;
@@ -100,26 +114,26 @@ body.fight button {
     cursor: pointer;
 }
 
-body.fight .stats {
+body.fight .stats, body.analysis .stats {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
     gap: 1rem;
 }
 
-body.fight .stat {
+body.fight .stat, body.analysis .stat {
     padding: 1rem;
     border: 1px solid var(--surface-2);
     border-radius: 0.5rem;
     background: var(--surface);
 }
 
-body.fight .stat .value {
+body.fight .stat .value, body.analysis .stat .value {
     display: block;
     font-size: 1.4rem;
     font-weight: 600;
 }
 
-body.fight .stat .label {
+body.fight .stat .label, body.analysis .stat .label {
     display: block;
     margin-top: 0.25rem;
     font-size: 0.75rem;
@@ -132,17 +146,17 @@ body.fight .stat .label {
    than a content: attr(), so a screen reader reads it as part of the tile;
    it is revealed on hover and on keyboard focus, and nothing here needs a
    script — #7's Content-Security-Policy allows no inline one. */
-body.fight .stat.tipped {
+body.fight .stat.tipped, body.analysis .stat.tipped {
     position: relative;
     cursor: help;
 }
 
-body.fight .stat.tipped .label {
+body.fight .stat.tipped .label, body.analysis .stat.tipped .label {
     display: inline-block;
     border-bottom: 1px dotted var(--muted-2);
 }
 
-body.fight .stat .tip {
+body.fight .stat .tip, body.analysis .stat .tip {
     position: absolute;
     left: 0;
     bottom: calc(100% + 0.4rem);
@@ -166,26 +180,30 @@ body.fight .stat .tip {
 
 body.fight .stat.tipped:hover .tip,
 body.fight .stat.tipped:focus .tip,
-body.fight .stat.tipped:focus-within .tip {
+body.fight .stat.tipped:focus-within .tip,
+body.analysis .stat.tipped:hover .tip,
+body.analysis .stat.tipped:focus .tip,
+body.analysis .stat.tipped:focus-within .tip {
     opacity: 1;
 }
 
-body.fight .stat.tipped:focus-visible {
+body.fight .stat.tipped:focus-visible, body.analysis .stat.tipped:focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 2px;
 }
 
 @media (prefers-reduced-motion: reduce) {
-    body.fight .stat .tip {
+    body.fight .stat .tip,
+    body.analysis .stat .tip {
         transition: none;
     }
 }
 
-body.fight .hint {
+body.fight .hint, body.analysis .hint {
     color: var(--muted);
 }
 
-body.fight h3 {
+body.fight h3, body.analysis h3 {
     margin: 2rem 0 0.75rem;
     font-size: 1.1rem;
 }
@@ -511,7 +529,7 @@ body.fight .track .gap {
 
 /* Something that went wrong without stopping the page: said, not
    left as an empty area that looks like data. */
-body.fight .notice {
+body.fight .notice, body.analysis .notice {
     margin: 1rem 0;
     padding: 0.6rem 0.8rem;
     border-left: 3px solid var(--warn);
@@ -1133,3 +1151,76 @@ body.error p { line-height: 1.5; }
 body.error .status { color: #8a93a2; font-size: 0.85rem; }
 body.error a { color: var(--cast); }
     
+
+/* ---- the analysis page (body.analysis) ---- */
+
+/* The page frame itself is the fight page's, because the two are read one
+   after the other and a width that changes under you reads as a different
+   site. Everything else it needs — the header, the picker, the stat tiles,
+   the tooltip — is shared above rather than duplicated here. */
+body.analysis {
+    margin: 0 auto;
+    max-width: min(96vw, 100rem);
+    padding: 1.5rem;
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+}
+
+/* Two links, marked by aria-current rather than by a class, so the thing the
+   stylesheet keys on is the same thing a screen reader announces. */
+.viewtabs {
+    display: flex;
+    gap: 0.25rem;
+    margin: 1.25rem 0;
+    border-bottom: 1px solid var(--border-soft);
+}
+
+.viewtabs a {
+    padding: 0.5rem 1rem;
+    border: 1px solid transparent;
+    border-bottom: none;
+    border-radius: 0.4rem 0.4rem 0 0;
+    margin-bottom: -1px;
+    color: var(--muted);
+    text-decoration: none;
+}
+
+.viewtabs a:hover {
+    color: var(--text);
+    background: var(--surface-1);
+}
+
+.viewtabs a[aria-current="page"] {
+    border-color: var(--border-soft);
+    background: var(--surface);
+    color: var(--text);
+}
+
+.viewtabs a:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+}
+
+body.analysis .empty {
+    margin-top: 1.5rem;
+    padding: 1.5rem;
+    border: 1px dashed var(--border);
+    border-radius: 0.5rem;
+    background: var(--surface-1);
+    max-width: 60ch;
+}
+
+body.analysis .empty h2 {
+    margin: 0 0 0.5rem;
+    font-size: 1.1rem;
+}
+
+body.analysis .empty p {
+    margin: 0 0 0.5rem;
+    color: var(--text-soft);
+}
+
+body.analysis .empty p:last-child {
+    margin-bottom: 0;
+}

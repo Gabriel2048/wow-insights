@@ -288,10 +288,16 @@ func TestPlayerSuppliedTextIsEscaped(t *testing.T) {
 // those paths serve the files with a cache lifetime that a hash makes safe;
 // a stale hash is a 404, not a forever-cached wrong file.
 func TestStaticAssetsAreHashedAndCacheable(t *testing.T) {
-	page := render(t, "fight.html", fullFightPage())
+	for name, data := range pageFixtures(t) {
+		t.Run(name, func(t *testing.T) { assertAssetsAreHashedAndCacheable(t, render(t, name, data)) })
+	}
+}
+
+func assertAssetsAreHashedAndCacheable(t *testing.T, page string) {
+	t.Helper()
 	links := regexp.MustCompile(`/static/([0-9a-f]{12})/(app\.css|timeline\.js)`).FindAllStringSubmatch(page, -1)
-	if len(links) != 2 {
-		t.Fatalf("the page links %d hashed assets, want the stylesheet and the script: %v", len(links), links)
+	if len(links) == 0 {
+		t.Fatal("the page links no hashed asset, so it has no stylesheet")
 	}
 	if strings.Contains(page, "<script>") {
 		t.Error("the page still carries an inline script; the CSP #7 wants needs none")
@@ -326,12 +332,32 @@ func TestStaticAssetsAreHashedAndCacheable(t *testing.T) {
 // each page sets — without it, the index's centered flex body applied to the
 // fight page and squeezed the timeline into a column (found in review).
 // Whether the stylesheet honours the class is the stylesheet's business.
+// pageFixtures is one plausible render for every page in pages. The tests
+// below range over the real slice rather than a hand-written copy of it,
+// because a copy is a list a new page silently falls out of — which is
+// exactly what happened to both of them before analysis.html was added. A
+// page with no fixture here fails rather than being skipped.
+func pageFixtures(t *testing.T) map[string]any {
+	t.Helper()
+	fixtures := map[string]any{
+		"index.html":    pageData{},
+		"fight.html":    fullFightPage(),
+		"analysis.html": analysisPage(),
+		"error.html":    errorPageData{Status: 404, Message: "no"},
+	}
+	for _, page := range pages {
+		if _, ok := fixtures[page]; !ok {
+			t.Fatalf("no fixture for %s: every page in pages needs one, or the page-wide tests do not cover it", page)
+		}
+	}
+	return fixtures
+}
+
+// The layout defaults the body class to "fight", so a page that forgets to
+// define "page" is styled as the fight page and looks almost right — which is
+// the worst kind of wrong.
 func TestEachPageSetsItsBodyClass(t *testing.T) {
-	for page, data := range map[string]any{
-		"fight.html": fullFightPage(),
-		"index.html": pageData{},
-		"error.html": errorPageData{Status: 404, Message: "no"},
-	} {
+	for page, data := range pageFixtures(t) {
 		class := strings.TrimSuffix(page, ".html")
 		if !strings.Contains(render(t, page, data), `<body class="`+class+`">`) {
 			t.Errorf("%s does not set body.%s", page, class)
@@ -368,5 +394,65 @@ func TestFightPageShowsTheRankingAndOmitsItWhenThereIsNone(t *testing.T) {
 	}
 	if strings.Contains(page, "0th") {
 		t.Error("an unranked player renders as 0th percentile, which is a lie about their parse")
+	}
+}
+
+// The analysis page is the coaching view of a pull: the same header and stat
+// tiles as the timeline page, and none of its weight. It draws no timeline,
+// so it must load neither timeline.js nor the Wowhead tooltip script — the
+// one piece of third-party code this app executes, and the thing #7's
+// Content-Security-Policy has to make room for.
+func TestAnalysisPageDrawsNoTimelineAndLoadsNoScript(t *testing.T) {
+	page := render(t, "analysis.html", analysisPage())
+
+	for _, unwanted := range []string{"timeline.js", "zamimg.com", "<script"} {
+		if strings.Contains(page, unwanted) {
+			t.Errorf("the analysis page carries %q; it draws no timeline and needs no script", unwanted)
+		}
+	}
+	for _, want := range []string{
+		"Testmage",    // the player, from the shared partial
+		"Percentile",  // the ranking tile came with it
+		"No findings", // and the page says plainly that there are none yet
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("the analysis page is missing %q", want)
+		}
+	}
+	if strings.Contains(page, "ZgotmplZ") {
+		t.Error("page contains ZgotmplZ, so a value was refused by the contextual escaper")
+	}
+	if strings.Contains(page, "<no value>") {
+		t.Error("page contains <no value>, so a field the template asked for does not exist")
+	}
+}
+
+// Both views of a pull carry the strip, each marks itself, and both links
+// keep the selected player — losing them on every move between the two views
+// is the whole reason this is a link and not a form.
+func TestTheViewStripMarksTheCurrentViewAndKeepsThePlayer(t *testing.T) {
+	cases := map[string]struct{ page, current, other string }{
+		"fight.html":    {"fight.html", "/report/ExampleReport123/fight/12?player=7", "/report/ExampleReport123/fight/12/analysis?player=7"},
+		"analysis.html": {"analysis.html", "/report/ExampleReport123/fight/12/analysis?player=7", "/report/ExampleReport123/fight/12?player=7"},
+	}
+	data := map[string]any{"fight.html": fullFightPage(), "analysis.html": analysisPage()}
+	for name, c := range cases {
+		page := render(t, c.page, data[name])
+		if !strings.Contains(page, `href="`+c.current+`"`) {
+			t.Errorf("%s: the strip does not link this view (%s)", name, c.current)
+		}
+		if !strings.Contains(page, c.other) {
+			t.Errorf("%s: the strip does not link the other view (%s)", name, c.other)
+		}
+		if n := strings.Count(page, `aria-current="page"`); n != 1 {
+			t.Errorf("%s: %d links marked current, want exactly 1", name, n)
+		}
+	}
+
+	// With nobody selected the links must not carry a dangling ?player=.
+	noPlayer := analysisPage()
+	noPlayer.Player, noPlayer.SelectedID = nil, 0
+	if page := render(t, "analysis.html", noPlayer); strings.Contains(page, "?player=") {
+		t.Error("the strip carries ?player= with no player selected")
 	}
 }

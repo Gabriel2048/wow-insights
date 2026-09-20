@@ -150,7 +150,17 @@ func fullFightPage() fightPageData {
 		SelectedID: player.ActorID,
 		Player:     &player,
 		Timeline:   laidOut(fullTimeline()),
+		View:       "timeline",
 	}
+}
+
+// analysisPage is the coaching view of the same pull: the same fight and
+// player, no timeline, because that page draws none.
+func analysisPage() fightPageData {
+	page := fullFightPage()
+	page.Timeline = nil
+	page.View = "analysis"
+	return page
 }
 
 // pageWith is fullFightPage with a different analysis drawn on it.

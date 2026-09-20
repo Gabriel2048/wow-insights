@@ -24,10 +24,10 @@ var staticFS embed.FS
 // set: the shared layout and partials, cloned, plus the page's own file
 // defining "title" and "content". Cloning is what lets two pages both
 // define "content" — one set could hold only one.
-var pages = []string{"index.html", "fight.html", "error.html"}
+var pages = []string{"index.html", "fight.html", "analysis.html", "error.html"}
 
 // partials are the files every page set starts from.
-var partials = []string{"layout.html", "track.html", "casttable.html", "playerstats.html"}
+var partials = []string{"layout.html", "viewtabs.html", "track.html", "casttable.html", "playerstats.html"}
 
 // Templates is the parsed page set.
 type Templates struct {
