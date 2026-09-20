@@ -100,9 +100,18 @@ const (
 	ruleCooldownTail = "cooldown-unused-tail"
 )
 
-// lateFirstUse is how long into a pull a judged cooldown can go unused before
-// it is worth saying so. A cooldown held past this at the start is almost
-// always a cooldown that was forgotten rather than saved.
+// lateFirstUse is how long a player can be *fighting* before a judged
+// cooldown goes out. It is measured from their first cast, not from the pull
+// timer: a pull where the boss is not yet reachable, or that someone joined
+// late, is not one where they declined to press anything, and measuring from
+// zero would call that a mistake.
+//
+// Twenty seconds sits in a real gap rather than at a number picked by taste.
+// Across the nine pulls this was checked against — the six top Fire Mage
+// parses on the reference encounter, the owner's, and the two in the
+// committed recording — the first Combustion goes out between 1 and 14
+// seconds of engaging in eight of them, and at 37 seconds in the ninth, with
+// eighty casts already behind it.
 const lateFirstUse = 20 * time.Second
 
 // Findings is everything the analysis can say about one player's pull. It is
@@ -157,7 +166,7 @@ func cooldownFindings(t *Timeline, know knowledge.Knowledge, actedUntil time.Dur
 		if len(used) == 0 {
 			continue
 		}
-		if f, ok := lateOpener(rule, used[0]); ok {
+		if f, ok := lateOpener(rule, used[0], engaged(t)); ok {
 			found = append(found, f)
 		}
 		if len(used) >= 2 {
@@ -174,20 +183,25 @@ func cooldownFindings(t *Timeline, know knowledge.Knowledge, actedUntil time.Dur
 }
 
 // lateOpener reports a judged cooldown that went unused well into the pull.
-func lateOpener(rule knowledge.JudgedCooldown, first time.Duration) (Finding, bool) {
-	if first <= lateFirstUse {
+func lateOpener(rule knowledge.JudgedCooldown, first, engaged time.Duration) (Finding, bool) {
+	// How long they were already fighting before it went out. A player who
+	// only reached the boss at 0:30 and used it at 0:38 was eight seconds
+	// late, not thirty-eight.
+	waited := first - engaged
+	if waited <= lateFirstUse {
 		return Finding{}, false
 	}
 	return Finding{
 		RuleID:   ruleCooldownLate,
 		Severity: Major,
-		Title:    fmt.Sprintf("%s went unused for the first %s", rule.Name, roundSeconds(first)),
-		Detail: fmt.Sprintf("Your first %s was at %s. It should go out in the opener, while the raid's damage buffs are still up and the boss is fresh — and starting late pushes every later use back with it, which usually costs a whole one by the end of the pull.",
-			rule.Name, formatOffset(first)),
-		At: 0,
+		Title:    fmt.Sprintf("%s went unused for your first %s of fighting", rule.Name, roundSeconds(waited)),
+		Detail: fmt.Sprintf("You started casting at %s and your first %s was at %s — %s of fighting without it. It should go out in the opener, while the raid's damage buffs are still up and the boss is fresh, and starting late pushes every later use back with it.",
+			formatOffset(engaged), rule.Name, formatOffset(first), roundSeconds(waited)),
+		At: engaged,
 		Evidence: []Evidence{
+			{Label: "you engaged at", Value: formatOffset(engaged)},
 			{Label: "first used", Value: formatOffset(first)},
-			{Label: "should have been", Value: "in the opener"},
+			{Label: "spent fighting without it", Value: roundSeconds(waited)},
 		},
 	}, true
 }
@@ -227,6 +241,18 @@ func unusedTail(rule knowledge.JudgedCooldown, used []time.Duration, floor, figh
 // is a true sentence that misleads — which is the one thing a coaching page
 // cannot afford.
 const usefulTail = 10 * time.Second
+
+// engaged is when the player actually started fighting: the first thing they
+// cast. A pull's timer starts when the boss is pulled, which is not always
+// when a given player can reach it.
+func engaged(t *Timeline) time.Duration {
+	for _, c := range t.Casts {
+		if c.Offset >= 0 {
+			return c.Offset
+		}
+	}
+	return 0
+}
 
 // roomFor is how many uses the pull had room for from the first one onwards,
 // at the pace the player demonstrated. A use must land strictly before the
