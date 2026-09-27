@@ -108,7 +108,7 @@ func (f Finding) AtMS() int64 { return f.At.Milliseconds() }
 //
 // Getting it right needs the talent, the boss's health over time, and whether
 // the spec opens with the cooldown at all — per-spec, per-talent knowledge
-// for every spec in the game. The rule was safe for the thirty-eight
+// for every spec in the game. The rule was safe for the thirty-nine
 // specialisations nobody has authored and wrong for the one that exists.
 const (
 	ruleCooldownTail = "cooldown-unused-tail"
