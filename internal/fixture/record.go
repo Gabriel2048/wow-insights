@@ -95,11 +95,25 @@ func (r *Recorder) Write(dir string) error {
 	}
 	files := make(map[string][]byte, len(r.exchanges))
 	for k, body := range r.exchanges {
+		// The key becomes a file name only after the same redaction as the
+		// body. A Peer key is made of another player's report code and name,
+		// and a file name is as public as the file.
+		//
+		// Every error below names the redacted file and never k: an error
+		// message that quoted the raw key would print the very name the
+		// refusal exists to keep out of the repository.
+		name, err := red.fileFor(k)
+		if err != nil {
+			return err
+		}
+		if _, clash := files[name]; clash {
+			return fmt.Errorf("fixture: two recordings would both be written as %s, and one would silently replace the other", name)
+		}
 		out, err := red.apply(body)
 		if err != nil {
-			return fmt.Errorf("%s.json: %w", k, err)
+			return fmt.Errorf("%s: %w", name, err)
 		}
-		files[k+".json"] = out
+		files[name] = out
 	}
 
 	if report, ok := files["report.json"]; ok {
