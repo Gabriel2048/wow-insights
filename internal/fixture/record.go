@@ -102,6 +102,7 @@ func (r *Recorder) Write(dir string) error {
 		// Every error below names the redacted file and never k: an error
 		// message that quoted the raw key would print the very name the
 		// refusal exists to keep out of the repository.
+		red := red.scopedTo(k)
 		name, err := red.fileFor(k)
 		if err != nil {
 			return err

@@ -43,6 +43,7 @@ func run(args []string, stderr io.Writer) error {
 	reportRef := fs.String("report", "", "report URL or code (required)")
 	fightID := fs.Int("fight", 0, "fight id within the report (required)")
 	players := fs.String("players", "", "comma-separated character names or actor ids to record timelines for")
+	cohort := fs.String("cohort", "", "one of -players to also record both comparisons for: the best at their item level and the top performers")
 	out := fs.String("out", "testdata", "directory to write; one directory holds one report")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -92,6 +93,7 @@ func run(args []string, stderr io.Writer) error {
 		}
 		return errors.New("record: re-run with -players naming who to record")
 	}
+	timelines := map[int]*warcraftlogs.Timeline{}
 	for ref := range strings.SplitSeq(*players, ",") {
 		player, err := resolve(detail, strings.TrimSpace(ref))
 		if err != nil {
@@ -100,14 +102,47 @@ func run(args []string, stderr io.Writer) error {
 		// The same lookup the page makes, so the recording holds exactly the
 		// streams the page will ask for.
 		know, known := knowledge.Lookup(player.SpecID())
-		if _, err := wcl.Timeline(ctx, code, detail.Fight, player.ActorID, know); err != nil {
+		t, err := wcl.Timeline(ctx, code, detail.Fight, player.ActorID, know)
+		if err != nil {
 			return fmt.Errorf("timeline for %s: %w", player.Name, err)
 		}
+		timelines[player.ActorID] = t
 		note := ""
 		if !known {
 			note = " — no knowledge for this spec, so no procs or cooldowns were asked for"
 		}
 		fmt.Fprintf(stderr, "recorded the timeline of actor %d (%s)%s\n", player.ActorID, player.Title(), note)
+	}
+
+	// The comparisons are recorded in this same run on purpose: their peers
+	// and this fight's roster then get their pseudonyms from one redactor, so
+	// the player the page excludes from their own cohort is recognisably them.
+	// CohortQueries is what the page asks with, so the recording holds exactly
+	// what the offline page will look for.
+	if *cohort != "" {
+		player, err := resolve(detail, strings.TrimSpace(*cohort))
+		if err != nil {
+			return err
+		}
+		t, ok := timelines[player.ActorID]
+		if !ok {
+			return errors.New("record: -cohort names a player -players did not record")
+		}
+		sameItemLevel, top := warcraftlogs.CohortQueries(code, detail.Fight, player, t)
+		for _, q := range []warcraftlogs.CohortQuery{sameItemLevel, top} {
+			if q.Kind == warcraftlogs.SameItemLevel && q.Bracket == 0 {
+				fmt.Fprintln(stderr, "no item-level comparison: this pull has no ranking to find the bracket from")
+				continue
+			}
+			c, err := wcl.Cohort(ctx, q)
+			if err != nil {
+				return fmt.Errorf("comparison: %w", err)
+			}
+			// Counts only. The peers' names went out in requests and came
+			// back in responses the redactor is about to rewrite; they are
+			// not printed here either.
+			fmt.Fprintf(stderr, "recorded a comparison: %d of %d peers read, %d skipped\n", len(c.Peers), c.Asked, c.Skipped)
+		}
 	}
 
 	if err := recorder.Write(*out); err != nil {

@@ -54,7 +54,8 @@ out in production. Anything not in the recording is an error, never a live reque
 recording-backed tests skip when `testdata/` is absent locally and fail in CI, where it is
 committed. The redaction renames and never renumbers, so the actor ids in
 `testdata/masterdata.json` are the real ones and are what `-players` takes: when you need a
-re-record, name the fight id and the actor ids. See
+re-record, name the fight id and the actor ids, and which of them `-cohort` compares (the
+rankings pages and other players' pulls behind the comparison are recorded with it). See
 `docs/decisions/2026-09-11-recorded-fixtures.md`.
 
 ## Non-negotiables

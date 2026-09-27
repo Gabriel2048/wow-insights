@@ -96,6 +96,7 @@
             {{if .Asked}}
                 {{if .AtMS}}<a class="at" href="/report/{{$.Detail.ReportCode}}/fight/{{$.Detail.Fight.ID}}?player={{$.SelectedID}}#t={{.AtMS}}">{{.Timestamp}}</a>{{end}}
                 {{.Measured}}
+                {{with .Note}}<p class="note">{{.}}</p>{{end}}
                 {{with .Evidence}}
                 <dl class="evidence">
                     {{range .}}<dt>{{.Label}}</dt><dd>{{.Value}}</dd>{{end}}

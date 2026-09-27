@@ -22,6 +22,17 @@ type fakeWCL struct {
 	report      func(ctx context.Context, code string) (*warcraftlogs.Report, error)
 	fightDetail func(ctx context.Context, code string, fightID int) (*warcraftlogs.FightDetail, error)
 	timeline    func(ctx context.Context, code string, fight warcraftlogs.Fight, sourceID int, know knowledge.Knowledge) (*warcraftlogs.Timeline, error)
+	cohort      func(ctx context.Context, q warcraftlogs.CohortQuery) (*warcraftlogs.Cohort, error)
+}
+
+// Cohort is unstubbed by default like the rest, and the analysis tolerates
+// that by design: a comparison that could not be fetched is a check saying
+// so, never a failed page.
+func (f fakeWCL) Cohort(ctx context.Context, q warcraftlogs.CohortQuery) (*warcraftlogs.Cohort, error) {
+	if f.cohort == nil {
+		return nil, errNotStubbed
+	}
+	return f.cohort(ctx, q)
 }
 
 // errNotStubbed is what an unset method returns. A handler reaching for

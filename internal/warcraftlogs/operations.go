@@ -128,6 +128,32 @@ var (
   }
 }`}
 
+	// rankingsOp is one page of other players' ranked pulls of a boss. Bracket
+	// zero is every item level at once, which is how the top performers are
+	// asked for; any other bracket is one item level. Rows carry no actor id —
+	// only a name, a realm, a guild and the report their pull is in — which is
+	// why a peer's pull is then fetched by name.
+	rankingsOp = operation{"Rankings", `query Rankings($encounter: Int!, $difficulty: Int!, $className: String!, $specName: String!, $bracket: Int!, $page: Int!) {
+  ` + budgetFragment + `
+  worldData { encounter(id: $encounter) {
+    characterRankings(className: $className, specName: $specName, difficulty: $difficulty,
+                      metric: dps, bracket: $bracket, page: $page)
+  } }
+}`}
+
+	// peerOp is another player's pull: their casts and their damage-table row,
+	// both found by a filter naming them. The casts come back keyed by actor
+	// id with nothing inlined — measured, and the only shape the recorder will
+	// write — while the damage row carries their name, which the recorder
+	// redacts against the rankings page they were found on.
+	peerOp = operation{"Peer", `query Peer($code: String!, $id: Int!, $filter: String!) {
+  ` + budgetFragment + `
+  reportData { report(code: $code) {
+    casts: events(dataType: Casts, fightIDs: [$id], filterExpression: $filter, limit: 10000) { data nextPageTimestamp }
+    damage: table(dataType: DamageDone, fightIDs: [$id], filterExpression: $filter)
+  } }
+}`}
+
 	castPageOp = operation{"CastPage", `query CastPage($code: String!, $id: Int!, $source: Int!, $start: Float!, $end: Float!) {
   ` + budgetFragment + `
   reportData { report(code: $code) {
@@ -138,13 +164,31 @@ var (
 )
 
 // operations lists every document, for the tests that hold them to the rules.
-var operations = []operation{rateLimitOp, reportOp, masterDataOp, fightOp, timelineOp, castPageOp}
+var operations = []operation{rateLimitOp, reportOp, masterDataOp, fightOp, timelineOp, castPageOp, rankingsOp, peerOp}
 
 // expensive names the operations the budget guard applies to: the ones that
 // cost real points. A report's fight list and its master data are cheap and
 // are what a user needs to see the budget message in the first place.
+//
+// A comparison is a rankings page or two and a pull per peer, each about a
+// point, so it is guarded like the rest: a cohort is the thing to stop asking
+// for when the hour is nearly spent, not the page the player is looking at.
 func (op operation) expensive() bool {
-	return op.name == fightOp.name || op.name == timelineOp.name || op.name == castPageOp.name
+	switch op.name {
+	case fightOp.name, timelineOp.name, castPageOp.name, rankingsOp.name, peerOp.name:
+		return true
+	}
+	return false
+}
+
+// nameFilter is an events filter matching one character by name. It is the
+// only place a player's name is written into an expression, so it escapes
+// anything that could end the quoted string early — a character name cannot
+// contain a quote or a backslash, and the filter is not the place to find out
+// that one did.
+func nameFilter(name string) string {
+	escaped := strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(name)
+	return `source.name = "` + escaped + `"`
 }
 
 // filterVariable is the value for one of the timeline's filter variables: the

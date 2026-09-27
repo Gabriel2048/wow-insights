@@ -35,8 +35,13 @@ type peer struct {
 func peers() []peer {
 	return []peer{
 		{"Vexmira", "Grimspire", "Ashen Covenant", peerCodeA, 7},
-		{"Oruthane", "Amber Hollow", "Ashen Covenant", peerCodeA, 7},
-		{"Sallowfen", "Grimspire", "Lantern Road", peerCodeB, 3},
+		// A realm and a guild that are also words in the subject's own pull,
+		// the way a live page's realms and guilds were.
+		{"Oruthane", "Hollowmere", "Cindermark", peerCodeA, 7},
+		// A guild whose name contains a realm's and a player's, which is
+		// what the top page of a real boss held: redacted realm-first, it
+		// left a real word behind and the recorder refused to write.
+		{"Sallowfen", "Grimspire", "Wardens of Vexmira and Grimspire", peerCodeB, 3},
 	}
 }
 
@@ -57,6 +62,15 @@ func peerAPI(t *testing.T) *httptest.Server {
 			_, _ = w.Write([]byte(`{"data":{"reportData":{"report":{"code":"` + subjectCode + `","title":"A night",
 				"startTime":1700000000000,"endTime":1700000600000,"owner":{"name":"Oathbinder"},"zone":{"name":"The Venomous Abyss"},
 				"fights":[{"id":12,"name":"The Coiled Altar","kill":true,"difficulty":4,"startTime":1000,"endTime":301000}]}}}}`))
+		case "MasterData":
+			// The subject's roster. Its Mage has a shorter name than every
+			// peer on the rankings page, so any numbering that interleaved the
+			// two would hand Testmage to a peer. Its abilities carry a peer's
+			// realm and guild as ordinary words, which are not people here.
+			_, _ = w.Write([]byte(`{"data":{"reportData":{"report":{"masterData":{
+				"abilities":[{"gameID":391403,"name":"Mind Flay: Cindermark","icon":"x","type":"32"},
+					{"gameID":1236341,"name":"Hollowmere's Guillotine Technique","icon":"x","type":"1"}],"npcs":[],
+				"actors":[{"id":5,"name":"Emberly","type":"Player","subType":"Mage","server":"Grimspire"}]}}}}}`))
 		case "Rankings":
 			var rows []string
 			for i, p := range peers() {
@@ -356,4 +370,45 @@ func replayed(t *testing.T, r *Replay, op string, vars map[string]any) string {
 	}
 	b, _ := io.ReadAll(resp.Body)
 	return string(b)
+}
+
+// Adding a comparison to a recording never renames anybody already in it. The
+// kill is recorded with its peers and the wipe without, in separate runs; if
+// the peers were numbered in among the subject's roster the player would be
+// Testmage in one file and Testmage7 in the other, and nothing joins them.
+func TestAddingPeersNeverRenamesTheSubjectsRoster(t *testing.T) {
+	roster := func(withPeers bool) string {
+		t.Helper()
+		srv := peerAPI(t)
+		rec := NewRecorder()
+		post(t, rec, srv.URL, "Report", map[string]any{"code": subjectCode})
+		post(t, rec, srv.URL, "MasterData", map[string]any{"code": subjectCode})
+		if withPeers {
+			post(t, rec, srv.URL, "Rankings", rankingsVars())
+			for _, p := range peers() {
+				post(t, rec, srv.URL, "Peer", map[string]any{"code": p.code, "id": p.fight, "filter": filterFor(p.name)})
+			}
+		}
+		dir := t.TempDir()
+		if err := rec.Write(dir); err != nil {
+			t.Fatal(err)
+		}
+		b, err := os.ReadFile(filepath.Join(dir, "masterdata.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(b)
+	}
+	alone, compared := roster(false), roster(true)
+	if !strings.Contains(alone, `"name":"Testmage"`) {
+		t.Fatalf("the subject's Mage is not Testmage even with no peers: %s", alone)
+	}
+	for _, spell := range []string{"Mind Flay: Cindermark", "Hollowmere's Guillotine Technique"} {
+		if !strings.Contains(compared, spell) {
+			t.Errorf("a peer's realm or guild was replaced in the subject's own pull, rewriting %q: %s", spell, compared)
+		}
+	}
+	if alone != compared {
+		t.Errorf("recording a comparison renamed the subject's roster:\n alone:    %s\n compared: %s", alone, compared)
+	}
 }

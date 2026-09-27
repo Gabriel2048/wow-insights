@@ -27,6 +27,10 @@ type logsClient interface {
 	Report(ctx context.Context, code string) (*warcraftlogs.Report, error)
 	FightDetail(ctx context.Context, code string, fightID int) (*warcraftlogs.FightDetail, error)
 	Timeline(ctx context.Context, code string, fight warcraftlogs.Fight, sourceID int, know knowledge.Knowledge) (*warcraftlogs.Timeline, error)
+	// Cohort is other players' pulls of the same boss. It reaches into other
+	// people's reports, which is why it was agreed as a seam change on #60
+	// rather than added quietly, and why nothing it returns can carry a name.
+	Cohort(ctx context.Context, q warcraftlogs.CohortQuery) (*warcraftlogs.Cohort, error)
 }
 
 // writer is the slice of the coaching model this package uses. Declared here,
@@ -461,6 +465,10 @@ func (s *Server) analyse(ctx context.Context, log *slog.Logger, key jobKey) (res
 	analysis := warcraftlogs.Analyse(timeline, know, warcraftlogs.PlayerContext{
 		ActedUntil: player.ActedUntil(),
 		DiedAt:     player.DiedAt,
+		Damage:     player.Damage,
+		ActiveTime: player.DamageUptime,
+		Duration:   player.FightDuration,
+		Cohorts:    s.cohorts(ctx, log, detail, player, timeline),
 	})
 	found := analysis.Findings
 	out.checks = analysis.Checks
@@ -487,6 +495,44 @@ func (s *Server) analyse(ctx context.Context, log *slog.Logger, key jobKey) (res
 		out.notices = append(out.notices, p.message)
 	}
 	return out, nil
+}
+
+// cohorts fetches the other players this pull is compared against. Nothing
+// here can fail the job: the findings and the rest of the checks are already
+// true, and a comparison that could not be made is a check that says why.
+//
+// The item-level cohort needs the player's own bracket, which comes from their
+// ranking — and a wipe is never ranked, so a wipe is compared only with the
+// top performers. That is said on the page rather than guessed at: mapping an
+// item level onto a bracket by hand would be a second, unverified copy of
+// something the API already decides.
+func (s *Server) cohorts(ctx context.Context, log *slog.Logger, detail *warcraftlogs.FightDetail, player warcraftlogs.PlayerStats, timeline *warcraftlogs.Timeline) []warcraftlogs.CohortResult {
+	bracket, top := warcraftlogs.CohortQueries(detail.ReportCode, detail.Fight, player, timeline)
+	base := top
+
+	var out []warcraftlogs.CohortResult
+	for _, q := range []warcraftlogs.CohortQuery{bracket, top} {
+		switch {
+		case base.Encounter == 0 || base.Difficulty == 0:
+			out = append(out, warcraftlogs.CohortResult{Kind: q.Kind, Unasked: "this pull has no boss the rankings know, so there is no one to compare it with"})
+			continue
+		case base.Spec == "":
+			out = append(out, warcraftlogs.CohortResult{Kind: q.Kind, Unasked: "this player's specialisation is not in the log, and other players are ranked by it"})
+			continue
+		case q.Kind == warcraftlogs.SameItemLevel && (!player.Ranked() || q.Bracket <= 0):
+			out = append(out, warcraftlogs.CohortResult{Kind: q.Kind, Unasked: "this pull has no ranking, so there is no item-level bracket to look in — a wipe is never ranked"})
+			continue
+		}
+		c, err := s.wcl.Cohort(ctx, q)
+		if err != nil {
+			p := classify(err)
+			log.Log(ctx, p.level, "fetching a cohort", "err", err, "fight", detail.Fight.ID)
+			out = append(out, warcraftlogs.CohortResult{Kind: q.Kind, Unasked: p.message})
+			continue
+		}
+		out = append(out, warcraftlogs.CohortResult{Kind: q.Kind, Cohort: c})
+	}
+	return out
 }
 
 // laneNames turns the query's field aliases, which is how the client names

@@ -28,6 +28,13 @@ const (
 type rule struct {
 	real, fake string
 	kind       string // what it is, for a refusal message that must not say what it was
+	// others marks a value learned only from a rankings page: another
+	// player's name, realm or guild. It is applied to the bodies that are
+	// about those players and nowhere else. A live page held a realm whose
+	// name is also in an enchant's, and guilds named for ordinary words that
+	// are also in spell and zone names; applied everywhere, they rewrote the
+	// subject's own pull in places that never named anyone.
+	others bool
 }
 
 // redactor is built from every body a recording holds and then applied to
@@ -47,24 +54,48 @@ type redactor struct {
 // that re-recording the same report yields the same fixture. Each carries the
 // player's class so a fixture reads honestly: Testmage, Testpriest, Testmage2.
 func newRedactor(bodies [][]byte) (*redactor, error) {
-	type actor struct{ name, server, class string }
+	type actor struct {
+		name, server, class string
+		// peer marks a player found only on a rankings page. Peers are
+		// numbered after the subject's roster, so adding a comparison to a
+		// recording never renames anyone already in it.
+		peer bool
+	}
 	var (
 		actors  []actor
 		servers []string
-		guilds  []string
-		codes   []string // the subject's own report, and any it links to
-		peers   []string // other players' reports, from a rankings page
-		owner   string
+		// peerServers are realms found only on a rankings page, numbered
+		// after the subject's for the same reason peers are.
+		peerServers []string
+		guilds      []string
+		codes       []string // the subject's own report, and any it links to
+		peers       []string // other players' reports, from a rankings page
+		owner       string
 	)
-	addActor := func(name, server, class string) {
+	addActor := func(name, server, class string, peer bool) {
 		if name == "" {
 			return
 		}
-		if !slices.ContainsFunc(actors, func(a actor) bool { return strings.EqualFold(a.name, name) }) {
-			actors = append(actors, actor{name, server, strings.ToLower(class)})
+		i := slices.IndexFunc(actors, func(a actor) bool { return strings.EqualFold(a.name, name) })
+		switch {
+		case i < 0:
+			actors = append(actors, actor{name, server, strings.ToLower(class), peer})
+		case !peer:
+			// Seen on a rankings page first, then found in the subject's own
+			// roster — a raid-mate who is also a top performer. They are the
+			// subject's, so they are numbered with the subject's.
+			actors[i].peer = false
 		}
-		if server != "" && !slices.ContainsFunc(servers, func(s string) bool { return strings.EqualFold(s, server) }) {
-			servers = append(servers, server)
+		if server == "" {
+			return
+		}
+		list := &servers
+		if peer {
+			list = &peerServers
+		}
+		if !slices.ContainsFunc(servers, func(s string) bool { return strings.EqualFold(s, server) }) &&
+			!slices.ContainsFunc(*list, func(s string) bool { return strings.EqualFold(s, server) }) {
+			*list = append(*list, server)
 		}
 	}
 	// The recorder holds its exchanges in a map, so the order they arrive in
@@ -89,7 +120,7 @@ func newRedactor(bodies [][]byte) (*redactor, error) {
 			name, _ := m["name"].(string)
 			class, _ := m["class"].(string)
 			server, _ := lookup(m, "server", "name").(string)
-			addActor(name, server, class)
+			addActor(name, server, class, true)
 			if g, _ := lookup(m, "guild", "name").(string); g != "" && !slices.ContainsFunc(guilds, func(x string) bool { return strings.EqualFold(x, g) }) {
 				guilds = append(guilds, g)
 			}
@@ -114,7 +145,7 @@ func newRedactor(bodies [][]byte) (*redactor, error) {
 			name, _ := m["name"].(string)
 			server, _ := m["server"].(string)
 			class, _ := m["subType"].(string)
-			addActor(name, server, class)
+			addActor(name, server, class, false)
 		}
 	}
 	if len(codes)+len(peers) == 0 {
@@ -133,10 +164,22 @@ func newRedactor(bodies [][]byte) (*redactor, error) {
 	}
 
 	r := &redactor{}
-	// Longest first, so that a name which is a prefix of another is never
-	// replaced inside it. Whole-word matching already prevents that; the order
-	// makes it not depend on the matching.
+	// The subject's roster first, then anyone found only on a rankings page;
+	// within each, longest first, so that a name which is a prefix of another
+	// is never replaced inside it. Whole-word matching already prevents that;
+	// the order makes it not depend on the matching.
+	//
+	// Subject first is what keeps a recording consistent across runs. The
+	// kill is recorded with a comparison and the wipe without one, and if the
+	// peers were numbered in among the roster, the player would be Testmage in
+	// one file and Testmage7 in the other.
 	slices.SortFunc(actors, func(a, b actor) int {
+		if a.peer != b.peer {
+			if a.peer {
+				return 1
+			}
+			return -1
+		}
 		if d := len(b.name) - len(a.name); d != 0 {
 			return d
 		}
@@ -153,19 +196,30 @@ func newRedactor(bodies [][]byte) (*redactor, error) {
 		if n := perClass[class]; n > 1 {
 			fake += strconv.Itoa(n)
 		}
-		r.rules = append(r.rules, rule{a.name, fake, "a character name"})
+		r.rules = append(r.rules, rule{a.name, fake, "a character name", a.peer})
 	}
+	// The subject's realms first, then realms only peers came from. The same
+	// hazard as the roster, and the test that pins it found this one second:
+	// a peer's realm sorting ahead of the subject's renamed the subject's.
 	slices.Sort(servers)
+	slices.Sort(peerServers)
+	subjects := len(servers)
+	for _, s := range peerServers {
+		if !slices.ContainsFunc(servers, func(x string) bool { return strings.EqualFold(x, s) }) {
+			servers = append(servers, s)
+		}
+	}
 	for i, s := range servers {
 		fake := FakeRealm
 		if i > 0 {
 			fake += strconv.Itoa(i + 1)
 		}
-		r.rules = append(r.rules, rule{s, fake, "a server name"})
+		others := i >= subjects
+		r.rules = append(r.rules, rule{s, fake, "a server name", others})
 		// Cross-realm names appear as Name-Server with the server condensed to
 		// one word, so a server with spaces or apostrophes needs that form too.
 		if condensed := condense(s); condensed != s {
-			r.rules = append(r.rules, rule{condensed, fake, "a server name"})
+			r.rules = append(r.rules, rule{condensed, fake, "a server name", others})
 		}
 	}
 	slices.Sort(guilds)
@@ -174,7 +228,7 @@ func newRedactor(bodies [][]byte) (*redactor, error) {
 		if i > 0 {
 			fake += strconv.Itoa(i + 1)
 		}
-		r.rules = append(r.rules, rule{g, fake, "a guild name"})
+		r.rules = append(r.rules, rule{g, fake, "a guild name", true})
 	}
 	// Every code gets its own pseudonym, deterministically. A recording that
 	// reaches into a second report — which is what comparing a player against
@@ -184,12 +238,57 @@ func newRedactor(bodies [][]byte) (*redactor, error) {
 		if i > 0 {
 			fake = fmt.Sprintf("ExampleReport%d", 123+i)
 		}
-		r.rules = append(r.rules, rule{c, fake, "a report code"})
+		// Codes are applied everywhere: they are random, so one cannot also
+		// be a word, and the subject's report links to others by code.
+		r.rules = append(r.rules, rule{c, fake, "a report code", false})
 	}
 	if owner != "" && !slices.ContainsFunc(actors, func(a actor) bool { return strings.EqualFold(a.name, owner) }) {
-		r.rules = append(r.rules, rule{owner, FakeOwner, "the report owner"})
+		r.rules = append(r.rules, rule{owner, FakeOwner, "the report owner", false})
 	}
+	// Applied longest first, across every kind. Which pseudonym a value gets
+	// is settled above; this is only the order they are applied in, and it
+	// matters as soon as one real value contains another. A rankings page
+	// holds dozens of guilds, and on the top page of one boss a guild's name
+	// contained a realm's and another contained a player's — so the realm rule
+	// ran first, left "The Testrealm Order" behind, and the guild rule never
+	// matched again. The recorder refused to write it, as it should; this is
+	// what makes it writable. Ties break on the text so the order is a
+	// function of the content alone.
+	slices.SortStableFunc(r.rules, func(a, b rule) int {
+		if d := len([]rune(b.real)) - len([]rune(a.real)); d != 0 {
+			return d
+		}
+		return strings.Compare(a.real, b.real)
+	})
 	return r, nil
+}
+
+// scopedTo returns the redactor for the recording kept under k. A rankings
+// page and a peer's pull are about other players and get every rule; the
+// subject's own report gets only the rules its own roster produced, so that
+// what is replaced in it is somebody in it.
+//
+// The refusal after redacting is scoped the same way, and that is safe: a
+// value learned only from a rankings page is, by construction, nobody in the
+// subject's report — a raid-mate who also ranks is the subject's, and gets a
+// rule that applies everywhere.
+func (r *redactor) scopedTo(k string) *redactor {
+	if aboutOthers(k) {
+		return r
+	}
+	own := &redactor{}
+	for _, rule := range r.rules {
+		if !rule.others {
+			own.rules = append(own.rules, rule)
+		}
+	}
+	return own
+}
+
+// aboutOthers reports whether the recording kept under k is other players'.
+func aboutOthers(k string) bool {
+	op, _, _ := strings.Cut(k, "-")
+	return op == "rankings" || op == "peer"
 }
 
 // fileFor turns a recorded key into the file it is written as: redacted by

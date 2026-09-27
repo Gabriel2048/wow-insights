@@ -25,6 +25,11 @@ type Ranking struct {
 	// ItemLevel is the bracket this parse was ranked in, which is not
 	// necessarily the player's own item level — the brackets are coarse.
 	ItemLevel float64
+	// Bracket is the rankings API's index for that bracket — what it takes to
+	// ask for the other parses at the same item level. On the recorded kill,
+	// item level 324 is bracket 18. Zero asks the API for every bracket at
+	// once, so it is never a bracket of its own.
+	Bracket int
 }
 
 // Percentile renders the bracket percentile as an ordinal, e.g. "61st". It
@@ -86,6 +91,7 @@ type rankedCharacter struct {
 	BracketPercent float64 `json:"bracketPercent"`
 	TotalParses    int     `json:"totalParses"`
 	BracketData    float64 `json:"bracketData"`
+	Bracket        int     `json:"bracket"`
 }
 
 // rankingsByName indexes one fight's rankings by character name, which is the
@@ -129,6 +135,7 @@ func rankingsByName(raw json.RawMessage, fightID int) (map[string]Ranking, bool)
 					BracketPercent: c.BracketPercent,
 					TotalParses:    c.TotalParses,
 					ItemLevel:      c.BracketData,
+					Bracket:        c.Bracket,
 				}
 			}
 		}
