@@ -245,9 +245,16 @@ func TestEveryAuthoredProcAuraAppearsInTheRecording(t *testing.T) {
 	}
 }
 
-// Flamestrike spends a Hot Streak exactly as Pyroblast does. Without a rule
-// for it every AoE cast reads as one with nothing behind it.
-func TestFlamestrikeSpendsAHotStreak(t *testing.T) {
+// Flamestrike spends a Hot Streak exactly as Pyroblast does, and Pyroclasm
+// improves a hard-cast one — but a hard cast without Pyroclasm is ordinary AoE,
+// never a mistake.
+//
+// This test used to assert that Flamestrike's HardCast list was empty, which
+// was a belief about the game and a wrong one: Pyroclasm does improve a
+// hard-cast Flamestrike. What that assertion was protecting — that no AoE cast
+// is marked one that should not have been made — is now held directly, by the
+// HardCastNeedsProc flag and by the classification itself.
+func TestFlamestrikeSpendsAHotStreakAndIsNeverAMistakeToHardCast(t *testing.T) {
 	rule, ok := fire.Rule(1254851)
 	if !ok {
 		t.Fatal("Flamestrike has no cast rule")
@@ -255,13 +262,42 @@ func TestFlamestrikeSpendsAHotStreak(t *testing.T) {
 	if !slices.Contains(rule.Instant, "Hot Streak!") {
 		t.Errorf("Flamestrike's instant rule is %v, which does not name Hot Streak!", rule.Instant)
 	}
-	// And hard casting it is not a mistake, so nothing may mark one.
-	if len(rule.HardCast) != 0 {
-		t.Errorf("Flamestrike names %v as justifying a hard cast; hard casting it is simply how the spell works", rule.HardCast)
+	if rule.HardCastNeedsProc {
+		t.Error("a hard-cast Flamestrike is required to have a proc behind it; it is hard cast as ordinary AoE")
 	}
-	casts := []Cast{{AbilityID: 1254851, Name: "Flamestrike", Offset: time.Second, End: 3 * time.Second, CastTime: 2 * time.Second, HadBegincast: true}}
-	classifyProcs(casts, nil, fire)
-	if casts[0].ProcMissing {
-		t.Error("a hard-cast Flamestrike is marked a cast that should not have been made")
+
+	hardCast := func() []Cast {
+		return []Cast{{AbilityID: 1254851, Name: "Flamestrike", Offset: time.Second, End: 3 * time.Second, CastTime: 2 * time.Second, HadBegincast: true}}
+	}
+	plain := hardCast()
+	classifyProcs(plain, nil, fire)
+	if plain[0].ProcMissing {
+		t.Error("a hard-cast Flamestrike with nothing up is marked a cast that should not have been made")
+	}
+
+	improved := hardCast()
+	classifyProcs(improved, []auraWindow{{name: "Pyroclasm", start: 0, end: 4 * time.Second}}, fire)
+	if improved[0].Proc != "Pyroclasm" {
+		t.Errorf("a hard-cast Flamestrike under Pyroclasm is labelled %q, want Pyroclasm", improved[0].Proc)
+	}
+}
+
+// Pyroclasm is spent only by a hard cast. With Hot Streak and Pyroclasm both
+// up, Pyroblast comes out instantly and Pyroclasm stays — so an instant
+// Pyroblast must not claim it, and a hard-cast one with nothing up is still a
+// cast that should not have been made.
+func TestAnInstantPyroblastDoesNotSpendPyroclasm(t *testing.T) {
+	rule, _ := fire.Rule(11366)
+	if slices.Contains(rule.Instant, "Pyroclasm") {
+		t.Error("an instant Pyroblast is said to spend Pyroclasm; only a hard cast does")
+	}
+	if !rule.HardCastNeedsProc {
+		t.Error("a hard-cast Pyroblast with nothing behind it is no longer judged")
+	}
+	both := []auraWindow{{name: "Hot Streak!", start: 0, end: 2 * time.Second}, {name: "Pyroclasm", start: 0, end: 10 * time.Second}}
+	casts := []Cast{{AbilityID: 11366, Name: "Pyroblast", Offset: time.Second, End: time.Second}}
+	classifyProcs(casts, both, fire)
+	if strings.Contains(casts[0].Proc, "Pyroclasm") {
+		t.Errorf("an instant Pyroblast is labelled %q", casts[0].Proc)
 	}
 }

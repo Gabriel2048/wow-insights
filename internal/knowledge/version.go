@@ -66,6 +66,9 @@ func (k Knowledge) Version() string {
 		for _, aura := range rule.HardCast {
 			write(aura)
 		}
+		// Whether a hard cast is judged at all changes what the page says
+		// about every one of them, so it is part of the digest.
+		write(strconv.FormatBool(rule.HardCastNeedsProc))
 	}
 	for _, id := range slices.Sorted(maps.Keys(k.JudgedCooldowns)) {
 		cd := k.JudgedCooldowns[id]
