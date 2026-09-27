@@ -115,16 +115,23 @@ func (r *Replay) RoundTrip(req *http.Request) (*http.Response, error) {
 	// A code the recording does not hold gets the same answer the real
 	// service gives for a report it does not hold, so the page shows the real
 	// "not found" message rather than a fixture-specific one.
-	if code, ok := body.Variables["code"].(string); ok && code != r.code {
+	//
+	// Except for a peer's pull, which is another report by design: the codes
+	// in a recorded rankings page are pseudonyms numbered from FakeCode, and
+	// the app asks for them by those. Whether one was recorded is the file's
+	// business below, and a missing one is an error there rather than a
+	// "not found" the page would pass off as the peer's report being gone.
+	if code, ok := body.Variables["code"].(string); ok && code != r.code && body.OperationName != "Peer" {
 		return respond(req, `{"data":{"reportData":{"report":null}}}`), nil
 	}
 	k, err := key(body.OperationName, body.Variables)
 	if err != nil {
 		return nil, err
 	}
-	data, err := os.ReadFile(filepath.Join(r.dir, k+".json"))
+	name := filename(k)
+	data, err := os.ReadFile(filepath.Join(r.dir, name+".json"))
 	if errors.Is(err, os.ErrNotExist) {
-		return nil, fmt.Errorf("fixture: nothing recorded for %s (no %s in %s)", k, k+".json", r.dir)
+		return nil, fmt.Errorf("fixture: nothing recorded for %s (no %s in %s)", k, name+".json", r.dir)
 	}
 	if err != nil {
 		return nil, err

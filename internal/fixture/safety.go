@@ -53,6 +53,10 @@ var knownFields = []string{
 	"data.reportData.report.cooldowns",
 	"data.reportData.report.raidCDs",
 	"data.reportData.report.bossCasts",
+	// A rankings page: other players' pulls of one boss. Everything under it
+	// is this file's business from here on, which is why every field in it
+	// that carries a person is named in identityFields below.
+	"data.worldData.encounter.characterRankings",
 	"errors",
 }
 
@@ -72,6 +76,14 @@ var identityFields = []string{
 	"data.reportData.report.masterData.actors.*.server",
 	"data.reportData.report.rankings.data.*.roles.*.characters.*.name",
 	"data.reportData.report.rankings.data.*.roles.*.characters.*.server",
+	// The rankings API's rows carry four kinds of identity. Gear, talents and
+	// the numeric server and guild ids do not name anybody by themselves, and
+	// the owner's rule for #60 is that an id is fine even if a name could be
+	// worked out from it with effort.
+	"data.worldData.encounter.characterRankings.rankings.*.name",
+	"data.worldData.encounter.characterRankings.rankings.*.server.name",
+	"data.worldData.encounter.characterRankings.rankings.*.guild.name",
+	"data.worldData.encounter.characterRankings.rankings.*.report.code",
 }
 
 // playerTables are the tables whose rows are sometimes a person. A row also
@@ -175,7 +187,7 @@ func (r *redactor) isPseudonym(s string) bool {
 	// The generated ones are a stem plus an optional index: Testmage,
 	// Testmage2, Testrealm7.
 	stem := strings.TrimRight(s, "0123456789")
-	if stem == FakeRealm || stem == FakePet {
+	if stem == FakeRealm || stem == FakePet || stem == FakeGuild {
 		return true
 	}
 	if strings.HasPrefix(stem, "Test") && len(stem) > len("Test") {

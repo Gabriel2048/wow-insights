@@ -19,6 +19,9 @@ const (
 	FakeTitle = "Recorded raid night"
 	FakeRealm = "Testrealm"
 	FakePet   = "Testpet"
+	// FakeGuild replaces a guild's name. Only a rankings page carries one:
+	// the subject's own report never names a guild.
+	FakeGuild = "Testguild"
 )
 
 // A rule replaces one real value with one fake one, everywhere.
@@ -48,9 +51,22 @@ func newRedactor(bodies [][]byte) (*redactor, error) {
 	var (
 		actors  []actor
 		servers []string
-		codes   []string
+		guilds  []string
+		codes   []string // the subject's own report, and any it links to
+		peers   []string // other players' reports, from a rankings page
 		owner   string
 	)
+	addActor := func(name, server, class string) {
+		if name == "" {
+			return
+		}
+		if !slices.ContainsFunc(actors, func(a actor) bool { return strings.EqualFold(a.name, name) }) {
+			actors = append(actors, actor{name, server, strings.ToLower(class)})
+		}
+		if server != "" && !slices.ContainsFunc(servers, func(s string) bool { return strings.EqualFold(s, server) }) {
+			servers = append(servers, server)
+		}
+	}
 	// The recorder holds its exchanges in a map, so the order they arrive in
 	// is not the order they were recorded in. Sorting makes every rule below
 	// a function of the content alone: without it, which report code became
@@ -63,6 +79,25 @@ func newRedactor(bodies [][]byte) (*redactor, error) {
 		if err != nil {
 			return nil, err
 		}
+		// A rankings page is other people: up to a hundred of them, each with
+		// a name, a server, a guild and the report their pull is in. Every one
+		// becomes a rule, so the same player is the same pseudonym here and in
+		// their own pull, which is recorded alongside.
+		rows, _ := lookup(tree, "data", "worldData", "encounter", "characterRankings", "rankings").([]any)
+		for _, item := range rows {
+			m, _ := item.(map[string]any)
+			name, _ := m["name"].(string)
+			class, _ := m["class"].(string)
+			server, _ := lookup(m, "server", "name").(string)
+			addActor(name, server, class)
+			if g, _ := lookup(m, "guild", "name").(string); g != "" && !slices.ContainsFunc(guilds, func(x string) bool { return strings.EqualFold(x, g) }) {
+				guilds = append(guilds, g)
+			}
+			if c, _ := lookup(m, "report", "code").(string); c != "" && !slices.Contains(peers, c) {
+				peers = append(peers, c)
+			}
+		}
+
 		report, _ := lookup(tree, "data", "reportData", "report").(map[string]any)
 		if report == nil {
 			continue
@@ -79,21 +114,23 @@ func newRedactor(bodies [][]byte) (*redactor, error) {
 			name, _ := m["name"].(string)
 			server, _ := m["server"].(string)
 			class, _ := m["subType"].(string)
-			if name == "" {
-				continue
-			}
-			if !slices.ContainsFunc(actors, func(a actor) bool { return strings.EqualFold(a.name, name) }) {
-				actors = append(actors, actor{name, server, strings.ToLower(class)})
-			}
-			if server != "" && !slices.ContainsFunc(servers, func(s string) bool { return strings.EqualFold(s, server) }) {
-				servers = append(servers, server)
-			}
+			addActor(name, server, class)
 		}
 	}
-	if len(codes) == 0 {
+	if len(codes)+len(peers) == 0 {
 		return nil, fmt.Errorf("fixture: no report code in any recorded response, so nothing can be redacted against it")
 	}
+	// The subject's reports are numbered first, so the subject is always
+	// ExampleReport123 however the peers' codes happen to sort — every test
+	// and the offline server ask for it by that name. Peers follow, in their
+	// own sorted order, which keeps the numbering a function of the content.
 	slices.Sort(codes)
+	slices.Sort(peers)
+	for _, c := range peers {
+		if !slices.Contains(codes, c) {
+			codes = append(codes, c)
+		}
+	}
 
 	r := &redactor{}
 	// Longest first, so that a name which is a prefix of another is never
@@ -131,6 +168,14 @@ func newRedactor(bodies [][]byte) (*redactor, error) {
 			r.rules = append(r.rules, rule{condensed, fake, "a server name"})
 		}
 	}
+	slices.Sort(guilds)
+	for i, g := range guilds {
+		fake := FakeGuild
+		if i > 0 {
+			fake += strconv.Itoa(i + 1)
+		}
+		r.rules = append(r.rules, rule{g, fake, "a guild name"})
+	}
 	// Every code gets its own pseudonym, deterministically. A recording that
 	// reaches into a second report — which is what comparing a player against
 	// someone else's log needs — used to name only one of them.
@@ -145,6 +190,27 @@ func newRedactor(bodies [][]byte) (*redactor, error) {
 		r.rules = append(r.rules, rule{owner, FakeOwner, "the report owner"})
 	}
 	return r, nil
+}
+
+// fileFor turns a recorded key into the file it is written as: redacted by
+// the same rules as the bodies, then checked for anything real that survived,
+// then made a file name. The replay makes the same name from a request that
+// already carries the pseudonyms.
+func (r *redactor) fileFor(k string) (string, error) {
+	redacted := k
+	for _, rule := range r.rules {
+		redacted, _ = replaceWord(redacted, rule.real, rule.fake)
+	}
+	for _, rule := range r.rules {
+		if _, n := replaceWord(redacted, rule.real, rule.fake); n > 0 {
+			return "", fmt.Errorf("fixture: a file name would carry %s; refusing to write", rule.kind)
+		}
+	}
+	name := filename(redacted)
+	if name == "" {
+		return "", fmt.Errorf("fixture: a recording has no usable file name")
+	}
+	return name + ".json", nil
 }
 
 // apply redacts one body and returns it re-encoded compactly. It then reads
