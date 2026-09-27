@@ -510,7 +510,13 @@ func TestFindingsRenderWithLinksTheTimelineScriptCanParse(t *testing.T) {
 
 	// Every timestamp link must be one timeline.js will act on, and must
 	// carry the player so the timeline opens on the right one.
-	links := regexp.MustCompile(`href="([^"]*#t=[^"]*)"`).FindAllStringSubmatch(page, -1)
+	//
+	// Scoped to the findings list: the checks panel below it carries the same
+	// kind of link, and this test is about one per finding. The link's shape
+	// is held for both by the pattern below, which every match must satisfy.
+	findings := page[strings.Index(page, `<ol class="findings"`):]
+	findings = findings[:strings.Index(findings, "</ol>")]
+	links := regexp.MustCompile(`href="([^"]*#t=[^"]*)"`).FindAllStringSubmatch(findings, -1)
 	if len(links) != 2 {
 		t.Fatalf("got %d timestamp links, want one per finding: %v", len(links), links)
 	}
@@ -643,5 +649,62 @@ func TestAPauseThePlayerWasDeadForIsLabelledOnThePage(t *testing.T) {
 	// And a pull with nobody dead says nothing about it.
 	if alive := render(t, "fight.html", fullFightPage()); strings.Contains(alive, "dead from") {
 		t.Error("a pull with no death still reports one")
+	}
+}
+
+// **The page that used to be unreadable.** "Nothing to flag" on a
+// 19th-percentile parse ending in a death told a reader nothing about whether
+// the rules had looked and found nothing or had never run. Both are real and
+// opposite answers, and the page now shows which by naming every question it
+// asked and the number that came back.
+func TestACleanPullSaysWhatItChecked(t *testing.T) {
+	page := render(t, "analysis.html", analysisAllClean())
+
+	if !strings.Contains(page, "What was checked") {
+		t.Error("a pull with no findings does not say what was checked")
+	}
+	for _, want := range []string{
+		"Cooldowns used again once they came back", "7 uses of Combustion",
+		"Time not casting, beyond the global cooldown", "6 pauses",
+		"1.09s", // the model's own number, so the reader can falsify it
+		"Procs, and what was spent on them", "155 Hot Streak!",
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("the checks panel is missing %q", want)
+		}
+	}
+	// A question nobody could ask is printed with its reason, never hidden —
+	// otherwise it reads as a question that came back clean.
+	if !strings.Contains(page, "not asked") || !strings.Contains(page, "need a proc behind them") {
+		t.Error("a check that could not be asked is not shown, so it reads as one that passed")
+	}
+	// And the page does not claim to be complete.
+	if !strings.Contains(page, "not every question worth") {
+		t.Error("the page does not admit how narrow it is")
+	}
+	// And it names what it structurally cannot see, rather than implying the
+	// silence is complete.
+	if !strings.Contains(page, "whether the boss could be hit") {
+		t.Error("the page does not say what it is blind to")
+	}
+}
+
+// The panel renders on a page WITH findings too. Otherwise one finding reads
+// as the only thing that was looked at.
+func TestAPageWithFindingsAlsoSaysWhatElseWasChecked(t *testing.T) {
+	page := render(t, "analysis.html", analysisWithFindings())
+
+	if !strings.Contains(page, "Also checked") {
+		t.Error("a page with findings does not say what else was checked")
+	}
+	if strings.Contains(page, "What was checked") {
+		t.Error("the heading reads as though nothing was found, on a page that found something")
+	}
+	if !strings.Contains(page, "What the log says") {
+		t.Error("the findings themselves are gone")
+	}
+	// The findings list comes first: what to act on before what was merely counted.
+	if i, j := strings.Index(page, "What the log says"), strings.Index(page, "Also checked"); i > j {
+		t.Error("the checks panel is drawn above the findings the player should act on")
 	}
 }

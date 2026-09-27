@@ -76,7 +76,11 @@ func (k jobKey) ref() actorRef {
 // without the work being done again.
 type result struct {
 	findings coach.Findings
-	notices  []string
+	// checks are the questions the analysis asked, whether or not any of
+	// them produced a finding. A page that shows only findings cannot be
+	// read when there are none.
+	checks  []warcraftlogs.Check
+	notices []string
 }
 
 // job is one analysis, running or finished. Everything but done is written

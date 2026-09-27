@@ -36,7 +36,7 @@ func timelineOfUses(fight time.Duration, ability int, at ...time.Duration) *Time
 // value safe to analyse with.
 func TestAnUnauthoredSpecProducesNoFindings(t *testing.T) {
 	at := []time.Duration{40 * time.Second, 200 * time.Second, 400 * time.Second}
-	if found := Findings(timelineOfUses(500*time.Second, combustion, at...), knowledge.Knowledge{}, survived); len(found) != 0 {
+	if found := Analyse(timelineOfUses(500*time.Second, combustion, at...), knowledge.Knowledge{}, PlayerContext{ActedUntil: survived}).Findings; len(found) != 0 {
 		t.Errorf("got %d findings for a spec with no judged cooldowns, want none: %+v", len(found), found)
 	}
 }
@@ -45,7 +45,7 @@ func TestAnUnauthoredSpecProducesNoFindings(t *testing.T) {
 // rather than look broken.
 func TestACleanPullProducesNoFindings(t *testing.T) {
 	at := []time.Duration{2 * time.Second, 63 * time.Second, 124 * time.Second, 185 * time.Second}
-	if found := Findings(timelineOfUses(240*time.Second, combustion, at...), judgedFire(), survived); len(found) != 0 {
+	if found := Analyse(timelineOfUses(240*time.Second, combustion, at...), judgedFire(), PlayerContext{ActedUntil: survived}).Findings; len(found) != 0 {
 		t.Errorf("got %d findings on a pull with no drift, want none: %+v", len(found), found)
 	}
 }
@@ -64,7 +64,7 @@ func TestAFindingCarriesNoGeometry(t *testing.T) {
 }
 
 func TestFindingsOfANilTimeline(t *testing.T) {
-	if found := Findings(nil, judgedFire(), survived); found != nil {
+	if found := Analyse(nil, judgedFire(), PlayerContext{ActedUntil: survived}).Findings; found != nil {
 		t.Errorf("got %+v for a pull that could not be loaded, want nil", found)
 	}
 }
@@ -82,7 +82,7 @@ func TestNothingIsAskedOfAPlayerAfterTheyDied(t *testing.T) {
 	timeline := timelineOfUses(423000*time.Millisecond, combustion, at...)
 
 	died := 315 * time.Second // 5:15
-	for _, f := range Findings(timeline, judgedFire(), died) {
+	for _, f := range Analyse(timeline, judgedFire(), PlayerContext{ActedUntil: died}).Findings {
 		if f.RuleID == ruleCooldownTail {
 			t.Errorf("held a dead player to a cooldown that came back after they died: %q", f.Detail)
 		}
@@ -90,7 +90,7 @@ func TestNothingIsAskedOfAPlayerAfterTheyDied(t *testing.T) {
 
 	// Alive to the end, the same pull really does leave one unused.
 	var sawTail bool
-	for _, f := range Findings(timeline, judgedFire(), survived) {
+	for _, f := range Analyse(timeline, judgedFire(), PlayerContext{ActedUntil: survived}).Findings {
 		sawTail = sawTail || f.RuleID == ruleCooldownTail
 	}
 	if !sawTail {

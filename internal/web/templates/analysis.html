@@ -82,10 +82,35 @@
     {{else}}
     <div class="empty">
         <h2>Nothing to flag</h2>
-        <p>Every rule this page has came back quiet for this pull. That is a real answer and not
-           a missing one &mdash; but it is a narrow one. A quiet page means the rules that exist
-           found nothing, which is not the same as there having been nothing to find.</p>
+        <p>Nothing this page can check came back with a problem. What it checked, and the numbers
+           it got, are below &mdash; so you can see what that is worth.</p>
     </div>
+    {{end}}
+
+    {{with $.Checks}}
+    <h2>{{if $.Findings}}Also checked{{else}}What was checked{{end}}</h2>
+    <dl class="checks">
+        {{range .}}
+        <dt>{{.Question}}</dt>
+        <dd>
+            {{if .Asked}}
+                {{if .AtMS}}<a class="at" href="/report/{{$.Detail.ReportCode}}/fight/{{$.Detail.Fight.ID}}?player={{$.SelectedID}}#t={{.AtMS}}">{{.Timestamp}}</a>{{end}}
+                {{.Measured}}
+                {{with .Evidence}}
+                <dl class="evidence">
+                    {{range .}}<dt>{{.Label}}</dt><dd>{{.Value}}</dd>{{end}}
+                </dl>
+                {{end}}
+            {{else}}
+                <span class="unasked">not asked &mdash; {{.Unasked}}</span>
+            {{end}}
+        </dd>
+        {{end}}
+    </dl>
+    <p class="hint">These are every question this page can ask, which is not every question worth
+       asking. It cannot see whether the boss could be hit, whether you were moving, or what your
+       raid asked you to do. A quiet page is a narrow answer, not a verdict on the pull &mdash;
+       your parse is above.</p>
     {{end}}
 {{else if eq $.Analysis "running"}}
     <div class="empty working">
@@ -102,9 +127,10 @@
 {{else}}
     <div class="empty">
         <h2>Nothing analysed yet</h2>
-        <p>This reads your casts against what the log can prove &mdash; cooldowns that came back
-           and went unused, and more to come. It takes a moment and costs a Warcraft Logs
-           query, so it runs when you ask for it.</p>
+        <p>This reads your casts against what the log can prove: cooldowns that came back and
+           went unused, time you were not casting once the global cooldown is taken off, what
+           became of your procs, and hard casts with nothing behind them. It takes a moment and
+           costs a Warcraft Logs query, so it runs when you ask for it.</p>
         <form method="post" class="analyse"><button type="submit">Analyse this pull</button></form>
     </div>
 {{end}}

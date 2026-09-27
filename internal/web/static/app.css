@@ -1326,6 +1326,77 @@ body.analysis .finding.aside .why {
     max-width: 70ch;
 }
 
+/* What was checked. This is not a findings list and must not look like one:
+   no severity stripe, no alarm colour. It is a page showing its working, and
+   its job is to be readable rather than noticed. */
+body.analysis .checks {
+    margin: 0 0 1rem;
+    display: grid;
+    grid-template-columns: minmax(12rem, 18rem) 1fr;
+    gap: 0.5rem 1.5rem;
+    align-items: baseline;
+}
+
+body.analysis .checks > dt {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.9rem;
+}
+
+body.analysis .checks > dd {
+    margin: 0;
+    color: var(--text-soft);
+}
+
+/* A question nobody could put to this pull. It is printed rather than hidden,
+   because a question that was never asked must not read as one that came back
+   clean. */
+body.analysis .checks .unasked {
+    color: var(--muted);
+    font-style: italic;
+}
+
+body.analysis .checks .at {
+    margin-right: 0.4rem;
+    font-variant-numeric: tabular-nums;
+    color: var(--cast);
+    text-decoration: none;
+    border-bottom: 1px dotted var(--cast);
+}
+
+body.analysis .checks .evidence {
+    margin: 0.35rem 0 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.2rem 1.25rem;
+    font-size: 0.8rem;
+    color: var(--muted);
+}
+
+body.analysis .checks .evidence dt {
+    margin: 0;
+}
+
+body.analysis .checks .evidence dt::after {
+    content: ":";
+}
+
+body.analysis .checks .evidence dd {
+    margin: 0 0 0 0.3rem;
+    color: var(--text-soft);
+    font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 34rem) {
+    body.analysis .checks {
+        grid-template-columns: 1fr;
+        gap: 0.15rem;
+    }
+    body.analysis .checks > dd {
+        margin-bottom: 0.6rem;
+    }
+}
+
 /* The analysis page's own states: a button to start, and something honest to
    look at while it runs. */
 body.analysis form.analyse {
