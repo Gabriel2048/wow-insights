@@ -124,9 +124,18 @@ func TestNoCheckPassesJudgement(t *testing.T) {
 // do link to it — an instant Pyroblast beside an expiring Pyroclasm — is the
 // tables deliberately not crediting it, and is not flagged.
 //
-// "Expired" cannot be read off a fixed duration. Pyroclasm stacks to two and
+// "Expired" cannot be read off a window's length. Pyroclasm stacks to two and
 // a new stack resets the whole buff, so a window can run past twenty seconds
-// and still have expired; one on the new recording ran twenty-four.
+// and still have expired; one on the new recording ran twenty-four. What is
+// constant is the time from the last application or stack to the removal: an
+// aura that expired ran its full duration from there, and one that was spent
+// ended short of it.
+//
+// That is what keeps this from failing on a coincidence. Heat Shimmer lasts
+// ten seconds, and on the recorded kill one ran exactly ten and expired on the
+// same millisecond an instant Pyroblast landed. A cast that coincides with an
+// aura running out its full duration did not spend it — so a cast is flagged
+// only when the aura it sits beside ended early.
 func TestAnUnspentProcExpiredRatherThanBeingSpentOnAnUnauthoredSpell(t *testing.T) {
 	for _, c := range []struct {
 		name string
@@ -164,13 +173,50 @@ func TestAnUnspentProcExpiredRatherThanBeingSpentOnAnUnauthoredSpell(t *testing.
 			for _, w := range auraWindows(rep.Procs.Data, fight, fire) {
 				byName[w.name] = append(byName[w.name], w)
 			}
-			lapsed := 0
-			for name, windows := range byName {
-				for _, w := range mergeWindows(windows) {
-					if spentIn(tl.Casts, w, name) || w.end >= fight.Duration() {
+
+			// ranFor is how long an aura had been running since it was last
+			// applied, stacked or refreshed, at the moment it ended.
+			ranFor := func(name string, w auraWindow) time.Duration {
+				last := w.start
+				for _, e := range rep.Procs.Data {
+					if n, ok := fire.ProcAura(e.AbilityGameID); !ok || n != name {
 						continue
 					}
+					switch e.Type {
+					case "applybuff", "applybuffstack", "refreshbuff":
+						at := time.Duration(e.Timestamp-fight.StartTime) * time.Millisecond
+						if at >= w.start && at <= w.end && at > last {
+							last = at
+						}
+					}
+				}
+				return w.end - last
+			}
+
+			lapsed := 0
+			for name, windows := range byName {
+				var unspent []auraWindow
+				for _, w := range mergeWindows(windows) {
+					if !spentIn(tl.Casts, w, name) && w.end < fight.Duration() {
+						unspent = append(unspent, w)
+					}
+				}
+				// The aura's full duration, as this pull shows it: the longest
+				// any unspent one ran from its last application. An expiry
+				// runs this long; anything well short of it was ended by
+				// something. The blind spot is that the single longest one is
+				// always excused — with Flamestrike's rule deleted this reports
+				// two of the three Hot Streaks it spent, not three — which can
+				// make a failure smaller but never turn one into a pass.
+				var full time.Duration
+				for _, w := range unspent {
+					full = max(full, ranFor(name, w))
+				}
+				for _, w := range unspent {
 					lapsed++
+					if ranFor(name, w) >= full-250*time.Millisecond {
+						continue // ran its full duration: it expired
+					}
 					for _, cast := range tl.Casts {
 						landed := cast.End
 						if landed < w.end-procSlack || landed > w.end+procSlack || known[name][cast.AbilityID] {
