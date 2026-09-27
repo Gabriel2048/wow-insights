@@ -135,7 +135,7 @@ func TestBuildFightDetailMergesTheTables(t *testing.T) {
 // spells it — the one place the catalogue's spellings meet real bytes — and
 // no player comes out with the master data's "Unknown" as a class.
 func TestRecordedRosterSpecsAreCatalogued(t *testing.T) {
-	raw, err := os.ReadFile("../../testdata/fight-1.json")
+	raw, err := os.ReadFile(recordedKillFight)
 	if err != nil {
 		skipWithoutRecording(t, err)
 	}

@@ -10,7 +10,10 @@ var catalogue = map[SpecID]bool{}
 func init() {
 	for class, specs := range map[string][]string{
 		"DeathKnight": {"Blood", "Frost", "Unholy"},
-		"DemonHunter": {"Havoc", "Vengeance"},
+		// Devourer is the third Demon Hunter specialisation. It was missing
+		// until the recording was re-taken from a raid night that had one in
+		// it (#81), and a player of it got "unknown spec" handling instead.
+		"DemonHunter": {"Havoc", "Vengeance", "Devourer"},
 		"Druid":       {"Balance", "Feral", "Guardian", "Restoration"},
 		"Evoker":      {"Devastation", "Preservation", "Augmentation"},
 		"Hunter":      {"BeastMastery", "Marksmanship", "Survival"},

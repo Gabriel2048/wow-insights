@@ -11,7 +11,7 @@ import (
 // file since the query was hoisted. Skips when there is no recording.
 func recordedKill(t *testing.T) (*timelineReport, Fight) {
 	t.Helper()
-	raw, err := os.ReadFile("../../testdata/timeline-1-21-1141518.json")
+	raw, err := os.ReadFile(recordedKillFile)
 	if err != nil {
 		skipWithoutRecording(t, err)
 	}
@@ -68,23 +68,33 @@ func recordedFight(t *testing.T, id int) Fight {
 	return Fight{}
 }
 
-// The recorded subject: report ExampleReport123, fight 1 (the kill) with the
-// Fire Mage as actor 21, a Holy Paladin as 11 and a Shadow Priest as 29;
-// fight 6 (a wipe) with actor 21. Actor ids are the real ones — the
-// redaction renames, it does not renumber — which is what cmd/dev/record
-// -players takes.
+// The recorded subject: report ExampleReport123 — the owner's raid night of
+// 2026-09-23, re-recorded under #81 — with fight 29 a heroic The Coiled Altar
+// kill carrying the Fire Mage as actor 5, a Holy Paladin as 11 and a Shadow
+// Priest as 53, and fight 35 a heroic Ula'tek wipe the Fire Mage died on.
+// Actor ids are the real ones — the redaction renames, it does not renumber —
+// which is what cmd/dev/record -players takes.
+//
+// The file names carry each fight's start time because the recorder keys a
+// timeline on it; they are named here once so that the next re-record is an
+// edit to this block and nowhere else.
 const (
-	recordedKillID   = 1
-	recordedWipeID   = 6
-	recordedFireMage = 21
+	recordedKillID       = 29
+	recordedWipeID       = 35
+	recordedFireMage     = 5
+	recordedHolyPaladin  = 11
+	recordedShadowPriest = 53
+
+	recordedKillFile  = "../../testdata/timeline-29-5-5627434.json"
+	recordedWipeFile  = "../../testdata/timeline-35-5-9561554.json"
+	recordedKillFight = "../../testdata/fight-29.json"
 )
 
 // recordedWipe loads the committed recording of the pull the Fire Mage died
-// on, which is the one that makes death attribution worth doing: most of its
-// reported idle is the player being dead.
+// on, which is the one that makes death attribution worth doing.
 func recordedWipe(t *testing.T) (*timelineReport, Fight) {
 	t.Helper()
-	raw, err := os.ReadFile("../../testdata/timeline-6-21-2665074.json")
+	raw, err := os.ReadFile(recordedWipeFile)
 	if err != nil {
 		skipWithoutRecording(t, err)
 	}

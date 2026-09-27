@@ -106,13 +106,28 @@ func TestNoCheckPassesJudgement(t *testing.T) {
 }
 
 // **The check that would have caught the Flamestrike bug.** A proc spent on a
-// spell the tables have not authored looks exactly like a proc nobody spent,
-// and before Flamestrike was authored seven Hot Streaks on the recorded wipe
+// spell the tables have not authored looks exactly like a proc nobody spent:
+// before Flamestrike was authored, seven Hot Streaks on a recorded wipe
 // counted as unspent in a stretch where every one was spent correctly.
 //
-// Nothing unspent may remain except an aura that was still up when the pull
-// ended, which was never going to be spent by anybody.
-func TestNoProcIsUnspentExceptOnesStillUpWhenThePullEnded(t *testing.T) {
+// A proc may go unspent — it may expire. This test used to say otherwise,
+// that nothing is unspent unless still up when the pull ends, and the raid
+// night recorded for #81 falsified it honestly: three Pyroclasms ran out with
+// only instant Pyroblasts inside them, one during a Combustion burst of ten
+// in thirteen seconds. An instant Pyroblast does not spend Pyroclasm, so they
+// lapsed. That is a thing a player does, not a thing the tables got wrong.
+//
+// So the claim is narrower and is the one that matters: **an unspent proc
+// expired; it was not removed by a cast of a spell the tables do not know
+// spends it.** A cast landing as the aura ends, of a spell no rule links to
+// that aura, is a spender missing from CastRules. A cast of a spell the rules
+// do link to it — an instant Pyroblast beside an expiring Pyroclasm — is the
+// tables deliberately not crediting it, and is not flagged.
+//
+// "Expired" cannot be read off a fixed duration. Pyroclasm stacks to two and
+// a new stack resets the whole buff, so a window can run past twenty seconds
+// and still have expired; one on the new recording ran twenty-four.
+func TestAnUnspentProcExpiredRatherThanBeingSpentOnAnUnauthoredSpell(t *testing.T) {
 	for _, c := range []struct {
 		name string
 		load func(*testing.T) (*timelineReport, Fight)
@@ -127,14 +142,46 @@ func TestNoProcIsUnspentExceptOnesStillUpWhenThePullEnded(t *testing.T) {
 				t.Fatal("no procs were counted at all")
 			}
 			for _, l := range tl.Procs {
-				if lost := l.Generated - l.Spent - l.StillUp; lost != 0 {
-					t.Errorf("%s: %d of %d went neither spent nor held to the end — most likely the spell that spends it is not in CastRules",
-						l.Name, lost, l.Generated)
-				}
 				if len(l.SpentOn) == 0 {
 					t.Errorf("%s names no spell that spends it, so the count cannot be checked by a reader", l.Name)
 				}
 			}
+
+			// Which spells the tables know interact with each aura, in either
+			// list. A cast of one of these beside an expiring aura is a cast
+			// the rules chose not to credit, not a spender they are missing.
+			known := map[string]map[int]bool{}
+			for spell, rule := range fire.CastRules {
+				for _, aura := range slices.Concat(rule.Instant, rule.HardCast) {
+					if known[aura] == nil {
+						known[aura] = map[int]bool{}
+					}
+					known[aura][spell] = true
+				}
+			}
+
+			byName := map[string][]auraWindow{}
+			for _, w := range auraWindows(rep.Procs.Data, fight, fire) {
+				byName[w.name] = append(byName[w.name], w)
+			}
+			lapsed := 0
+			for name, windows := range byName {
+				for _, w := range mergeWindows(windows) {
+					if spentIn(tl.Casts, w, name) || w.end >= fight.Duration() {
+						continue
+					}
+					lapsed++
+					for _, cast := range tl.Casts {
+						landed := cast.End
+						if landed < w.end-procSlack || landed > w.end+procSlack || known[name][cast.AbilityID] {
+							continue
+						}
+						t.Errorf("%s ended at %s on a %s, a spell no cast rule links to %s — most likely a spender missing from CastRules",
+							name, formatOffset(w.end), cast.Name, name)
+					}
+				}
+			}
+			t.Logf("%d procs lapsed unspent; each expired rather than being spent on something the tables do not know", lapsed)
 		})
 	}
 }

@@ -149,23 +149,27 @@ func TestFixtureRosterIsRedacted(t *testing.T) {
 
 // The positioned golden render #10 deferred: the recorded kill, laid out
 // and rendered, with the positions of specific things pinned to three
-// decimals. Every number was checked by hand against the axis: the fight is
-// 431,472 ms, the precast bar starts 1,650 ms before the pull so the lead-in
-// is 2,400 ms with its margin, and the pull therefore sits at 2400/433872 =
-// 0.553%. A change to the axis — the lead-in rule, the total, the percent
+// decimals. Every number was checked by hand against the axis, and re-checked
+// for #81 when the recording changed: the fight is 431,266 ms; the precast
+// Fireball's bar starts 510 ms before the pull, and 510 plus the 750 ms
+// margin is under the 1,500 ms minimum lead-in, so the lead-in is the
+// minimum and the total is 432,766 ms; the pull therefore sits at
+// 1500/432766 = 0.347%. The precast bar is 1,228 ms (the fight's median
+// Fireball) from -510 ms, Stage One runs 121,077 ms, the first boss cast is
+// 32 ms in, and the first damage point is 48,937 of a 785,742 peak. A change to the axis — the lead-in rule, the total, the percent
 // formula — moves all of these at once, which is what the test is for; a
 // change to the analysis moves only what it changed, and the message says
 // which.
 func TestGoldenRenderOfTheRecordedKill(t *testing.T) {
 	replay := openRecording(t)
-	rec := get(t, recordedServer(t, replay).wcl, "/report/"+replay.Code()+"/fight/1?player=21")
+	rec := get(t, recordedServer(t, replay).wcl, "/report/"+replay.Code()+"/fight/29?player=5")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d", rec.Code)
 	}
 	page := rec.Body.String()
 
 	// The axis.
-	for _, want := range []string{`data-total-ms="433872"`, `data-lead-ms="2400"`, `data-duration-ms="431472"`} {
+	for _, want := range []string{`data-total-ms="432766"`, `data-lead-ms="1500"`, `data-duration-ms="431266"`} {
 		if !strings.Contains(page, want) {
 			t.Errorf("the axis moved: want %s, page has %s", want, regexp.MustCompile(`data-(total|lead|duration)-ms="[0-9]+"`).FindAllString(page, -1))
 		}
@@ -174,12 +178,12 @@ func TestGoldenRenderOfTheRecordedKill(t *testing.T) {
 	// nothing else — not its other classes, attribute order or the rest of
 	// its style — so a markup change that moves nothing stays green.
 	for what, pattern := range map[string]string{
-		"the pull": `class="prepull[^>]*width: 0\.553%`,
-		"the precast Pyroblast bar (1.818s, reconstructed)": `class="castbar estimated[^>]*left: 0\.173%; width: 0\.419%`,
-		"the precast's tick":                       `class="tick[^>]*left: 0\.173%`,
-		"the first phase (Stage One, 2m00s)":       `class="phase[^>]*left: 0\.553%; width: 27\.764%`,
-		"the first boss marker":                    `class="bcast[^>]*left: 0\.558%`,
-		"the DPS curve's first point, on the pull": `points="0\.553,87\.776`,
+		"the pull": `class="prepull[^>]*width: 0\.347%`,
+		"the precast Fireball bar (1.228s, reconstructed)": `class="castbar estimated[^>]*left: 0\.229%; width: 0\.284%`,
+		"the precast's tick":                       `class="tick[^>]*left: 0\.229%`,
+		"the first phase (Stage One, 2m01s)":       `class="phase[^>]*left: 0\.347%; width: 27\.977%`,
+		"the first boss marker":                    `class="bcast[^>]*left: 0\.354%`,
+		"the DPS curve's first point, on the pull": `points="0\.347,93\.772`,
 	} {
 		if !regexp.MustCompile(pattern).MatchString(page) {
 			t.Errorf("%s is not where it was: /%s/ not found", what, pattern)
@@ -193,7 +197,7 @@ func TestGoldenRenderOfTheRecordedKill(t *testing.T) {
 // the class-agnostic lanes, and it says why the rest is missing.
 func TestFixtureRendersAnUnauthoredSpecWithANotice(t *testing.T) {
 	replay := openRecording(t)
-	page := get(t, recordedServer(t, replay).wcl, "/report/"+replay.Code()+"/fight/1?player=11").Body.String()
+	page := get(t, recordedServer(t, replay).wcl, "/report/"+replay.Code()+"/fight/29?player=11").Body.String()
 	for _, want := range []string{
 		"No rotation knowledge for Holy Paladin yet",
 		"Cast timeline",

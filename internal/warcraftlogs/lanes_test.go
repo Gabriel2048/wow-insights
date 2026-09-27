@@ -288,9 +288,10 @@ func TestBuildDPSDropsASeriesOnAnotherGrid(t *testing.T) {
 }
 
 // The recorded kill's boss and raid cooldown lanes, with what came out
-// written down. Two boss-typed NPCs, four casts that never landed, Rallying
-// Cry from two warriors and Stampeding Roar from three druids: the numbers
-// were read before they were pinned.
+// written down. Two boss-typed NPCs, three casts that never landed — all
+// Eternal Nightfall — and Rallying Cry and Stampeding Roar each from two
+// casters: re-derived for #81 by counting the raw events, before they were
+// pinned.
 func TestGoldenRecordedKillLanes(t *testing.T) {
 	rep, fight := recordedKill(t)
 	names, actors, npcs := rep.names(), rep.actorNames(), rep.npcs()
@@ -307,13 +308,18 @@ func TestGoldenRecordedKillLanes(t *testing.T) {
 	if len(sources) != 2 {
 		t.Errorf("boss markers come from %d NPCs, want 2", len(sources))
 	}
-	if interrupted["Dreadmarch"] != 1 || interrupted["Eternal Nightfall"] != 3 {
-		t.Errorf("interrupted = %v, want Dreadmarch 1 and Eternal Nightfall 3", interrupted)
+	if interrupted["Eternal Nightfall"] != 3 {
+		t.Errorf("interrupted = %v, want Eternal Nightfall 3", interrupted)
 	}
-	// 144 casts that landed plus the 4 that did not, counted from the raw
-	// events by hand.
-	if total != 148 {
-		t.Errorf("boss casts counted = %d, want 148", total)
+	for name, n := range interrupted {
+		if name != "Eternal Nightfall" && n != 0 {
+			t.Errorf("%s was interrupted %d times; in this pull only Eternal Nightfall ever was", name, n)
+		}
+	}
+	// 143 casts that landed plus the 3 that did not, counted from the raw
+	// events.
+	if total != 146 {
+		t.Errorf("boss casts counted = %d, want 146", total)
 	}
 
 	raid := raidCooldownWindows(rep.RaidCDs.Data, fight, actors)
@@ -327,8 +333,8 @@ func TestGoldenRecordedKillLanes(t *testing.T) {
 	if n := len(casters["Rallying Cry"]); n != 2 {
 		t.Errorf("Rallying Cry credited to %d casters, want 2", n)
 	}
-	if n := len(casters["Stampeding Roar"]); n != 3 {
-		t.Errorf("Stampeding Roar credited to %d casters, want 3", n)
+	if n := len(casters["Stampeding Roar"]); n != 2 {
+		t.Errorf("Stampeding Roar credited to %d casters, want 2", n)
 	}
 }
 

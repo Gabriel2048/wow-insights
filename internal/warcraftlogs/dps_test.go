@@ -111,9 +111,9 @@ func TestTheCurveAgreesWithTheDamageTable(t *testing.T) {
 	}
 
 	// The same player's row in the same pull's damage table.
-	raw, err := os.ReadFile("../../testdata/fight-1.json")
+	raw, err := os.ReadFile(recordedKillFight)
 	if err != nil {
-		t.Fatalf("the recording has no fight-1.json: %v", err)
+		t.Fatalf("the recording has no fight file for the kill: %v", err)
 	}
 	var env struct{ Data fightDetailResponse }
 	if err := json.Unmarshal(raw, &env); err != nil {

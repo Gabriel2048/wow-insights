@@ -67,10 +67,13 @@ func TestEveryAuthoredSpecIsConsistent(t *testing.T) {
 }
 
 func TestTheCatalogueHasEverySpecialisation(t *testing.T) {
-	if len(catalogue) != 39 {
-		t.Errorf("%d specialisations catalogued, want 39", len(catalogue))
+	// Forty: thirteen classes of three, plus Druid's fourth. This said
+	// thirty-nine until a recorded raid night had a Devourer Demon Hunter in
+	// it.
+	if len(catalogue) != 40 {
+		t.Errorf("%d specialisations catalogued, want 40", len(catalogue))
 	}
-	for _, id := range []SpecID{{"Hunter", "BeastMastery"}, {"DeathKnight", "Blood"}, {"Mage", "Fire"}} {
+	for _, id := range []SpecID{{"Hunter", "BeastMastery"}, {"DeathKnight", "Blood"}, {"Mage", "Fire"}, {"DemonHunter", "Devourer"}} {
 		if !Catalogued(id) {
 			t.Errorf("%+v is not catalogued", id)
 		}
