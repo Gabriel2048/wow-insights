@@ -556,6 +556,11 @@ type Timeline struct {
 	// reading anything else on it or drawing Pauses.
 	GCD GCDModel
 
+	// EncounterID is the boss, as the API numbers it. It is what the rankings
+	// API needs to find other players' pulls of the same fight; zero for a
+	// pull the API reported no encounter for.
+	EncounterID int
+
 	// Duration is the length of the fight itself. Where anything is drawn
 	// against it is internal/view's decision, not this package's: every
 	// time here is absolute and relative to the pull, and there is no
@@ -1082,6 +1087,7 @@ func buildTimeline(report *timelineReport, casts []event, fight Fight, know know
 
 	if len(report.Fights) > 0 {
 		encounterID := report.Fights[0].EncounterID
+		timeline.EncounterID = encounterID
 		transitions := make([]phaseTransition, 0, len(report.Fights[0].PhaseTransitions))
 		for _, t := range report.Fights[0].PhaseTransitions {
 			transitions = append(transitions, phaseTransition{ID: t.ID, StartTime: t.StartTime})

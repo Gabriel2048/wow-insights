@@ -26,6 +26,16 @@ const (
 	// Cache about what this is and is not.
 	fightTTL    = 10 * time.Minute
 	timelineTTL = 10 * time.Minute
+	// rankingsTTL is how long a rankings page is kept. It changes only as
+	// people kill the boss, so an hour costs a comparison nothing it would
+	// notice; and a player looking at three pulls of one boss in a sitting
+	// asks for the same two pages each time.
+	rankingsTTL = time.Hour
+	// peerTTL is a day because another player's logged pull never changes,
+	// and the top performers on a boss are the same people from one pull of
+	// it to the next — which makes this the one cache here with a real hit
+	// rate across different subjects.
+	peerTTL = 24 * time.Hour
 	// missTTL is how long "there is no such report" is remembered. Long
 	// enough to absorb a typo being retried, short enough that a report
 	// uploaded a moment later is found.
@@ -47,6 +57,9 @@ const (
 	// same care.
 	maxTimelines = 12
 	maxEntries   = 32
+	// maxPeers bounds other players' pulls. Each is a few hundred casts —
+	// tens of kilobytes — and a comparison is fifteen of them.
+	maxPeers = 64
 )
 
 // source is the slice of the client the cache decorates, declared here by
@@ -57,6 +70,7 @@ type source interface {
 	Report(ctx context.Context, code string) (*Report, error)
 	FightDetail(ctx context.Context, code string, fightID int) (*FightDetail, error)
 	Timeline(ctx context.Context, code string, fight Fight, sourceID int, know knowledge.Knowledge) (*Timeline, error)
+	cohortSource
 }
 
 // Cache remembers what the API has already been asked, so that a second look
@@ -86,15 +100,27 @@ type Cache struct {
 	// The lifetimes, as fields rather than the constants, so a test can
 	// prove that an entry expires without sleeping through a minute of it.
 	// Nothing else sets them.
-	reportTTL, fightTTL, timelineTTL time.Duration
+	reportTTL, fightTTL, timelineTTL, rankingsTTL, peerTTL time.Duration
 
 	reports   *store[string, *Report]
 	fights    *store[fightKey, *FightDetail]
 	timelines *store[timelineKey, *Timeline]
+	// The two halves of a cohort, cached apart because they age apart.
+	rankings *store[rankingsKey, []rankedPeer]
+	peers    *store[PullRef, *Peer]
 
 	mu   sync.Mutex
 	hits int
 	miss int
+}
+
+// rankingsKey is one rankings page. It is CohortQuery without the parts that
+// belong to the asker rather than the page — how many peers they want and
+// which pull is theirs — so two players on the same boss share it.
+type rankingsKey struct {
+	encounter, difficulty int
+	class, spec           string
+	bracket, page         int
 }
 
 type fightKey struct {
@@ -118,10 +144,16 @@ func NewCache(src source) *Cache {
 		reportTTL:   reportTTL,
 		fightTTL:    fightTTL,
 		timelineTTL: timelineTTL,
+		rankingsTTL: rankingsTTL,
+		peerTTL:     peerTTL,
 
 		reports:   newStore[string, *Report](maxEntries),
 		fights:    newStore[fightKey, *FightDetail](maxEntries),
 		timelines: newStore[timelineKey, *Timeline](maxTimelines),
+		rankings:  newStore[rankingsKey, []rankedPeer](maxEntries),
+		// A peer's pull is a few hundred casts, tens of kilobytes; two
+		// cohorts are fifteen of them, so this holds a handful of bosses.
+		peers: newStore[PullRef, *Peer](maxPeers),
 	}
 }
 
@@ -205,6 +237,39 @@ func (c *Cache) Timeline(ctx context.Context, code string, fight Fight, sourceID
 	})
 	c.note(hit)
 	return v, err
+}
+
+// Cohort builds a cohort from cached rankings pages and cached pulls.
+func (c *Cache) Cohort(ctx context.Context, q CohortQuery) (*Cohort, error) {
+	return buildCohort(ctx, c, q)
+}
+
+func (c *Cache) rankingsPage(ctx context.Context, q CohortQuery, page int) ([]rankedPeer, error) {
+	key := rankingsKey{q.Encounter, q.Difficulty, q.Class, q.Spec, q.Bracket, page}
+	v, hit, err := c.rankings.do(ctx, key, func(ctx context.Context) ([]rankedPeer, time.Duration, error) {
+		rows, err := c.src.rankingsPage(ctx, q, page)
+		return rows, c.rankingsTTL, err
+	})
+	c.note(hit)
+	return v, err
+}
+
+func (c *Cache) peerPull(ctx context.Context, p rankedPeer) (*Peer, error) {
+	v, hit, err := c.peers.do(ctx, p.ref, func(ctx context.Context) (*Peer, time.Duration, error) {
+		peer, err := c.src.peerPull(ctx, p)
+		return peer, c.peerTTL, err
+	})
+	c.note(hit)
+	if err != nil || v == nil {
+		return v, err
+	}
+	// A pull is cached by who and where, and its rank belongs to whichever
+	// page it was found on this time — the same peer is #3 at their item
+	// level and #41 overall. The cached value is shared, so the rank is set
+	// on a copy.
+	out := *v
+	out.Rank, out.ItemLevel, out.DPS = p.rank, p.itemLevel, p.dps
+	return &out, nil
 }
 
 // cacheableFailure reports whether a failure is worth remembering. A report

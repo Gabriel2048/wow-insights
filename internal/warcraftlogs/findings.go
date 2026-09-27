@@ -142,6 +142,8 @@ func Analyse(t *Timeline, know knowledge.Knowledge, who PlayerContext) Analysis 
 		func() (Check, []Finding) { return pauseCheck(t, who) },
 		func() (Check, []Finding) { return procCheck(t, know) },
 		func() (Check, []Finding) { return hardCastCheck(t, know) },
+		func() (Check, []Finding) { return cohortCheck(SameItemLevel, who) },
+		func() (Check, []Finding) { return cohortCheck(TopPerformers, who) },
 	} {
 		check, found := rule()
 		check.Found = len(found)

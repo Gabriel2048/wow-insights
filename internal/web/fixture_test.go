@@ -1,6 +1,7 @@
 package web
 
 import (
+	"html"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -210,5 +211,33 @@ func TestFixtureRendersAnUnauthoredSpecWithANotice(t *testing.T) {
 	}
 	if strings.Contains(page, `class="cdblock`) {
 		t.Error("the Holy Paladin's page draws personal cooldown blocks")
+	}
+}
+
+// #86 over production code: the recorded kill is compared with the best ten
+// at the player's item level and the top five, each read from its own
+// recorded rankings page and pulls; the wipe, which is never ranked, has no
+// bracket to look in and says so, and is still compared with the top.
+func TestFixtureComparesThePlayerWithBothCohorts(t *testing.T) {
+	replay := openRecording(t)
+	s := recordedServer(t, replay)
+	for target, want := range map[string][]string{
+		"/report/" + replay.Code() + "/fight/29/analysis?player=5": {
+			"yours 180k while active; the best 10 at item level 323–325: median 237k",
+			"yours 180k while active; the top 5: median 255k",
+		},
+		"/report/" + replay.Code() + "/fight/35/analysis?player=5": {
+			"a wipe is never ranked",
+			"yours 118k while active; the top 5: median 279k",
+		},
+	} {
+		serve(s, "POST", target)
+		s.jobs.wg.Wait()
+		page := html.UnescapeString(serve(s, "GET", target).Body.String())
+		for _, w := range want {
+			if !strings.Contains(page, w) {
+				t.Errorf("%s does not say %q", target, w)
+			}
+		}
 	}
 }

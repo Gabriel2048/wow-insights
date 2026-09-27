@@ -19,6 +19,27 @@ type fakeSource struct {
 	fight                      func() (*FightDetail, error)
 	timeline                   func() (*Timeline, error)
 	block                      chan struct{}
+
+	// The cohort's two halves.
+	pages, pulls atomic.Int32
+	rows         func(q CohortQuery) ([]rankedPeer, error)
+	pull         func(p rankedPeer) (*Peer, error)
+}
+
+func (f *fakeSource) rankingsPage(_ context.Context, q CohortQuery, _ int) ([]rankedPeer, error) {
+	f.pages.Add(1)
+	if f.rows != nil {
+		return f.rows(q)
+	}
+	return nil, nil
+}
+
+func (f *fakeSource) peerPull(_ context.Context, p rankedPeer) (*Peer, error) {
+	f.pulls.Add(1)
+	if f.pull != nil {
+		return f.pull(p)
+	}
+	return &Peer{Rank: p.rank, DPS: p.dps, Damage: p.dps * 300, ActiveTime: 290 * time.Second}, nil
 }
 
 func (f *fakeSource) Report(context.Context, string) (*Report, error) {

@@ -91,9 +91,13 @@ func TestNoCheckPassesJudgement(t *testing.T) {
 	tl := buildTimeline(rep, rep.Casts.Data, fight, fire)
 	verdicts := []string{"good", "bad", "poor", "excellent", "clean", "wasted", "should", "mistake", "well played"}
 
-	for _, ch := range Analyse(tl, fire, PlayerContext{ActedUntil: tl.Duration}).Checks {
+	// With comparisons that were made, so their wording is read too.
+	who := comparedAgainst()
+	who.ActedUntil = tl.Duration
+	who.Cohorts[1] = CohortResult{Kind: TopPerformers, Cohort: who.Cohorts[0].Cohort}
+	for _, ch := range Analyse(tl, fire, who).Checks {
 		var said strings.Builder
-		said.WriteString(strings.ToLower(ch.Question + " " + ch.Measured + " " + ch.Unasked))
+		said.WriteString(strings.ToLower(ch.Question + " " + ch.Measured + " " + ch.Unasked + " " + ch.Note))
 		for _, e := range ch.Evidence {
 			said.WriteString(" " + strings.ToLower(e.Label+" "+e.Value))
 		}

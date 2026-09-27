@@ -2,6 +2,7 @@ package warcraftlogs
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -45,6 +46,10 @@ type Check struct {
 	Unasked string
 	// Found is how many findings this check produced. Usually zero.
 	Found int
+	// Note is what the number cannot tell the reader, said next to it. A
+	// comparison that hides its own blind spot is one a reader will trust
+	// further than it deserves.
+	Note string
 }
 
 // Timestamp renders At as m:ss, the way every other time on the page reads.
@@ -71,6 +76,26 @@ type Analysis struct {
 type PlayerContext struct {
 	ActedUntil time.Duration
 	DiedAt     time.Duration
+
+	// Damage and ActiveTime are the player's own, from the damage table, for
+	// the comparison with other players. ActiveTime is the table's
+	// activeTime: time spent dealing damage, whatever the reason for the rest.
+	Damage     float64
+	ActiveTime time.Duration
+	Duration   time.Duration
+
+	// Cohorts are the other players this pull is compared against, as the
+	// caller fetched them. A cohort that could not be fetched still appears,
+	// with the reason, so the page says what it did not ask rather than
+	// leaving a gap that reads as nothing to say.
+	Cohorts []CohortResult
+}
+
+// CohortResult is one cohort as the caller got it: the cohort, or why not.
+type CohortResult struct {
+	Kind    CohortKind
+	Cohort  *Cohort
+	Unasked string
 }
 
 // pauseCheck counts time the player was not occupied, and claims nothing
@@ -220,4 +245,108 @@ func joinWords(parts []string) string {
 		}
 	}
 	return out
+}
+
+// cohortCheck compares the player's DPS with one cohort's.
+//
+// **The comparison is on DPS while active**, damage over the time spent
+// dealing it, alongside plain DPS. The owner carried orbs on this tier's
+// Coiled Altar and put the objection plainly: comparing someone with a player
+// who was not assigned the mechanic is unreasonable. Carrying an orb lowers
+// DPS and leaves DPS while active alone, so the second number is the fair one.
+// It is not a free pass — active time does not know why a player was inactive
+// — and the note on the check says so.
+//
+// It claims nothing. A median and a spread are stated, and the reader decides
+// what a gap means; findings built on the comparison are #65's.
+func cohortCheck(kind CohortKind, who PlayerContext) (Check, []Finding) {
+	c := Check{RuleID: "vs-item-level", Question: "DPS against the best at your item level"}
+	if kind == TopPerformers {
+		c = Check{RuleID: "vs-top", Question: "DPS against the top performers on this boss"}
+	}
+	var result *CohortResult
+	for i := range who.Cohorts {
+		if who.Cohorts[i].Kind == kind {
+			result = &who.Cohorts[i]
+		}
+	}
+	switch {
+	case result == nil:
+		c.Unasked = "nothing asked for other players' pulls of this boss"
+		return c, nil
+	case result.Cohort == nil:
+		c.Unasked = result.Unasked
+		return c, nil
+	case len(result.Cohort.Peers) == 0:
+		c.Unasked = "no other player's pull of this boss could be read"
+		return c, nil
+	case who.ActiveTime <= 0 || who.Duration <= 0:
+		c.Unasked = "your own damage table has no active time to compare with"
+		return c, nil
+	}
+	c.Asked = true
+	cohort := result.Cohort
+
+	yours := who.Damage / who.ActiveTime.Seconds()
+	var active, overall []float64
+	for _, p := range cohort.Peers {
+		if a := p.ActiveDPS(); a > 0 {
+			active = append(active, a)
+		}
+		if o := p.PullDPS(); o > 0 {
+			overall = append(overall, o)
+		}
+	}
+	if len(active) == 0 {
+		c.Asked = false
+		c.Unasked = "none of the peers' damage tables had an active time to compare with"
+		return c, nil
+	}
+	slices.Sort(active)
+	slices.Sort(overall)
+
+	them := fmt.Sprintf("the best %d", len(cohort.Peers))
+	if kind == SameItemLevel && cohort.MinItemLevel > 0 {
+		levels := fmt.Sprint(cohort.MinItemLevel)
+		if cohort.MaxItemLevel > cohort.MinItemLevel {
+			levels = fmt.Sprintf("%d–%d", cohort.MinItemLevel, cohort.MaxItemLevel)
+		}
+		them += " at item level " + levels
+	} else if kind == TopPerformers {
+		them = fmt.Sprintf("the top %d", len(cohort.Peers))
+	}
+	c.Measured = fmt.Sprintf("yours %s while active; %s: median %s", thousands(yours), them, thousands(median(active)))
+
+	c.Evidence = []Evidence{
+		{Label: "yours, while active", Value: thousands(yours)},
+		{Label: "yours, over the pull", Value: thousands(who.Damage / who.Duration.Seconds())},
+		{Label: "theirs, while active", Value: fmt.Sprintf("median %s, %s to %s", thousands(median(active)), thousands(active[0]), thousands(active[len(active)-1]))},
+		{Label: "theirs, over the pull", Value: fmt.Sprintf("median %s", thousands(median(overall)))},
+		{Label: "compared against", Value: plural(len(cohort.Peers), "player")},
+	}
+	if cohort.Skipped > 0 {
+		c.Evidence = append(c.Evidence, Evidence{Label: "could not be read", Value: fmt.Sprintf("%d", cohort.Skipped)})
+	}
+	c.Note = "While active counts only the time spent dealing damage, so a mechanic you were assigned does not count against you. It also cannot tell a mechanic from standing still — the pauses on the timeline are what say which."
+	return c, nil
+}
+
+// median is the middle of a sorted set.
+func median(sorted []float64) float64 {
+	n := len(sorted)
+	if n == 0 {
+		return 0
+	}
+	if n%2 == 1 {
+		return sorted[n/2]
+	}
+	return (sorted[n/2-1] + sorted[n/2]) / 2
+}
+
+// thousands renders a DPS figure the way damage meters do: 189k.
+func thousands(v float64) string {
+	if v < 1000 {
+		return fmt.Sprintf("%.0f", v)
+	}
+	return fmt.Sprintf("%.0fk", v/1000)
 }
