@@ -124,9 +124,18 @@ func TestNoCheckPassesJudgement(t *testing.T) {
 // do link to it — an instant Pyroblast beside an expiring Pyroclasm — is the
 // tables deliberately not crediting it, and is not flagged.
 //
-// "Expired" cannot be read off a fixed duration. Pyroclasm stacks to two and
+// "Expired" cannot be read off a window's length. Pyroclasm stacks to two and
 // a new stack resets the whole buff, so a window can run past twenty seconds
-// and still have expired; one on the new recording ran twenty-four.
+// and still have expired; one on the new recording ran twenty-four. What is
+// constant is the time from the last application or stack to the removal: an
+// aura that expired ran its full duration from there, and one that was spent
+// ended short of it.
+//
+// That is what keeps this from failing on a coincidence. Heat Shimmer lasts
+// ten seconds, and on the recorded kill one ran exactly ten and expired on the
+// same millisecond an instant Pyroblast landed. A cast that coincides with an
+// aura running out its full duration did not spend it — so a cast is flagged
+// only when the aura it sits beside ended early.
 func TestAnUnspentProcExpiredRatherThanBeingSpentOnAnUnauthoredSpell(t *testing.T) {
 	for _, c := range []struct {
 		name string
@@ -164,13 +173,50 @@ func TestAnUnspentProcExpiredRatherThanBeingSpentOnAnUnauthoredSpell(t *testing.
 			for _, w := range auraWindows(rep.Procs.Data, fight, fire) {
 				byName[w.name] = append(byName[w.name], w)
 			}
-			lapsed := 0
-			for name, windows := range byName {
-				for _, w := range mergeWindows(windows) {
-					if spentIn(tl.Casts, w, name) || w.end >= fight.Duration() {
+
+			// ranFor is how long an aura had been running since it was last
+			// applied, stacked or refreshed, at the moment it ended.
+			ranFor := func(name string, w auraWindow) time.Duration {
+				last := w.start
+				for _, e := range rep.Procs.Data {
+					if n, ok := fire.ProcAura(e.AbilityGameID); !ok || n != name {
 						continue
 					}
+					switch e.Type {
+					case "applybuff", "applybuffstack", "refreshbuff":
+						at := time.Duration(e.Timestamp-fight.StartTime) * time.Millisecond
+						if at >= w.start && at <= w.end && at > last {
+							last = at
+						}
+					}
+				}
+				return w.end - last
+			}
+
+			lapsed := 0
+			for name, windows := range byName {
+				var unspent []auraWindow
+				for _, w := range mergeWindows(windows) {
+					if !spentIn(tl.Casts, w, name) && w.end < fight.Duration() {
+						unspent = append(unspent, w)
+					}
+				}
+				// The aura's full duration, as this pull shows it: the longest
+				// any unspent one ran from its last application. An expiry
+				// runs this long; anything well short of it was ended by
+				// something. The blind spot is that the single longest one is
+				// always excused — with Flamestrike's rule deleted this reports
+				// two of the three Hot Streaks it spent, not three — which can
+				// make a failure smaller but never turn one into a pass.
+				var full time.Duration
+				for _, w := range unspent {
+					full = max(full, ranFor(name, w))
+				}
+				for _, w := range unspent {
 					lapsed++
+					if ranFor(name, w) >= full-250*time.Millisecond {
+						continue // ran its full duration: it expired
+					}
 					for _, cast := range tl.Casts {
 						landed := cast.End
 						if landed < w.end-procSlack || landed > w.end+procSlack || known[name][cast.AbilityID] {
@@ -245,9 +291,16 @@ func TestEveryAuthoredProcAuraAppearsInTheRecording(t *testing.T) {
 	}
 }
 
-// Flamestrike spends a Hot Streak exactly as Pyroblast does. Without a rule
-// for it every AoE cast reads as one with nothing behind it.
-func TestFlamestrikeSpendsAHotStreak(t *testing.T) {
+// Flamestrike spends a Hot Streak exactly as Pyroblast does, and Pyroclasm
+// improves a hard-cast one — but a hard cast without Pyroclasm is ordinary AoE,
+// never a mistake.
+//
+// This test used to assert that Flamestrike's HardCast list was empty, which
+// was a belief about the game and a wrong one: Pyroclasm does improve a
+// hard-cast Flamestrike. What that assertion was protecting — that no AoE cast
+// is marked one that should not have been made — is now held directly, by the
+// HardCastNeedsProc flag and by the classification itself.
+func TestFlamestrikeSpendsAHotStreakAndIsNeverAMistakeToHardCast(t *testing.T) {
 	rule, ok := fire.Rule(1254851)
 	if !ok {
 		t.Fatal("Flamestrike has no cast rule")
@@ -255,13 +308,42 @@ func TestFlamestrikeSpendsAHotStreak(t *testing.T) {
 	if !slices.Contains(rule.Instant, "Hot Streak!") {
 		t.Errorf("Flamestrike's instant rule is %v, which does not name Hot Streak!", rule.Instant)
 	}
-	// And hard casting it is not a mistake, so nothing may mark one.
-	if len(rule.HardCast) != 0 {
-		t.Errorf("Flamestrike names %v as justifying a hard cast; hard casting it is simply how the spell works", rule.HardCast)
+	if rule.HardCastNeedsProc {
+		t.Error("a hard-cast Flamestrike is required to have a proc behind it; it is hard cast as ordinary AoE")
 	}
-	casts := []Cast{{AbilityID: 1254851, Name: "Flamestrike", Offset: time.Second, End: 3 * time.Second, CastTime: 2 * time.Second, HadBegincast: true}}
-	classifyProcs(casts, nil, fire)
-	if casts[0].ProcMissing {
-		t.Error("a hard-cast Flamestrike is marked a cast that should not have been made")
+
+	hardCast := func() []Cast {
+		return []Cast{{AbilityID: 1254851, Name: "Flamestrike", Offset: time.Second, End: 3 * time.Second, CastTime: 2 * time.Second, HadBegincast: true}}
+	}
+	plain := hardCast()
+	classifyProcs(plain, nil, fire)
+	if plain[0].ProcMissing {
+		t.Error("a hard-cast Flamestrike with nothing up is marked a cast that should not have been made")
+	}
+
+	improved := hardCast()
+	classifyProcs(improved, []auraWindow{{name: "Pyroclasm", start: 0, end: 4 * time.Second}}, fire)
+	if improved[0].Proc != "Pyroclasm" {
+		t.Errorf("a hard-cast Flamestrike under Pyroclasm is labelled %q, want Pyroclasm", improved[0].Proc)
+	}
+}
+
+// Pyroclasm is spent only by a hard cast. With Hot Streak and Pyroclasm both
+// up, Pyroblast comes out instantly and Pyroclasm stays — so an instant
+// Pyroblast must not claim it, and a hard-cast one with nothing up is still a
+// cast that should not have been made.
+func TestAnInstantPyroblastDoesNotSpendPyroclasm(t *testing.T) {
+	rule, _ := fire.Rule(11366)
+	if slices.Contains(rule.Instant, "Pyroclasm") {
+		t.Error("an instant Pyroblast is said to spend Pyroclasm; only a hard cast does")
+	}
+	if !rule.HardCastNeedsProc {
+		t.Error("a hard-cast Pyroblast with nothing behind it is no longer judged")
+	}
+	both := []auraWindow{{name: "Hot Streak!", start: 0, end: 2 * time.Second}, {name: "Pyroclasm", start: 0, end: 10 * time.Second}}
+	casts := []Cast{{AbilityID: 11366, Name: "Pyroblast", Offset: time.Second, End: time.Second}}
+	classifyProcs(casts, both, fire)
+	if strings.Contains(casts[0].Proc, "Pyroclasm") {
+		t.Errorf("an instant Pyroblast is labelled %q", casts[0].Proc)
 	}
 }

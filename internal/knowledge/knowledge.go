@@ -29,6 +29,18 @@ type SpecID struct {
 type CastRule struct {
 	Instant  []string
 	HardCast []string
+	// HardCastNeedsProc says a hard cast with none of HardCast up should not
+	// have been made. It is its own field because "this aura improves a hard
+	// cast" and "a hard cast is wrong without it" are different claims, and
+	// the spells that sit on each side of that line are the reason:
+	//
+	// Pyroblast is slow and hits nothing a Fireball would not, so the only
+	// hard cast worth making is one into Pyroclasm — true. Flamestrike is
+	// hard cast as ordinary AoE, and Pyroclasm improves it without being
+	// needed — false. Deriving the requirement from HardCast being non-empty
+	// would have marked every AoE Flamestrike a mistake the moment Pyroclasm
+	// was authored for it.
+	HardCastNeedsProc bool
 }
 
 // Knowledge is one specialisation's tables. The zero value is a spec nothing

@@ -13,6 +13,15 @@ var fireMage = Knowledge{
 		269651:  "Pyroclasm",
 		1242220: "Hyperthermia",
 		383874:  "Hyperthermia",
+		// Measured rather than remembered: across eighteen boss pulls, every
+		// removal of each of these landed on the player's own cast of one
+		// spell, and every such cast was instant. Glorious Incandescence was
+		// consumed by Fire Blast 465 times of 468; Heat Shimmer by Scorch 151
+		// times. Glorious Incandescence is a Sunfury hero-talent aura, so a
+		// Frostfire Fire Mage never gets it — which is harmless, because an
+		// aura that never comes up produces no ledger row.
+		451073: "Glorious Incandescence",
+		458964: "Heat Shimmer",
 	},
 
 	// 235314 and 1265927 are the absorb effects that share the Blazing
@@ -60,9 +69,13 @@ var fireMage = Knowledge{
 	// consumed when it lands. Pyroclasm survives a Pyroblast cast under
 	// Hyperthermia.
 	CastRules: map[int]CastRule{
+		// Pyroclasm is spent only by a hard cast. With Hot Streak and
+		// Pyroclasm both up, pressing Pyroblast casts it instantly and
+		// Pyroclasm stays, so the instant list must not name it.
 		11366: { // Pyroblast
-			Instant:  []string{"Hyperthermia", "Hot Streak!"},
-			HardCast: []string{"Pyroclasm"},
+			Instant:           []string{"Hyperthermia", "Hot Streak!"},
+			HardCast:          []string{"Pyroclasm"},
+			HardCastNeedsProc: true,
 		},
 		// Flamestrike spends a Hot Streak exactly as Pyroblast does, and is
 		// what a Fire Mage spends it on when there is more than one target.
@@ -71,12 +84,18 @@ var fireMage = Knowledge{
 		// counted as wasted in a stretch where all seven were spent
 		// correctly.
 		//
-		// HardCast is deliberately empty. No aura justifies hard casting it
-		// and none is needed — hard casting Flamestrike is simply how the
-		// spell works, which is why classifyProcs only marks a missing proc
-		// where a rule names one.
+		// Pyroclasm improves a hard-cast Flamestrike just as it does a
+		// Pyroblast — but unlike Pyroblast, a hard-cast Flamestrike without it
+		// is ordinary AoE and not a mistake, so HardCastNeedsProc is false.
 		1254851: { // Flamestrike
-			Instant: []string{"Hyperthermia", "Hot Streak!"},
+			Instant:  []string{"Hyperthermia", "Hot Streak!"},
+			HardCast: []string{"Pyroclasm"},
+		},
+		2948: { // Scorch
+			Instant: []string{"Heat Shimmer"},
+		},
+		108853: { // Fire Blast
+			Instant: []string{"Glorious Incandescence"},
 		},
 	},
 }

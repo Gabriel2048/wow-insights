@@ -769,13 +769,11 @@ func classifyProcs(casts []Cast, windows []auraWindow, know knowledge.Knowledge)
 		// it is the precast, which is hard cast on purpose so that it lands
 		// with the pull. It still gets its verdict above; it is not a mistake.
 		//
-		// And unless the spec names no aura that would justify a hard cast at
-		// all. A rule with an empty HardCast list is saying "this spell is
-		// judged when it comes out instantly, and hard casting it is just how
-		// the spell works" — Flamestrike is that, and marking every AoE cast
-		// of it a mistake is the rule getting the spell wrong rather than the
-		// player.
-		if len(rule.HardCast) > 0 && casts[i].Proc == "" && casts[i].ProcExpired == "" && !casts[i].resolvedInstantly() && !casts[i].Precast {
+		// And only where the spec says a hard cast needs a proc at all. Some
+		// spells are hard cast as a matter of course and merely improved by an
+		// aura — Flamestrike under Pyroclasm — and marking every AoE cast of
+		// one a mistake is the rule getting the spell wrong, not the player.
+		if rule.HardCastNeedsProc && casts[i].Proc == "" && casts[i].ProcExpired == "" && !casts[i].resolvedInstantly() && !casts[i].Precast {
 			casts[i].ProcMissing = true
 		}
 	}
