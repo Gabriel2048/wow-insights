@@ -374,9 +374,12 @@ func FuzzBuildCasts(f *testing.F) {
 
 // The recorded kill, run through buildCasts, with what came out written
 // down. When a heuristic moves, this says exactly what it moved. The counts
-// were read, not just recorded: 12 abandoned bars on a seven-minute Heroic
-// kill, each shorter than the spell's own cast time, is what moving for
-// mechanics looks like.
+// were read, not just recorded: they were re-derived for #81 by an
+// independent pairing of the raw events — 477 casts, 14 of them abandoned,
+// 95 hard casts, 182 bars under 50 ms, and 186 casts with no begincast at
+// all, which is instant plus woven plus the precast below. Fourteen
+// abandoned bars on a seven-minute Heroic kill is what moving for mechanics
+// looks like.
 func TestGoldenRecordedKill(t *testing.T) {
 	rep, fight := recordedKill(t)
 	events := rep.Casts.Data
@@ -401,35 +404,37 @@ func TestGoldenRecordedKill(t *testing.T) {
 			kinds["hard"]++
 		}
 	}
-	want := map[string]int{"precast": 1, "hard": 115, "proc": 179, "instant": 114, "woven": 59, "cancelled": 12}
+	want := map[string]int{"precast": 1, "hard": 95, "proc": 182, "instant": 130, "woven": 55, "cancelled": 14}
 	for k, n := range want {
 		if kinds[k] != n {
 			t.Errorf("%s = %d, want %d", k, kinds[k], n)
 		}
 	}
-	if len(casts) != 480 {
-		t.Errorf("len(casts) = %d, want 480", len(casts))
+	if len(casts) != 477 {
+		t.Errorf("len(casts) = %d, want 477", len(casts))
 	}
-	if wasted.Round(time.Millisecond) != 13625*time.Millisecond {
-		t.Errorf("time on abandoned bars = %v, want 13.625s", wasted)
+	if wasted.Round(time.Millisecond) != 13158*time.Millisecond {
+		t.Errorf("time on abandoned bars = %v, want 13.158s", wasted)
 	}
 
-	// The opener, row by row, against the pull as the log times it: the
-	// precast Pyroblast landing 168ms in with its reconstructed bar, the
-	// Fireball begun as it lands, two instants woven into it, then the
-	// first Hot Streak Pyroblast as the Fireball lands.
+	// The opener, row by row, against the pull as the log times it. The log
+	// has a bare Fireball landing 718ms in with no begincast — its bar began
+	// before the pull, outside the query — so it is the precast, and its bar
+	// is reconstructed from the fight's median Fireball, 1.228s, putting its
+	// start at -510ms. A Fire Blast is woven under that bar, then a Hot
+	// Streak Pyroblast goes out on the very millisecond the Fireball lands.
 	type row struct {
 		name             string
 		offset, castTime time.Duration
 		precast, during  bool
 	}
 	opener := []row{
-		{"Pyroblast", -1650 * time.Millisecond, 1818 * time.Millisecond, true, false},
-		{"Fireball", 168 * time.Millisecond, 1318 * time.Millisecond, false, false},
-		{"Fire Blast", 750 * time.Millisecond, 0, false, true},
-		{"Combustion", 1234 * time.Millisecond, 0, false, true},
-		{"Pyroblast", 1486 * time.Millisecond, 0, false, false},
-		{"Pyroblast", 2591 * time.Millisecond, 0, false, false},
+		{"Fireball", -510 * time.Millisecond, 1228 * time.Millisecond, true, false},
+		{"Fire Blast", 266 * time.Millisecond, 0, false, true},
+		{"Pyroblast", 718 * time.Millisecond, 0, false, false},
+		{"Pyroblast", 1817 * time.Millisecond, 0, false, false},
+		{"Fire Blast", 2116 * time.Millisecond, 0, false, false},
+		{"Pyroblast", 2914 * time.Millisecond, 0, false, false},
 	}
 	for i, w := range opener {
 		got := row{casts[i].Name, casts[i].Offset, casts[i].CastTime, casts[i].Precast, casts[i].DuringCast}
